@@ -3,7 +3,8 @@ import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, mkdtempSync
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { build } from 'vite';
-import { screwUp, generateBanner, readPackageMetadata, findWorkspaceRoot, mergePackageMetadata, resolvePackageMetadata } from '../src/index';
+import { screwUp } from '../src/index.js';
+import { generateBanner, readPackageMetadata, findWorkspaceRoot, mergePackageMetadata, resolvePackageMetadata } from '../src/internal.js';
 
 describe('screwUp plugin integration tests', () => {
   let tempDir: string;

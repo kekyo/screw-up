@@ -17,7 +17,7 @@ export default defineConfig({
       formats: ['es', 'cjs']
     },
     rollupOptions: {
-      external: ['fs','path','glob'],
+      external: ['fs','path','fs/promises'],
       output: {
         globals: {}
       }
