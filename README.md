@@ -10,7 +10,7 @@ Simply package metadata inserter for Vite plugins.
 
 ## What is this?
 
-This is a Vite plugin that automatically inserts banner comments containing package metadata (name, version, description, author, license, etc.) into your bundled JavaScript/CSS files.
+This is a Vite plugin that automatically inserts banner comments containing package metadata (name, version, description, author, license, etc.) into your bundled files.
 
 This will automatically read metadata from your `package.json`:
 
@@ -65,7 +65,7 @@ Add the plugin to your `vite.config.ts`:
 
 ```typescript
 import { defineConfig } from 'vite';
-import { screwUp } from 'screw-up';
+import screwUp from 'screw-up';
 
 export default defineConfig({
   plugins: [
@@ -81,13 +81,16 @@ export default defineConfig({
 });
 ```
 
+When no `outputKeys` are specified, the plugin uses these default keys with exact sequence:
+`name`, `version`, `description`, `author`, `license` and `repository.url`.
+
 ### Custom Output Keys
 
 You can specify which metadata fields to include and in what order:
 
 ```typescript
 import { defineConfig } from 'vite';
-import { screwUp } from 'screw-up';
+import screwUp from 'screw-up';
 
 export default defineConfig({
   plugins: [
@@ -113,14 +116,6 @@ This will generate a banner with only the specified fields:
  * version: 2.1.0
  * license: Apache-2.0
  */
-```
-
-#### Default Output Keys
-
-When no `outputKeys` are specified, the plugin uses these default keys:
-
-```typescript
-['name', 'version', 'description', 'author', 'license', 'repository.url']
 ```
 
 ### Working with Nested Objects
