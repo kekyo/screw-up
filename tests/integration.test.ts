@@ -3,7 +3,7 @@ import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, mkdtempSync
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { build } from 'vite';
-import { screwUp, generateBanner, readPackageMetadata, findWorkspaceRoot, getWorkspacePackages, mergePackageMetadata, resolvePackageMetadata } from '../src/index';
+import { screwUp, generateBanner, readPackageMetadata, findWorkspaceRoot, mergePackageMetadata, resolvePackageMetadata } from '../src/index';
 
 describe('screwUp plugin integration tests', () => {
   let tempDir: string;
@@ -62,7 +62,7 @@ describe('screwUp plugin integration tests', () => {
     expect(banner).toBe(expectedBanner);
   })
 
-  it('should read package metadata correctly', () => {
+  it('should read package metadata correctly', async () => {
     const packageJson = {
       name: 'test-package',
       version: '1.0.0',
@@ -74,7 +74,7 @@ describe('screwUp plugin integration tests', () => {
     const packagePath = join(tempDir, 'package.json');
     writeFileSync(packagePath, JSON.stringify(packageJson, null, 2));
 
-    const metadata = readPackageMetadata(packagePath);
+    const metadata = await readPackageMetadata(packagePath);
     expect(metadata.name).toBe('test-package');
     expect(metadata.version).toBe('1.0.0');
     expect(metadata.description).toBe('A test package');
@@ -195,7 +195,7 @@ describe('workspace functionality tests', () => {
     }
   });
 
-  it('should find workspace root with workspaces field', () => {
+  it('should find workspace root with workspaces field', async () => {
     // Create workspace root package.json
     const rootPackageJson = {
       name: 'my-workspace',
@@ -208,11 +208,11 @@ describe('workspace functionality tests', () => {
     const packagesDir = join(tempDir, 'packages', 'child');
     mkdirSync(packagesDir, { recursive: true });
     
-    const workspaceRoot = findWorkspaceRoot(packagesDir);
+    const workspaceRoot = await findWorkspaceRoot(packagesDir);
     expect(workspaceRoot).toBe(tempDir);
   });
 
-  it('should find workspace root with pnpm-workspace.yaml', () => {
+  it('should find workspace root with pnpm-workspace.yaml', async () => {
     // Create workspace files
     const rootPackageJson = { name: 'my-workspace', version: '1.0.0' };
     writeFileSync(join(tempDir, 'package.json'), JSON.stringify(rootPackageJson, null, 2));
@@ -221,11 +221,11 @@ describe('workspace functionality tests', () => {
     const packagesDir = join(tempDir, 'packages', 'child');
     mkdirSync(packagesDir, { recursive: true });
     
-    const workspaceRoot = findWorkspaceRoot(packagesDir);
+    const workspaceRoot = await findWorkspaceRoot(packagesDir);
     expect(workspaceRoot).toBe(tempDir);
   });
 
-  it('should find workspace root with lerna.json', () => {
+  it('should find workspace root with lerna.json', async () => {
     // Create workspace files
     const rootPackageJson = { name: 'my-workspace', version: '1.0.0' };
     writeFileSync(join(tempDir, 'package.json'), JSON.stringify(rootPackageJson, null, 2));
@@ -234,42 +234,18 @@ describe('workspace functionality tests', () => {
     const packagesDir = join(tempDir, 'packages', 'child');
     mkdirSync(packagesDir, { recursive: true });
     
-    const workspaceRoot = findWorkspaceRoot(packagesDir);
+    const workspaceRoot = await findWorkspaceRoot(packagesDir);
     expect(workspaceRoot).toBe(tempDir);
   });
 
-  it('should return null when no workspace found', () => {
+  it('should return null when no workspace found', async () => {
     const nonWorkspaceDir = join(tempDir, 'not-a-workspace');
     mkdirSync(nonWorkspaceDir, { recursive: true });
     
-    const workspaceRoot = findWorkspaceRoot(nonWorkspaceDir);
+    const workspaceRoot = await findWorkspaceRoot(nonWorkspaceDir);
     expect(workspaceRoot).toBe(null);
   });
 
-  it('should get workspace packages correctly', () => {
-    // Create workspace root
-    const rootPackageJson = {
-      name: 'my-workspace',
-      version: '1.0.0',
-      workspaces: ['packages/*']
-    };
-    writeFileSync(join(tempDir, 'package.json'), JSON.stringify(rootPackageJson, null, 2));
-
-    // Create child packages
-    const package1Dir = join(tempDir, 'packages', 'package1');
-    mkdirSync(package1Dir, { recursive: true });
-    writeFileSync(join(package1Dir, 'package.json'), JSON.stringify({ name: 'package1' }, null, 2));
-
-    const package2Dir = join(tempDir, 'packages', 'package2');
-    mkdirSync(package2Dir, { recursive: true });
-    writeFileSync(join(package2Dir, 'package.json'), JSON.stringify({ name: 'package2' }, null, 2));
-
-    const packages = getWorkspacePackages(tempDir);
-    expect(packages).toContain(join(tempDir, 'package.json'));
-    expect(packages).toContain(join(package1Dir, 'package.json'));
-    expect(packages).toContain(join(package2Dir, 'package.json'));
-    expect(packages.length).toBe(3);
-  });
 
   it('should merge package metadata correctly', () => {
     const parentMetadata = {
@@ -292,7 +268,7 @@ describe('workspace functionality tests', () => {
     expect(merged.description).toBe('Child package'); // From child
   });
 
-  it('should resolve metadata for non-workspace project', () => {
+  it('should resolve metadata for non-workspace project', async () => {
     // Create standalone package
     const packageJson = {
       name: 'standalone',
@@ -301,13 +277,13 @@ describe('workspace functionality tests', () => {
     };
     writeFileSync(join(tempDir, 'package.json'), JSON.stringify(packageJson, null, 2));
 
-    const metadata = resolvePackageMetadata(tempDir);
+    const metadata = await resolvePackageMetadata(tempDir);
     expect(metadata.name).toBe('standalone');
     expect(metadata.version).toBe('2.0.0');
     expect(metadata.author).toBe('Standalone Author');
   });
 
-  it('should resolve metadata for workspace child with inheritance', () => {
+  it('should resolve metadata for workspace child with inheritance', async () => {
     // Create workspace root
     const rootPackageJson = {
       name: 'workspace-root',
@@ -327,7 +303,7 @@ describe('workspace functionality tests', () => {
     };
     writeFileSync(join(childDir, 'package.json'), JSON.stringify(childPackageJson, null, 2));
 
-    const metadata = resolvePackageMetadata(childDir);
+    const metadata = await resolvePackageMetadata(childDir);
     expect(metadata.name).toBe('child-package'); // From child
     expect(metadata.version).toBe('1.0.0'); // Inherited from root
     expect(metadata.author).toBe('Workspace Author'); // Inherited from root

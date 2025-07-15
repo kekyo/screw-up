@@ -4,9 +4,8 @@
 // https://github.com/kekyo/screw-up/
 
 import type { Plugin } from 'vite';
-import { readFileSync, existsSync } from 'fs';
-import { resolve, dirname, join } from 'path';
-import { globSync } from 'glob';
+import { readFile, access } from 'fs/promises';
+import { dirname, join } from 'path';
 
 interface PackageMetadata {
   name?: string;
@@ -50,13 +49,27 @@ export const generateBanner = (metadata: PackageMetadata): string => {
 };
 
 /**
+ * Check if file exists
+ * @param filePath - Path to check
+ * @returns Promise resolving to true if file exists
+ */
+export const fileExists = async (filePath: string): Promise<boolean> => {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
  * Read and parse package.json file
  * @param packagePath - Path to package.json
- * @returns Package metadata
+ * @returns Promise resolving to package metadata
  */
-export const readPackageMetadata = (packagePath: string): PackageMetadata => {
+export const readPackageMetadata = async (packagePath: string): Promise<PackageMetadata> => {
   try {
-    const content = readFileSync(packagePath, 'utf-8');
+    const content = await readFile(packagePath, 'utf-8');
     return JSON.parse(content) as PackageMetadata;
   } catch (error) {
     console.warn(`Failed to read package.json from ${packagePath}:`, error);
@@ -64,34 +77,30 @@ export const readPackageMetadata = (packagePath: string): PackageMetadata => {
   }
 };
 
-export interface ScrewUpOptions {
-  /**
-   * Custom banner template
-   * @default undefined (uses built-in template)
-   */
-  bannerTemplate?: string;
-}
-
 /**
  * Find workspace root by looking for workspace configuration files
  * @param startPath - Starting directory path
- * @returns Workspace root path or null if not found
+ * @returns Promise resolving to workspace root path or null if not found
  */
-export const findWorkspaceRoot = (startPath: string): string | null => {
+export const findWorkspaceRoot = async (startPath: string): Promise<string | null> => {
   let currentPath = startPath;
   
   while (currentPath !== dirname(currentPath)) {
     const packageJsonPath = join(currentPath, 'package.json');
     
-    if (existsSync(packageJsonPath)) {
-      const content = readFileSync(packageJsonPath, 'utf-8');
-      const packageJson = JSON.parse(content);
-      
-      // Check for workspace configurations
-      if (packageJson.workspaces || 
-          existsSync(join(currentPath, 'pnpm-workspace.yaml')) ||
-          existsSync(join(currentPath, 'lerna.json'))) {
-        return currentPath;
+    if (await fileExists(packageJsonPath)) {
+      try {
+        const content = await readFile(packageJsonPath, 'utf-8');
+        const packageJson = JSON.parse(content);
+        
+        // Check for workspace configurations
+        if (packageJson.workspaces || 
+            await fileExists(join(currentPath, 'pnpm-workspace.yaml')) ||
+            await fileExists(join(currentPath, 'lerna.json'))) {
+          return currentPath;
+        }
+      } catch (error) {
+        console.warn(`Failed to parse package.json at ${packageJsonPath}:`, error);
       }
     }
     
@@ -101,39 +110,6 @@ export const findWorkspaceRoot = (startPath: string): string | null => {
   return null;
 };
 
-/**
- * Get all workspace package.json paths
- * @param workspaceRoot - Workspace root directory
- * @returns Array of package.json paths
- */
-export const getWorkspacePackages = (workspaceRoot: string): string[] => {
-  const packageJsonPath = join(workspaceRoot, 'package.json');
-  const packages: string[] = [packageJsonPath];
-  
-  if (!existsSync(packageJsonPath)) {
-    return packages;
-  }
-  
-  try {
-    const content = readFileSync(packageJsonPath, 'utf-8');
-    const packageJson = JSON.parse(content);
-    
-    if (packageJson.workspaces) {
-      const workspacePatterns = Array.isArray(packageJson.workspaces) 
-        ? packageJson.workspaces 
-        : packageJson.workspaces.packages || [];
-      
-      for (const pattern of workspacePatterns) {
-        const matches = globSync(join(workspaceRoot, pattern, 'package.json'));
-        packages.push(...matches);
-      }
-    }
-  } catch (error) {
-    console.warn('Failed to parse workspace configuration:', error);
-  }
-  
-  return [...new Set(packages)];
-};
 
 /**
  * Merge package metadata with inheritance (child overrides parent)
@@ -156,33 +132,39 @@ export const mergePackageMetadata = (
 /**
  * Resolve package metadata for current project with workspace inheritance
  * @param projectRoot - Current project root
- * @returns Resolved package metadata
+ * @returns Promise resolving to resolved package metadata
  */
-export const resolvePackageMetadata = (projectRoot: string): PackageMetadata => {
-  const workspaceRoot = findWorkspaceRoot(projectRoot);
+export const resolvePackageMetadata = async (projectRoot: string): Promise<PackageMetadata> => {
+  const workspaceRoot = await findWorkspaceRoot(projectRoot);
   
   if (!workspaceRoot) {
     // No workspace, just read local package.json
     const localPackagePath = join(projectRoot, 'package.json');
-    return readPackageMetadata(localPackagePath);
+    return await readPackageMetadata(localPackagePath);
   }
   
-  // Get all workspace packages
-  const packagePaths = getWorkspacePackages(workspaceRoot);
   const projectPackagePath = join(projectRoot, 'package.json');
   
   // Start with root package metadata
   const rootPackagePath = join(workspaceRoot, 'package.json');
-  let metadata = readPackageMetadata(rootPackagePath);
+  let metadata = await readPackageMetadata(rootPackagePath);
   
   // If current project is not the root, merge with project-specific metadata
-  if (projectPackagePath !== rootPackagePath && existsSync(projectPackagePath)) {
-    const projectMetadata = readPackageMetadata(projectPackagePath);
+  if (projectPackagePath !== rootPackagePath && await fileExists(projectPackagePath)) {
+    const projectMetadata = await readPackageMetadata(projectPackagePath);
     metadata = mergePackageMetadata(metadata, projectMetadata);
   }
   
   return metadata;
 };
+
+export interface ScrewUpOptions {
+  /**
+   * Custom banner template
+   * @default undefined (uses built-in template)
+   */
+  bannerTemplate?: string;
+}
 
 /**
  * Vite plugin that adds banner to the bundled code
@@ -196,8 +178,8 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
   return {
     name: 'screw-up',
     apply: 'build',
-    configResolved(config) {
-      const metadata = resolvePackageMetadata(config.root);
+    async configResolved(config) {
+      const metadata = await resolvePackageMetadata(config.root);
       banner = bannerTemplate || generateBanner(metadata);
     },
     generateBundle(_options, bundle) {
