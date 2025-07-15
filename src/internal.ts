@@ -3,61 +3,34 @@
 // Under MIT.
 // https://github.com/kekyo/screw-up/
 
-import { readFile, access } from 'fs/promises';
+import { existsSync } from 'fs';
+import { readFile } from 'fs/promises';
 import { dirname, join } from 'path';
 
-export interface PackageMetadata {
-  name?: string;
-  version?: string;
-  description?: string;
-  author?: string | { name: string; email?: string };
-  license?: string;
-}
+export type PackageMetadata = Record<string, string>;
 
 /**
- * Generate banner string from package.json metadata
- * @param metadata - Package metadata
- * @returns Banner string
+ * Recursively flatten an object into dot-notation key-value pairs
+ * @param obj - Object to flatten
+ * @param prefix - Current key prefix
+ * @param map - Store key-value entries into this
  */
-export const generateBanner = (metadata: PackageMetadata): string => {
-  const name = metadata.name || 'Unknown Package';
-  const version = metadata.version || '0.0.0';
-  const description = metadata.description || '';
-  
-  let author = '';
-  if (metadata.author) {
-    if (typeof metadata.author === 'string') {
-      author = metadata.author;
+const flattenObject = (obj: any, prefix: string = '', map: PackageMetadata) => {
+  for (const [key, value] of Object.entries(obj)) {
+    if (!value)
+      continue;
+    const fullKey = prefix ? `${prefix}.${key}` : key;
+    if (typeof value === 'string') {
+      map[fullKey] = value;
+    } else if (Array.isArray(value)) {
+      map[fullKey] = value.map(v => String(v)).join(',');
+    } else if (typeof value === 'object') {
+      // Recursively flatten nested objects
+      flattenObject(value, fullKey, map);
     } else {
-      author = metadata.author.email 
-        ? `${metadata.author.name} <${metadata.author.email}>`
-        : metadata.author.name;
+      // Convert other types to string
+      map[fullKey] = String(value);
     }
-  }
-  
-  const license = metadata.license || '';
-
-  const parts = [
-    `${name} ${version}`,
-    description && `${description}`,
-    author && `Author: ${author}`,
-    license && `License: ${license}`
-  ].filter(Boolean);
-
-  return `/*!\n * ${parts.join('\n * ')}\n */`;
-};
-
-/**
- * Check if file exists
- * @param filePath - Path to check
- * @returns Promise resolving to true if file exists
- */
-export const fileExists = async (filePath: string): Promise<boolean> => {
-  try {
-    await access(filePath);
-    return true;
-  } catch {
-    return false;
   }
 };
 
@@ -69,7 +42,10 @@ export const fileExists = async (filePath: string): Promise<boolean> => {
 export const readPackageMetadata = async (packagePath: string): Promise<PackageMetadata> => {
   try {
     const content = await readFile(packagePath, 'utf-8');
-    return JSON.parse(content) as PackageMetadata;
+    const json = JSON.parse(content);
+    const map = {};
+    flattenObject(json, '', map);
+    return map;
   } catch (error) {
     console.warn(`Failed to read package.json from ${packagePath}:`, error);
     return {};
@@ -87,15 +63,15 @@ export const findWorkspaceRoot = async (startPath: string): Promise<string | nul
   while (currentPath !== dirname(currentPath)) {
     const packageJsonPath = join(currentPath, 'package.json');
     
-    if (await fileExists(packageJsonPath)) {
+    if (existsSync(packageJsonPath)) {
       try {
         const content = await readFile(packageJsonPath, 'utf-8');
         const packageJson = JSON.parse(content);
         
         // Check for workspace configurations
         if (packageJson.workspaces || 
-            await fileExists(join(currentPath, 'pnpm-workspace.yaml')) ||
-            await fileExists(join(currentPath, 'lerna.json'))) {
+            existsSync(join(currentPath, 'pnpm-workspace.yaml')) ||
+            existsSync(join(currentPath, 'lerna.json'))) {
           return currentPath;
         }
       } catch (error) {
@@ -119,12 +95,25 @@ export const mergePackageMetadata = (
   parentMetadata: PackageMetadata, 
   childMetadata: PackageMetadata
 ): PackageMetadata => {
-  return {
-    ...parentMetadata,
-    ...childMetadata,
-    // Special handling for author field
-    author: childMetadata.author || parentMetadata.author
-  };
+  const merged: PackageMetadata = {};
+  
+  // Start with parent metadata
+  for (const key in parentMetadata) {
+    const value = parentMetadata[key];
+    if (value !== undefined) {
+      merged[key] = value;
+    }
+  }
+  
+  // Override with child metadata
+  for (const key in childMetadata) {
+    const value = childMetadata[key];
+    if (value !== undefined) {
+      merged[key] = value;
+    }
+  }
+  
+  return merged;
 };
 
 /**
@@ -148,10 +137,30 @@ export const resolvePackageMetadata = async (projectRoot: string): Promise<Packa
   let metadata = await readPackageMetadata(rootPackagePath);
   
   // If current project is not the root, merge with project-specific metadata
-  if (projectPackagePath !== rootPackagePath && await fileExists(projectPackagePath)) {
+  if (projectPackagePath !== rootPackagePath && existsSync(projectPackagePath)) {
     const projectMetadata = await readPackageMetadata(projectPackagePath);
     metadata = mergePackageMetadata(metadata, projectMetadata);
   }
   
   return metadata;
+};
+
+/**
+ * Generate banner string from package.json metadata
+ * @param metadata - Package metadata
+ * @returns Banner string
+ */
+export const generateBanner = (metadata: PackageMetadata): string => {
+  // Get sorted keys to ensure consistent output order
+  const sortedKeys = Object.keys(metadata).sort();
+  
+  const parts: string[] = [];
+  for (const key of sortedKeys) {
+    const value = metadata[key];
+    if (value) {
+      parts.push(`${key}: ${value}`);
+    }
+  }
+  
+  return parts.length > 0 ? `/*!\n * ${parts.join('\n * ')}\n */` : '';
 };

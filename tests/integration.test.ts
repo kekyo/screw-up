@@ -31,10 +31,11 @@ describe('screwUp plugin integration tests', () => {
 
     const banner = generateBanner(metadata);
     const expectedBanner = `/*!
- * test-package 1.0.0
- * A test package
- * Author: Test Author <test@example.com>
- * License: MIT
+ * author: Test Author <test@example.com>
+ * description: A test package
+ * license: MIT
+ * name: test-package
+ * version: 1.0.0
  */`;
     expect(banner).toBe(expectedBanner);
   });
@@ -43,13 +44,16 @@ describe('screwUp plugin integration tests', () => {
     const metadata = {
       name: 'test-package',
       version: '1.0.0', 
-      author: { name: 'Test Author', email: 'test@example.com' }
+      'author.name': 'Test Author',
+      'author.email': 'test@example.com'
     };
 
     const banner = generateBanner(metadata);
     const expectedBanner = `/*!
- * test-package 1.0.0
- * Author: Test Author <test@example.com>
+ * author.email: test@example.com
+ * author.name: Test Author
+ * name: test-package
+ * version: 1.0.0
  */`;
     expect(banner).toBe(expectedBanner);
   });
@@ -57,9 +61,7 @@ describe('screwUp plugin integration tests', () => {
   it('should handle missing metadata gracefully', () => {
     const metadata = {};
     const banner = generateBanner(metadata);
-    const expectedBanner = `/*!
- * Unknown Package 0.0.0
- */`;
+    const expectedBanner = '';
     expect(banner).toBe(expectedBanner);
   })
 
@@ -140,10 +142,11 @@ export function hello(name: string): string {
     
     const output = readFileSync(outputPath, 'utf-8');
     const expectedBanner = `/*!
- * test-lib 2.0.0
- * Integration test library
- * Author: Integration Tester
- * License: Apache-2.0
+ * author: Integration Tester
+ * description: Integration test library
+ * license: Apache-2.0
+ * name: test-lib
+ * version: 2.0.0
  */`;
     expect(output).toMatch(new RegExp(`^${expectedBanner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   }, 30000); // 30 second timeout for build
