@@ -3,7 +3,7 @@ import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, mkdtempSync
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { build } from 'vite';
-import { screwUp } from '../src/index.js';
+import screwUp from '../src/index.js';
 import { generateBanner, readPackageMetadata, findWorkspaceRoot, mergePackageMetadata, resolvePackageMetadata } from '../src/internal.js';
 
 describe('screwUp plugin integration tests', () => {
@@ -217,6 +217,163 @@ export function hello(name: string): string {
  * license: MIT
  */`;
     expect(output).toMatch(new RegExp(`^${expectedBanner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  }, 30000);
+
+  it('should add banner to .d.ts files using default assetFilters', async () => {
+    const packageJson = {
+      name: 'test-lib',
+      version: '1.0.0',
+      description: 'Test library with TypeScript declarations',
+      author: 'Test Author',
+      license: 'MIT'
+    };
+    writeFileSync(join(tempDir, 'package.json'), JSON.stringify(packageJson, null, 2));
+
+    const srcDir = join(tempDir, 'src');
+    mkdirSync(srcDir);
+    writeFileSync(join(srcDir, 'index.ts'), `
+export interface TestInterface {
+  name: string;
+  version: number;
+}
+
+export function createTest(name: string): TestInterface {
+  return { name, version: 1 };
+}
+`);
+
+    const distDir = join(tempDir, 'dist');
+    await build({
+      root: tempDir,
+      plugins: [
+        {
+          name: 'dts-generator',
+          generateBundle() {
+            // Simulate .d.ts file generation
+            this.emitFile({
+              type: 'asset',
+              fileName: 'index.d.ts',
+              source: `export interface TestInterface {
+  name: string;
+  version: number;
+}
+
+export declare function createTest(name: string): TestInterface;
+`
+            });
+          }
+        },
+        screwUp() // Uses default assetFilters: ['\\.d\\.ts$'] - put after dts-generator
+      ],
+      build: {
+        lib: {
+          entry: join(srcDir, 'index.ts'),
+          name: 'TestLib',
+          fileName: 'index',
+          formats: ['es']
+        },
+        outDir: distDir,
+        minify: false
+      }
+    });
+
+    // Check if banner is added to .d.ts file
+    const dtsPath = join(distDir, 'index.d.ts');
+    expect(existsSync(dtsPath)).toBe(true);
+    
+    const dtsContent = readFileSync(dtsPath, 'utf-8');
+    const expectedBanner = `/*!
+ * name: test-lib
+ * version: 1.0.0
+ * description: Test library with TypeScript declarations
+ * author: Test Author
+ * license: MIT
+ */`;
+    expect(dtsContent).toMatch(new RegExp(`^${expectedBanner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    expect(dtsContent).toContain('export interface TestInterface');
+  }, 30000);
+
+  it('should add banner to custom asset files using custom assetFilters', async () => {
+    const packageJson = {
+      name: 'custom-assets-lib',
+      version: '2.0.0',
+      description: 'Library with custom asset filters',
+      author: 'Custom Author',
+      license: 'Apache-2.0'
+    };
+    writeFileSync(join(tempDir, 'package.json'), JSON.stringify(packageJson, null, 2));
+
+    const srcDir = join(tempDir, 'src');
+    mkdirSync(srcDir);
+    writeFileSync(join(srcDir, 'index.ts'), 'export const version = "2.0.0"');
+
+    const distDir = join(tempDir, 'dist');
+    await build({
+      root: tempDir,
+      plugins: [
+        {
+          name: 'custom-assets-generator',
+          generateBundle() {
+            // Emit .d.ts file
+            this.emitFile({
+              type: 'asset',
+              fileName: 'types.d.ts',
+              source: 'export declare const version: string;\n'
+            });
+            // Emit .json file
+            this.emitFile({
+              type: 'asset',
+              fileName: 'metadata.json',
+              source: JSON.stringify({ name: 'custom-assets-lib', version: '2.0.0' }, null, 2)
+            });
+            // Emit .txt file (should not get banner)
+            this.emitFile({
+              type: 'asset',
+              fileName: 'readme.txt',
+              source: 'This is a text file.\n'
+            });
+          }
+        },
+        screwUp({ assetFilters: ['\\.d\\.ts$', '\\.json$'] }) // Custom filters for .d.ts and .json - put after asset generator
+      ],
+      build: {
+        lib: {
+          entry: join(srcDir, 'index.ts'),
+          name: 'CustomAssetsLib',
+          fileName: 'index',
+          formats: ['es']
+        },
+        outDir: distDir,
+        minify: false
+      }
+    });
+
+    const expectedBanner = `/*!
+ * name: custom-assets-lib
+ * version: 2.0.0
+ * description: Library with custom asset filters
+ * author: Custom Author
+ * license: Apache-2.0
+ */`;
+
+    // Check .d.ts file has banner
+    const dtsPath = join(distDir, 'types.d.ts');
+    expect(existsSync(dtsPath)).toBe(true);
+    const dtsContent = readFileSync(dtsPath, 'utf-8');
+    expect(dtsContent).toMatch(new RegExp(`^${expectedBanner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+
+    // Check .json file has banner
+    const jsonPath = join(distDir, 'metadata.json');
+    expect(existsSync(jsonPath)).toBe(true);
+    const jsonContent = readFileSync(jsonPath, 'utf-8');
+    expect(jsonContent).toMatch(new RegExp(`^${expectedBanner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+
+    // Check .txt file does NOT have banner
+    const txtPath = join(distDir, 'readme.txt');
+    expect(existsSync(txtPath)).toBe(true);
+    const txtContent = readFileSync(txtPath, 'utf-8');
+    expect(txtContent).not.toContain('name: custom-assets-lib');
+    expect(txtContent).toBe('This is a text file.\n');
   }, 30000);
 });
 
