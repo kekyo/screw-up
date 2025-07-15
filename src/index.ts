@@ -8,10 +8,10 @@ import { generateBanner, resolvePackageMetadata } from './internal.js';
 
 export interface ScrewUpOptions {
   /**
-   * Custom banner template
-   * @default undefined (uses built-in template)
+   * Array of keys to output in banner in the specified order
+   * @default ['name', 'version', 'description', 'author', 'license', 'repository.url']
    */
-  bannerTemplate?: string;
+  outputKeys?: string[];
 }
 
 /**
@@ -20,7 +20,7 @@ export interface ScrewUpOptions {
  * @returns Vite plugin
  */
 export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
-  const { bannerTemplate } = options;
+  const { outputKeys = ['name', 'version', 'description', 'author', 'license', 'repository.url'] } = options;
   let banner: string;
   
   return {
@@ -28,7 +28,7 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
     apply: 'build',
     async configResolved(config) {
       const metadata = await resolvePackageMetadata(config.root);
-      banner = bannerTemplate || generateBanner(metadata);
+      banner = generateBanner(metadata, outputKeys);
     },
     generateBundle(_options, bundle) {
       // Add banner to each output file

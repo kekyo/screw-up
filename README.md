@@ -10,7 +10,7 @@ Simply package metadata inserter for Vite plugins.
 
 ## What is this?
 
-This is a Vite plugin that automatically inserts banner comments containing package metadata (name, version, description, author, license) into your bundled JavaScript/CSS files.
+This is a Vite plugin that automatically inserts banner comments containing package metadata (name, version, description, author, license, etc.) into your bundled JavaScript/CSS files.
 
 This will automatically read metadata from your `package.json`:
 
@@ -20,7 +20,10 @@ This will automatically read metadata from your `package.json`:
   "version": "2.1.0",
   "description": "An awesome TypeScript library",
   "author": "Jane Developer <jane@example.com>",
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "repository": {
+    "url": "https://github.com/user/my-awesome-library"
+  }
 }
 ```
 
@@ -28,17 +31,23 @@ To insert banner header each bundled source files (`dist/index.js` and etc.):
 
 ```javascript
 /*!
- * my-awesome-library 2.1.0
- * An awesome TypeScript library
- * Author: Jane Developer <jane@example.com>
- * License: "Apache-2.0
+ * name: my-awesome-library
+ * version: 2.1.0
+ * description: An awesome TypeScript library
+ * author: Jane Developer <jane@example.com>
+ * license: Apache-2.0
+ * repository.url: https://github.com/user/my-awesome-library
  */
 // Your bundled code here...
 ```
 
-* Reads metadata from `package.json`.
-* Supports both ESM and CommonJS outputs.
-* Customizable banner templates.
+## Key Features
+
+* Automatic metadata extraction: Reads metadata from `package.json` automatically.
+* Workspace support: Works with monorepos and automatically inherits metadata from parent packages.
+* Flexible output: Specify exactly which keys to include and in what order.
+* Nested object support: Handles nested objects like `author.name`, `repository.url`.
+* Customizable: Choose which metadata fields to include in your banner.
 
 ## Installation
 
@@ -56,11 +65,11 @@ Add the plugin to your `vite.config.ts`:
 
 ```typescript
 import { defineConfig } from 'vite';
-import { screwUp } from 'screw-up';   // Need to this
+import { screwUp } from 'screw-up';
 
 export default defineConfig({
   plugins: [
-    screwUp()   // Need to this
+    screwUp()  // Uses default output keys
   ],
   build: {
     lib: {
@@ -72,9 +81,9 @@ export default defineConfig({
 });
 ```
 
-### Custom Banner Template
+### Custom Output Keys
 
-You can provide a custom banner template:
+You can specify which metadata fields to include and in what order:
 
 ```typescript
 import { defineConfig } from 'vite';
@@ -83,7 +92,7 @@ import { screwUp } from 'screw-up';
 export default defineConfig({
   plugins: [
     screwUp({
-      bannerTemplate: '/* My Custom Header - Built with ❤️ */'
+      outputKeys: ['name', 'version', 'license']  // Only include these fields
     })
   ],
   build: {
@@ -96,76 +105,137 @@ export default defineConfig({
 });
 ```
 
-### Custom Package Path
+This will generate a banner with only the specified fields:
 
-Specify a different path to your package.json:
+```javascript
+/*!
+ * name: my-awesome-library
+ * version: 2.1.0
+ * license: Apache-2.0
+ */
+```
+
+#### Default Output Keys
+
+When no `outputKeys` are specified, the plugin uses these default keys:
 
 ```typescript
-import { defineConfig } from 'vite';
-import { screwUp } from 'screw-up';
-
-export default defineConfig({
-  plugins: [
-    screwUp({
-      packagePath: './packages/core/package.json'
-    })
-  ]
-});
+['name', 'version', 'description', 'author', 'license', 'repository.url']
 ```
+
+### Working with Nested Objects
+
+The plugin automatically flattens nested objects using dot notation:
+
+```json
+{
+  "name": "my-package",
+  "author": {
+    "name": "Jane Developer",
+    "email": "jane@example.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/user/my-package"
+  }
+}
+```
+
+You can reference nested fields in your `outputKeys`:
+
+```typescript
+screwUp({
+  outputKeys: ['name', 'author.name', 'author.email', 'repository.url']
+})
+```
+
+Results in:
+
+```javascript
+/*!
+ * name: my-package
+ * author.name: Jane Developer
+ * author.email: jane@example.com
+ * repository.url: https://github.com/user/my-package
+ */
+```
+
+----
 
 ## Advanced Usage
 
-### Working with Monorepos
+### Monorepo Support
 
-In monorepo setups, you might want to reference a specific package's metadata:
+The plugin automatically detects workspace configurations and inherits metadata from parent packages:
 
-```typescript
-import { defineConfig } from 'vite';
-import { screwUp } from 'screw-up';
-
-export default defineConfig({
-  plugins: [
-    screwUp({
-      packagePath: '../../packages/ui/package.json'
-    })
-  ],
-  build: {
-    lib: {
-      entry: 'src/index.ts',
-      name: 'UILibrary',
-      fileName: 'ui'
-    }
-  }
-});
+```
+my-monorepo/
+├── package.json          # Root package with shared metadata
+├── packages/
+│   ├── ui/
+│   │   └── package.json  # Child package
+│   └── core/
+│       └── package.json  # Child package
 ```
 
-### Programmatic Banner Generation
+Child packages automatically inherit metadata from the root package, with the ability to override specific fields:
+
+```json
+// Root package.json
+{
+  "name": "my-monorepo",
+  "version": "1.0.0",
+  "author": "Company Team",
+  "license": "MIT"
+}
+
+// packages/ui/package.json
+{
+  "name": "@my-monorepo/ui",
+  "description": "UI components library"
+}
+```
+
+When building the UI package, the banner will include:
+
+```javascript
+/*!
+ * name: @my-monorepo/ui
+ * version: 1.0.0
+ * description: UI components library
+ * author: Company Team
+ * license: MIT
+ */
+```
+
+### Programmatic Usage
 
 You can also use the utility functions directly:
 
 ```typescript
-import { generateBanner, readPackageMetadata } from 'screw-up';
+import { generateBanner, readPackageMetadata } from 'screw-up/internal';
 
 // Read package metadata
-const metadata = readPackageMetadata('./package.json');
+const metadata = await readPackageMetadata('./package.json');
 
-// Generate banner
-const banner = generateBanner({
-  name: 'my-package',
-  version: '1.0.0',
-  description: 'A great package',
-  author: 'Developer Name',
-  license: 'MIT'
-});
+// Generate banner with custom keys
+const banner = generateBanner(metadata, ['name', 'version', 'license']);
 
 console.log(banner);
 // /*!
-//  * my-package v1.0.0
-//  * A great package
-//  * Author: Developer Name
-//  * License: MIT
+//  * name: my-package
+//  * version: 1.0.0
+//  * license: MIT
 //  */
 ```
+
+## Supported Workspace Types
+
+The plugin automatically detects and supports:
+
+- npm/yarn workspaces: Detected via `workspaces` field in `package.json`
+- pnpm workspaces: Detected via `pnpm-workspace.yaml` file
+- Lerna: Detected via `lerna.json` file
 
 ----
 

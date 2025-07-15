@@ -148,14 +148,13 @@ export const resolvePackageMetadata = async (projectRoot: string): Promise<Packa
 /**
  * Generate banner string from package.json metadata
  * @param metadata - Package metadata
+ * @param outputKeys - Array of keys to output in specified order
  * @returns Banner string
  */
-export const generateBanner = (metadata: PackageMetadata): string => {
-  // Get sorted keys to ensure consistent output order
-  const sortedKeys = Object.keys(metadata).sort();
-  
+export const generateBanner = (metadata: PackageMetadata, outputKeys: string[]): string => {
   const parts: string[] = [];
-  for (const key of sortedKeys) {
+  
+  for (const key of outputKeys) {
     const value = metadata[key];
     if (value) {
       parts.push(`${key}: ${value}`);

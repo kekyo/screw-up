@@ -29,13 +29,14 @@ describe('screwUp plugin integration tests', () => {
       license: 'MIT'
     };
 
-    const banner = generateBanner(metadata);
+    const outputKeys = ['name', 'version', 'description', 'author', 'license'];
+    const banner = generateBanner(metadata, outputKeys);
     const expectedBanner = `/*!
- * author: Test Author <test@example.com>
- * description: A test package
- * license: MIT
  * name: test-package
  * version: 1.0.0
+ * description: A test package
+ * author: Test Author <test@example.com>
+ * license: MIT
  */`;
     expect(banner).toBe(expectedBanner);
   });
@@ -48,19 +49,21 @@ describe('screwUp plugin integration tests', () => {
       'author.email': 'test@example.com'
     };
 
-    const banner = generateBanner(metadata);
+    const outputKeys = ['name', 'version', 'author.name', 'author.email'];
+    const banner = generateBanner(metadata, outputKeys);
     const expectedBanner = `/*!
- * author.email: test@example.com
- * author.name: Test Author
  * name: test-package
  * version: 1.0.0
+ * author.name: Test Author
+ * author.email: test@example.com
  */`;
     expect(banner).toBe(expectedBanner);
   });
 
   it('should handle missing metadata gracefully', () => {
     const metadata = {};
-    const banner = generateBanner(metadata);
+    const outputKeys = ['name', 'version', 'description'];
+    const banner = generateBanner(metadata, outputKeys);
     const expectedBanner = '';
     expect(banner).toBe(expectedBanner);
   })
@@ -142,19 +145,45 @@ export function hello(name: string): string {
     
     const output = readFileSync(outputPath, 'utf-8');
     const expectedBanner = `/*!
- * author: Integration Tester
- * description: Integration test library
- * license: Apache-2.0
  * name: test-lib
  * version: 2.0.0
+ * description: Integration test library
+ * author: Integration Tester
+ * license: Apache-2.0
  */`;
     expect(output).toMatch(new RegExp(`^${expectedBanner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   }, 30000); // 30 second timeout for build
 
-  it('should use custom banner template', async () => {
+  it('should use default output keys when not specified', () => {
+    const metadata = {
+      name: 'test-package',
+      version: '1.0.0',
+      description: 'A test package',
+      author: 'Test Author',
+      license: 'MIT',
+      'repository.url': 'https://github.com/test/test-package'
+    };
+
+    const defaultOutputKeys = ['name', 'version', 'description', 'author', 'license', 'repository.url'];
+    const banner = generateBanner(metadata, defaultOutputKeys);
+    const expectedBanner = `/*!
+ * name: test-package
+ * version: 1.0.0
+ * description: A test package
+ * author: Test Author
+ * license: MIT
+ * repository.url: https://github.com/test/test-package
+ */`;
+    expect(banner).toBe(expectedBanner);
+  });
+
+  it('should use custom output keys', async () => {
     const packageJson = {
       name: 'custom-lib',
-      version: '1.0.0'
+      version: '1.0.0',
+      description: 'Custom library',
+      author: 'Custom Author',
+      license: 'MIT'
     };
     writeFileSync(join(tempDir, 'package.json'), JSON.stringify(packageJson, null, 2));
 
@@ -162,12 +191,12 @@ export function hello(name: string): string {
     mkdirSync(srcDir);
     writeFileSync(join(srcDir, 'index.ts'), 'export const version = "1.0.0"');
 
-    const customTemplate = '/* Custom Banner: custom-lib */';
+    const customOutputKeys = ['name', 'version', 'license'];
     
     const distDir = join(tempDir, 'dist');
     await build({
       root: tempDir,
-      plugins: [screwUp({ bannerTemplate: customTemplate })],
+      plugins: [screwUp({ outputKeys: customOutputKeys })],
       build: {
         lib: {
           entry: join(srcDir, 'index.ts'),
@@ -182,7 +211,12 @@ export function hello(name: string): string {
 
     const outputPath = join(distDir, 'index.mjs');
     const output = readFileSync(outputPath, 'utf-8');
-    expect(output.startsWith(customTemplate)).toBe(true);
+    const expectedBanner = `/*!
+ * name: custom-lib
+ * version: 1.0.0
+ * license: MIT
+ */`;
+    expect(output).toMatch(new RegExp(`^${expectedBanner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   }, 30000);
 });
 
