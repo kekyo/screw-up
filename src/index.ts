@@ -4,9 +4,9 @@
 // https://github.com/kekyo/screw-up/
 
 import type { Plugin } from 'vite';
-import { readFile, writeFile, readdir } from 'fs/promises';
-import { join } from 'path';
-import { generateBanner, insertBannerHeader, resolvePackageMetadata } from './internal.js';
+import { readFile, writeFile, readdir, mkdir } from 'fs/promises';
+import { join, dirname } from 'path';
+import { generateBanner, insertBannerHeader, resolvePackageMetadata, generateMetadataFile } from './internal.js';
 
 /**
  * screw-up options
@@ -22,6 +22,21 @@ export interface ScrewUpOptions {
    * @default ['\.d\.ts$']
    */
   assetFilters?: string[];
+  /**
+   * Enable TypeScript metadata file generation
+   * @default false
+   */
+  outputMetadataFile?: boolean;
+  /**
+   * Output path for TypeScript metadata file
+   * @default 'src/generated/packageMetadata.ts'
+   */
+  outputMetadataFilePath?: string;
+  /**
+   * Array of keys to output in metadata file in the specified order
+   * @default ['name', 'version', 'description', 'author', 'license', 'repository.url']
+   */
+  outputMetadataKeys?: string[];
 }
 
 /**
@@ -32,17 +47,39 @@ export interface ScrewUpOptions {
 const screwUp = (options: ScrewUpOptions = {}): Plugin => {
   const {
     outputKeys = ['name', 'version', 'description', 'author', 'license', 'repository.url'],
-    assetFilters = ['\\.d\\.ts$'] } = options;
+    assetFilters = ['\\.d\\.ts$'],
+    outputMetadataFile = false,
+    outputMetadataFilePath = 'src/generated/packageMetadata.ts',
+    outputMetadataKeys = ['name', 'version', 'description', 'author', 'license', 'repository.url']} = options;
 
   const assetFiltersRegex = assetFilters.map(filter => new RegExp(filter));
   let banner: string;
+  let metadata: any;
+  let projectRoot: string;
 
   return {
     name: 'screw-up',
     apply: 'build',
     async configResolved(config) {
-      const metadata = await resolvePackageMetadata(config.root);
+      projectRoot = config.root;
+      metadata = await resolvePackageMetadata(config.root);
       banner = generateBanner(metadata, outputKeys);
+    },
+    async buildStart() {
+      // Generate metadata TypeScript file
+      if (outputMetadataFile) {
+        const metadataContent = generateMetadataFile(metadata, outputMetadataKeys);
+        const metadataPath = join(projectRoot, outputMetadataFilePath);
+        
+        try {
+          // Ensure directory exists
+          await mkdir(dirname(metadataPath), { recursive: true });
+          // Write metadata file
+          await writeFile(metadataPath, metadataContent);
+        } catch (error) {
+          console.warn(`Failed to write metadata file to ${metadataPath}:`, error);
+        }
+      }
     },
     generateBundle(_options, bundle) {
       // Add banner to each output file
