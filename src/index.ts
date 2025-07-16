@@ -8,6 +8,9 @@ import { readFile, writeFile, readdir } from 'fs/promises';
 import { join } from 'path';
 import { generateBanner, resolvePackageMetadata } from './internal.js';
 
+/**
+ * screw-up options
+ */
 export interface ScrewUpOptions {
   /**
    * Array of keys to output in banner in the specified order
