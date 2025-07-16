@@ -6,7 +6,7 @@
 import type { Plugin } from 'vite';
 import { readFile, writeFile, readdir } from 'fs/promises';
 import { join } from 'path';
-import { generateBanner, resolvePackageMetadata } from './internal.js';
+import { generateBanner, insertBannerHeader, resolvePackageMetadata } from './internal.js';
 
 /**
  * screw-up options
@@ -49,10 +49,10 @@ const screwUp = (options: ScrewUpOptions = {}): Plugin => {
       for (const fileName in bundle) {
         const chunk = bundle[fileName];
         if (chunk.type === 'chunk') {
-          chunk.code = banner + '\n' + chunk.code;
+          chunk.code = insertBannerHeader(chunk.code, banner);
         } else if (chunk.type === 'asset' && assetFiltersRegex.some(filter => filter.test(fileName))) {
           if (typeof chunk.source === 'string') {
-            chunk.source = banner + '\n\n' + chunk.source;  // insert more blank line
+            chunk.source = insertBannerHeader(chunk.source, banner + '\n');  // insert more blank line
           }
         }
       }
@@ -76,7 +76,7 @@ const screwUp = (options: ScrewUpOptions = {}): Plugin => {
               const content = await readFile(filePath, 'utf-8');
               // Append banner to the asset file if it doesn't already contain it
               if (!content.includes(banner)) {
-                await writeFile(filePath, banner + '\n\n' + content);
+                await writeFile(filePath, insertBannerHeader(content, banner + '\n'));
               }
             } catch (error) {
               // Skip files that can't be read/written

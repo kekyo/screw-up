@@ -433,12 +433,12 @@ describe('workspace functionality tests', () => {
     expect(workspaceRoot).toBe(tempDir);
   });
 
-  it('should return null when no workspace found', async () => {
+  it('should return undefined when no workspace found', async () => {
     const nonWorkspaceDir = join(tempDir, 'not-a-workspace');
     mkdirSync(nonWorkspaceDir, { recursive: true });
     
     const workspaceRoot = await findWorkspaceRoot(nonWorkspaceDir);
-    expect(workspaceRoot).toBe(null);
+    expect(workspaceRoot).toBe(undefined);
   });
 
 
@@ -562,5 +562,213 @@ export function Button() {
     expect(output).toContain('Monorepo Author'); // Inherited author
     expect(output).toContain('MIT'); // Inherited license
     expect(output).toContain('UI component library'); // Child description
+  }, 30000);
+});
+
+describe('shebang banner insertion tests', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), 'screw-up-shebang-test-'));
+  });
+
+  afterEach(() => {
+    if (existsSync(tempDir)) {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('should insert banner after shebang in generated files', async () => {
+    const packageJson = {
+      name: 'shebang-test',
+      version: '1.0.0',
+      description: 'Test shebang banner insertion',
+      author: 'Test Author',
+      license: 'MIT'
+    };
+    writeFileSync(join(tempDir, 'package.json'), JSON.stringify(packageJson, null, 2));
+
+    const srcDir = join(tempDir, 'src');
+    mkdirSync(srcDir);
+    writeFileSync(join(srcDir, 'index.ts'), `
+export function createScript(): string {
+  return '#!/usr/bin/env node\\nconsole.log("Hello");';
+}
+`);
+
+    const distDir = join(tempDir, 'dist');
+    await build({
+      root: tempDir,
+      plugins: [
+        {
+          name: 'shebang-file-generator',
+          generateBundle() {
+            // Generate a file with shebang
+            this.emitFile({
+              type: 'asset',
+              fileName: 'cli.js',
+              source: '#!/usr/bin/env node\nconsole.log("CLI script");'
+            });
+            // Generate a .d.ts file with shebang (unusual but possible)
+            this.emitFile({
+              type: 'asset',
+              fileName: 'cli.d.ts',
+              source: '#!/usr/bin/env node\nexport declare function cli(): void;'
+            });
+          }
+        },
+        screwUp({ assetFilters: ['\\.js$', '\\.d\\.ts$'] })
+      ],
+      build: {
+        lib: {
+          entry: join(srcDir, 'index.ts'),
+          name: 'ShebangTest',
+          fileName: 'index',
+          formats: ['es']
+        },
+        outDir: distDir,
+        minify: false
+      }
+    });
+
+    // Check CLI script - banner should be after shebang
+    const cliPath = join(distDir, 'cli.js');
+    expect(existsSync(cliPath)).toBe(true);
+    const cliContent = readFileSync(cliPath, 'utf-8');
+    expect(cliContent).toMatch(/^#!/);
+    expect(cliContent).toMatch(/#!/);
+    expect(cliContent).toContain('name: shebang-test');
+    // Verify shebang comes first, then banner
+    const lines = cliContent.split('\n');
+    expect(lines[0]).toBe('#!/usr/bin/env node');
+    expect(lines[1]).toBe('/*!');
+
+    // Check .d.ts file - banner should be after shebang
+    const dtsPath = join(distDir, 'cli.d.ts');
+    expect(existsSync(dtsPath)).toBe(true);
+    const dtsContent = readFileSync(dtsPath, 'utf-8');
+    expect(dtsContent).toMatch(/^#!/);
+    expect(dtsContent).toContain('name: shebang-test');
+    const dtsLines = dtsContent.split('\n');
+    expect(dtsLines[0]).toBe('#!/usr/bin/env node');
+    expect(dtsLines[1]).toBe('/*!');
+  }, 30000);
+
+  it('should insert banner at beginning for files without shebang', async () => {
+    const packageJson = {
+      name: 'no-shebang-test',
+      version: '2.0.0',
+      author: 'Test Author'
+    };
+    writeFileSync(join(tempDir, 'package.json'), JSON.stringify(packageJson, null, 2));
+
+    const srcDir = join(tempDir, 'src');
+    mkdirSync(srcDir);
+    writeFileSync(join(srcDir, 'index.ts'), 'export const version = "2.0.0"');
+
+    const distDir = join(tempDir, 'dist');
+    await build({
+      root: tempDir,
+      plugins: [
+        {
+          name: 'regular-file-generator',
+          generateBundle() {
+            this.emitFile({
+              type: 'asset',
+              fileName: 'regular.d.ts',
+              source: 'export declare const version: string;'
+            });
+          }
+        },
+        screwUp()
+      ],
+      build: {
+        lib: {
+          entry: join(srcDir, 'index.ts'),
+          name: 'NoShebangTest',
+          fileName: 'index',
+          formats: ['es']
+        },
+        outDir: distDir,
+        minify: false
+      }
+    });
+
+    // Check that banner is at the beginning for files without shebang
+    const dtsPath = join(distDir, 'regular.d.ts');
+    expect(existsSync(dtsPath)).toBe(true);
+    const dtsContent = readFileSync(dtsPath, 'utf-8');
+    expect(dtsContent).toMatch(/^\/\*!/);
+    expect(dtsContent).toContain('name: no-shebang-test');
+    const lines = dtsContent.split('\n');
+    expect(lines[0]).toBe('/*!');
+  }, 30000);
+
+  it('should handle writeBundle with shebang files', async () => {
+    const packageJson = {
+      name: 'writebundle-shebang-test',
+      version: '1.5.0',
+      license: 'Apache-2.0'
+    };
+    writeFileSync(join(tempDir, 'package.json'), JSON.stringify(packageJson, null, 2));
+
+    const srcDir = join(tempDir, 'src');
+    mkdirSync(srcDir);
+    writeFileSync(join(srcDir, 'index.ts'), 'export const name = "test"');
+
+    const distDir = join(tempDir, 'dist');
+    
+    // Build first to create the dist directory
+    await build({
+      root: tempDir,
+      plugins: [screwUp({ assetFilters: ['\\.d\\.ts$'] })],
+      build: {
+        lib: {
+          entry: join(srcDir, 'index.ts'),
+          name: 'WriteBundleShebangTest',
+          fileName: 'index',
+          formats: ['es']
+        },
+        outDir: distDir,
+        minify: false
+      }
+    });
+    
+    // Create files that simulate what other plugins would generate after the build
+    const shebangDtsPath = join(distDir, 'generated.d.ts');
+    writeFileSync(shebangDtsPath, '#!/usr/bin/env node\nexport declare const generated: string;');
+    
+    const regularDtsPath = join(distDir, 'normal.d.ts');
+    writeFileSync(regularDtsPath, 'export declare const normal: string;');
+
+    // Second build to trigger writeBundle which processes existing files
+    await build({
+      root: tempDir,
+      plugins: [screwUp({ assetFilters: ['\\.d\\.ts$'] })],
+      build: {
+        lib: {
+          entry: join(srcDir, 'index.ts'),
+          name: 'WriteBundleShebangTest',
+          fileName: 'index',
+          formats: ['es']
+        },
+        outDir: distDir,
+        minify: false,
+        emptyOutDir: false // Don't empty the dist directory
+      }
+    });
+
+    // Check shebang file - should have banner after shebang
+    const shebangContent = readFileSync(shebangDtsPath, 'utf-8');
+    expect(shebangContent).toMatch(/^#!/);
+    expect(shebangContent).toContain('name: writebundle-shebang-test');
+    const shebangLines = shebangContent.split('\n');
+    expect(shebangLines[0]).toBe('#!/usr/bin/env node');
+    expect(shebangLines[1]).toBe('/*!');
+
+    // Check regular file - should have banner at beginning
+    const regularContent = readFileSync(regularDtsPath, 'utf-8');
+    expect(regularContent).toMatch(/^\/\*!/);
+    expect(regularContent).toContain('name: writebundle-shebang-test');
   }, 30000);
 });
