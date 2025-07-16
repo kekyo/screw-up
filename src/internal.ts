@@ -15,7 +15,7 @@ export type PackageMetadata = Record<string, string>;
  * @param prefix - Current key prefix
  * @param map - Store key-value entries into this
  */
-const flattenObject = (obj: any, prefix: string = '', map: PackageMetadata) => {
+const flattenObject = (obj: any, prefix: string, map: PackageMetadata) => {
   for (const [key, value] of Object.entries(obj)) {
     if (!value)
       continue;
@@ -55,9 +55,9 @@ export const readPackageMetadata = async (packagePath: string): Promise<PackageM
 /**
  * Find workspace root by looking for workspace configuration files
  * @param startPath - Starting directory path
- * @returns Promise resolving to workspace root path or null if not found
+ * @returns Promise resolving to workspace root path or undefined if not found
  */
-export const findWorkspaceRoot = async (startPath: string): Promise<string | null> => {
+export const findWorkspaceRoot = async (startPath: string): Promise<string | undefined> => {
   let currentPath = startPath;
   
   while (currentPath !== dirname(currentPath)) {
@@ -82,7 +82,7 @@ export const findWorkspaceRoot = async (startPath: string): Promise<string | nul
     currentPath = dirname(currentPath);
   }
   
-  return null;
+  return undefined;
 };
 
 /**
@@ -162,4 +162,23 @@ export const generateBanner = (metadata: PackageMetadata, outputKeys: string[]):
   }
   
   return parts.length > 0 ? `/*!\n * ${parts.join('\n * ')}\n */` : '';
+};
+
+/**
+ * Insert banner header at appropriate position considering shebang
+ * @param content - The content to insert banner into
+ * @param banner - The banner header to insert
+ * @returns Content with banner header inserted
+ */
+export const insertBannerHeader = (content: string, banner: string): string => {
+  const lines = content.split('\n');
+  
+  // Check if first line is shebang
+  if (lines.length > 0 && lines[0].startsWith('#!')) {
+    // Insert banner after shebang line
+    return lines[0] + '\n' + banner + '\n' + lines.slice(1).join('\n');
+  } else {
+    // Insert banner at the beginning
+    return banner + '\n' + content;
+  }
 };
