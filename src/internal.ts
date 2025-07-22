@@ -161,8 +161,8 @@ export const readRawPackageJson = async (packagePath: string): Promise<any> => {
     const content = await readFile(packagePath, 'utf-8');
     return JSON.parse(content);
   } catch (error) {
-    console.warn(`Failed to read package.json from ${packagePath}:`, error);
-    return {};
+    console.error(`Failed to read package.json from ${packagePath}:`, error);
+    throw error;
   }
 };
 

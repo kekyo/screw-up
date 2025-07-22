@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, mkdtempSync, readdirSync } from 'fs';
-import { join, relative } from 'path';
+import { join, relative, resolve } from 'path';
 import { tmpdir } from 'os';
 import { execSync, spawn } from 'child_process';
 import * as tar from 'tar';
@@ -85,7 +85,10 @@ describe('CLI tests', () => {
       const outputDir = join(tempDir, 'output');
       mkdirSync(outputDir, { recursive: true });
 
-      await packAssets(targetDir, outputDir);
+      const metadata = await packAssets(targetDir, outputDir);
+      expect(metadata).toBeDefined();
+      expect(metadata?.name).toBe('test-package');
+      expect(metadata?.version).toBe('1.0.0');
 
       // Check if test-package-1.0.0.tgz was created
       const archivePath = join(outputDir, 'test-package-1.0.0.tgz');
@@ -136,14 +139,16 @@ describe('CLI tests', () => {
       mkdirSync(outputDir, { recursive: true });
       
       const workspaceArchived = await packAssets(workspaceRoot, outputDir);
-      expect(workspaceArchived).toBe(false);
+      expect(workspaceArchived).toBeUndefined();
 
       // Check workspace archive was not created
       const workspaceArchivePath = join(outputDir, 'workspace-root-2.0.0.tgz');
       expect(existsSync(workspaceArchivePath)).toBe(false);
 
       const childArchived = await packAssets(childDir, outputDir);
-      expect(childArchived).toBe(true);
+      expect(childArchived).toBeDefined();
+      expect(childArchived?.name).toBe('child-package');
+      expect(childArchived?.version).toBe('2.0.0');
 
       // Check child package archive was created
       const childArchivePath = join(outputDir, 'child-package-2.0.0.tgz');
@@ -195,7 +200,9 @@ describe('CLI tests', () => {
       mkdirSync(outputDir, { recursive: true });
 
       const childArchived = await packAssets(childDir, outputDir);
-      expect(childArchived).toBe(true);
+      expect(childArchived).toBeDefined();
+      expect(childArchived?.name).toBe('child-package');
+      expect(childArchived?.version).toBe('2.0.0');
 
       // Extract and verify inherited metadata
       const archivePath = join(outputDir, 'child-package-2.0.0.tgz');
@@ -354,10 +361,9 @@ describe('CLI tests', () => {
         encoding: 'utf-8'
       });
 
-      expect(result).toContain('Usage: screw-up pack');
-      expect(result).toContain('Pack the project into a tar archive');
-      expect(result).toContain('--pack-destination <path>');
-      expect(result).toContain('Directory to write the tarball');
+      expect(result).toContain('Usage: screw-up <command> [options]');
+      expect(result).toContain('pack [directory]              Pack the project into a tar archive');
+      expect(result).toContain('--pack-destination <path>     Directory to write the tarball');
     });
 
     it('should handle empty directory', async () => {
@@ -578,7 +584,7 @@ describe('CLI tests', () => {
       expect(extractedPackageJson.workspaces).toBeUndefined();
     }, 10000);
 
-    it('should handle package.json without existing file', async () => {
+    it('should handle package.json without existing file', () => {
       // Create a directory without package.json to test empty metadata resolution
       const emptyMetadataDir = join(tempDir, 'no-package-json');
       mkdirSync(emptyMetadataDir);
@@ -589,30 +595,232 @@ describe('CLI tests', () => {
       const outputDir = join(tempDir, 'output');
       mkdirSync(outputDir, { recursive: true });
 
-      const result = execSync(`node "${CLI_PATH}" pack "${emptyMetadataDir}"`, {
-        cwd: outputDir,
+      try {
+        execSync(`node "${CLI_PATH}" pack "${emptyMetadataDir}"`, {
+          cwd: outputDir,
+          encoding: 'utf-8'
+        });
+        // Should not reach here, command should fail
+        expect.fail('Command should have failed');
+      } catch (error: any) {
+        // Check error message in stderr and stdout
+        expect(error.stderr || error.stdout).toContain('Unable to find any files to pack');
+        expect(error.status).toBe(1);
+      }
+    }, 10000);
+  });
+
+  //////////////////////////////////////////////////////////////////////////////////
+
+  describe('CLI publish command tests', () => {
+    const runPublishCLI = (args: string[], cwd: string = tempDir): { stdout: string; stderr: string; exitCode: number } => {
+      const fullArgs = ['publish', ...args.map(arg => `"${arg}"`)];
+      const result = execSync(`node "${CLI_PATH}" ${fullArgs.join(' ')}`, {
+        cwd: cwd,
+        encoding: 'utf-8',
+        env: { 
+          ...process.env, 
+          SCREW_UP_TEST_MODE: 'true'  // Enable test mode to avoid actual npm publish
+        }
+      });
+      return { stdout: result, stderr: '', exitCode: 0 };
+    };
+
+    const runPublishCLIWithError = (args: string[], cwd: string = tempDir): { stdout: string; stderr: string; exitCode: number } => {
+      try {
+        const fullArgs = ['publish', ...args.map(arg => `"${arg}"`)];
+        const result = execSync(`node "${CLI_PATH}" ${fullArgs.join(' ')}`, {
+          cwd: cwd,
+          encoding: 'utf-8',
+          env: { 
+            ...process.env, 
+            SCREW_UP_TEST_MODE: 'true'
+          }
+        });
+        return { stdout: result, stderr: '', exitCode: 0 };
+      } catch (error: any) {
+        return {
+          stdout: error.stdout || '',
+          stderr: error.stderr || '',
+          exitCode: error.status || 1
+        };
+      }
+    };
+
+    it('should publish tarball when no arguments provided', () => {
+      const result = runPublishCLI([], testSourceDir);
+      
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('Creating archive of');
+      expect(result.stdout).toContain('TEST_MODE: Would execute: npm publish');
+      expect(result.stdout).toContain('test-package-1.0.0.tgz');
+      expect(result.stdout).toContain('TEST_MODE: Tarball path:');
+      expect(result.stdout).toContain('Successfully published');
+    }, 10000);
+
+    it('should publish tarball from directory argument', () => {
+      const result = runPublishCLI([testSourceDir]);
+      
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain(`Creating archive of ${testSourceDir}`);
+      expect(result.stdout).toContain('TEST_MODE: Would execute: npm publish');
+      expect(result.stdout).toContain('test-package-1.0.0.tgz');
+      expect(result.stdout).toContain('TEST_MODE: Tarball path:');
+      expect(result.stdout).toContain('Successfully published');
+    }, 10000);
+
+    it('should publish existing tarball file directly', async () => {
+      // First create a tarball file
+      const outputDir = join(tempDir, 'output');
+      mkdirSync(outputDir, { recursive: true });
+      
+      const metadata = await packAssets(testSourceDir, outputDir);
+      const tarballPath = join(outputDir, `${metadata.name}-${metadata.version}.tgz`);
+      
+      // Verify tarball exists
+      expect(existsSync(tarballPath)).toBe(true);
+      
+      const result = runPublishCLI([tarballPath]);
+      
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('TEST_MODE: Would execute: npm publish');
+      expect(result.stdout).toContain('test-package-1.0.0.tgz');
+      expect(result.stdout).toContain(`TEST_MODE: Tarball path: ${resolve(tarballPath)}`);
+      expect(result.stdout).toContain('Successfully published');
+      // Should not create new archive when given existing tarball
+      expect(result.stdout).not.toContain('Creating archive of');
+    }, 10000);
+
+    it('should forward npm publish options', () => {
+      const result = runPublishCLI([testSourceDir, '--dry-run', '--tag', 'beta', '--access', 'public']);
+      
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('TEST_MODE: Would execute: npm publish');
+      expect(result.stdout).toContain('test-package-1.0.0.tgz');
+      expect(result.stdout).toContain('TEST_MODE: Options: --dry-run --tag beta --access public');
+      expect(result.stdout).toContain('Successfully published');
+    }, 10000);
+
+    it('should handle scoped package names correctly', () => {
+      // Create a scoped package
+      const scopedPackageJson = {
+        name: '@scope/special-package',
+        version: '2.1.0'
+      };
+      writeFileSync(join(testSourceDir, 'package.json'), JSON.stringify(scopedPackageJson, null, 2));
+      
+      const result = runPublishCLI([testSourceDir]);
+      
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('TEST_MODE: Would execute: npm publish');
+      // Scoped package names should have '/' replaced with '-' in filename  
+      expect(result.stdout).toContain('@scope/special-package-2.1.0.tgz');
+      expect(result.stdout).toContain('Successfully published');
+    }, 10000);
+
+    it('should handle boolean options correctly', () => {
+      const result = runPublishCLI([testSourceDir, '--dry-run', '--force']);
+      
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('TEST_MODE: Options: --dry-run --force');
+    }, 10000);
+
+    it('should handle key-value options correctly', () => {
+      const result = runPublishCLI([testSourceDir, '--registry', 'https://custom-registry.com', '--tag', 'alpha']);
+      
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('TEST_MODE: Options: --registry https://custom-registry.com --tag alpha');
+    }, 10000);
+
+    it('should handle error when path does not exist', () => {
+      const nonExistentPath = join(tempDir, 'does-not-exist');
+      const result = runPublishCLIWithError([nonExistentPath]);
+      
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('Path does not exist');
+    }, 10000);
+
+    it('should handle error when invalid file type is provided', () => {
+      // Create a non-tarball file
+      const invalidFile = join(tempDir, 'invalid.txt');
+      writeFileSync(invalidFile, 'not a tarball');
+      
+      const result = runPublishCLIWithError([invalidFile]);
+      
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('Invalid path - must be a directory or .tgz/.tar.gz file');
+    }, 10000);
+
+    it('should handle directory without package.json', () => {
+      // Create directory without package.json
+      const emptyDir = join(tempDir, 'empty-no-package');
+      mkdirSync(emptyDir);
+      writeFileSync(join(emptyDir, 'readme.txt'), 'test file');
+      
+      const result = runPublishCLIWithError([emptyDir]);
+      
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('Unable to find any files to pack');
+    }, 10000);
+
+    it('should show help for publish command', () => {
+      const result = execSync(`node "${CLI_PATH}" publish --help`, {
         encoding: 'utf-8'
       });
 
-      expect(result).toContain('Archive created successfully');
+      expect(result).toContain('Usage: screw-up <command> [options]');
+      expect(result).toContain('publish [directory|package.tgz]  Publish the project');
+      expect(result).toContain('All npm publish options are supported');
+    });
 
-      // Extract and verify empty package.json is created
-      const archivePath = join(outputDir, 'package-0.0.0.tgz');
-      const extractDir = join(tempDir, 'extract-empty');
-      mkdirSync(extractDir);
-
-      await tar.extract({
-        file: archivePath,
-        cwd: extractDir
-      });
-
-      const extractedPackageJsonPath = join(extractDir, 'package.json');
-      expect(existsSync(extractedPackageJsonPath)).toBe(true);
-
-      const extractedPackageJson = JSON.parse(readFileSync(extractedPackageJsonPath, 'utf-8'));
+    it('should verify tarball path is absolute', async () => {
+      // Create tarball in nested directory
+      const nestedDir = join(tempDir, 'nested', 'output');
+      mkdirSync(nestedDir, { recursive: true });
       
-      // Should be an empty object or minimal structure
-      expect(typeof extractedPackageJson).toBe('object');
+      const metadata = await packAssets(testSourceDir, nestedDir);
+      const tarballPath = join(nestedDir, `${metadata.name}-${metadata.version}.tgz`);
+      
+      const result = runPublishCLI([tarballPath]);
+      
+      expect(result.exitCode).toBe(0);
+      // Should contain absolute path
+      expect(result.stdout).toContain(`TEST_MODE: Tarball path: ${resolve(tarballPath)}`);
+    }, 10000);
+
+    it('should handle workspace packages correctly', () => {
+      // Create workspace root with parent package.json
+      const workspaceRoot = join(tempDir, 'workspace-publish');
+      mkdirSync(workspaceRoot);
+      
+      const rootPackageJson = {
+        name: 'workspace-root',
+        version: '3.0.0',
+        author: 'Workspace Author',
+        license: 'Apache-2.0',
+        private: true,
+        workspaces: ['packages/*']
+      };
+      writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify(rootPackageJson, null, 2));
+
+      // Create child package
+      const childDir = join(workspaceRoot, 'packages', 'child');
+      mkdirSync(childDir, { recursive: true });
+      
+      const childPackageJson = {
+        name: 'workspace-child',
+        description: 'Child package'
+      };
+      writeFileSync(join(childDir, 'package.json'), JSON.stringify(childPackageJson, null, 2));
+      writeFileSync(join(childDir, 'index.js'), 'console.log("child");');
+
+      const result = runPublishCLI([childDir]);
+      
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('Creating archive of');
+      // Should inherit version from workspace root
+      expect(result.stdout).toContain('workspace-child-3.0.0.tgz');
+      expect(result.stdout).toContain('Successfully published');
     }, 10000);
   });
 });

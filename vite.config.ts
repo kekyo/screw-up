@@ -30,7 +30,7 @@ export default defineConfig({
       formats: ['es', 'cjs']
     },
     rollupOptions: {
-      external: ['commander', 'fs', 'path', 'fs/promises', 'vite', 'tar', 'zlib', 'events', 'stream', 'tar-stream', 'glob', 'string_decoder']
+      external: ['fs', 'path', 'fs/promises', 'vite', 'tar', 'zlib', 'events', 'stream', 'tar-stream', 'glob', 'string_decoder', 'child_process']
     },
     target: 'es2018',
     minify: false
