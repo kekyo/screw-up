@@ -49,6 +49,7 @@ To insert banner header each bundled source files (`dist/index.js` and etc.):
 * Nested object support: Handles nested objects like `author.name`, `repository.url`.
 * Customizable: Choose which metadata fields to include in your banner.
 * TypeScript metadata generation: Automatically generates TypeScript files with metadata constants for use in your source code.
+* Supported pack/publish CLI interface. When publishing using this feature, the package is generated after applying the above processing to `package.json`.
 
 ## Installation
 
@@ -292,6 +293,84 @@ The plugin automatically detects and supports:
 - npm/yarn workspaces: Detected via `workspaces` field in `package.json`
 - pnpm workspaces: Detected via `pnpm-workspace.yaml` file
 - Lerna: Detected via `lerna.json` file
+
+----
+
+## CLI Usage
+
+The `screw-up` package includes a command-line interface for packaging and publishing your projects.
+
+### Pack Command
+
+Create a tar archive of your project:
+
+```bash
+# Pack current directory
+screw-up pack
+
+# Pack specific directory
+screw-up pack ./my-project
+
+# Pack to specific output directory
+screw-up pack --pack-destination ./dist
+```
+
+The pack command:
+
+- Automatically reads `package.json` for metadata and file inclusion rules
+- Respects the `files` field in your `package.json`
+- Supports workspace inheritance (inherits metadata from parent packages)
+- Creates a compressed `.tgz` archive with format: `{name}-{version}.tgz`
+
+### Publish Command
+
+Publish your project to registry server:
+
+```bash
+# Publish current directory (creates archive and publishes)
+screw-up publish
+
+# Publish specific directory
+screw-up publish ./my-project
+
+# Publish existing tarball
+screw-up publish package.tgz
+
+# Publish with npm options (all npm publish options are supported)
+screw-up publish --dry-run --tag beta --access public
+```
+
+The publish command:
+
+- Supports all `npm publish` options transparently
+- Can publish from directory (automatically creates archive) or existing tarball
+- Handles workspace packages with proper metadata inheritance
+- Uses the same packaging logic as the pack command
+
+### Examples
+
+```bash
+# Build and publish with dry run
+screw-up publish --dry-run
+
+# Publish to beta channel
+screw-up publish --tag beta
+
+# Publish scoped package as public
+screw-up publish --access public
+
+# Pack to custom directory then publish
+screw-up pack --pack-destination ./release
+screw-up publish ./release/my-package-1.0.0.tgz
+```
+
+For help with any command:
+
+```bash
+screw-up --help
+screw-up pack --help
+screw-up publish --help
+```
 
 ----
 
