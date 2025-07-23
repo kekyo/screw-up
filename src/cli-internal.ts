@@ -5,11 +5,11 @@
 
 import { resolve } from 'path';
 import { glob } from 'glob';
-import { resolveRawPackageJson } from './internal.js';
 import { existsSync, createReadStream, createWriteStream, Stats } from 'fs';
 import { mkdir, lstat } from 'fs/promises';
 import tar from 'tar-stream';
 import zlib from 'zlib';
+import { resolveRawPackageJsonObject } from './internal.js';
 
 //////////////////////////////////////////////////////////////////////////////////
 
@@ -45,7 +45,7 @@ const addPackFileEntry = async (pack: tar.Pack, baseDir: string, path: string, s
  * @param outputDir - Output directory to write the tarball
  * @returns Package metadata (package.json) or undefined if failed
  */
-export const packAssets = async (targetDir: string, outputDir: string) : Promise<any> => {
+export const packAssets = async (targetDir: string, outputDir: string, checkWorkingDirectoryStatus: boolean) : Promise<any> => {
   // Check if target directory exists
   if (!existsSync(targetDir)) {
     return undefined;
@@ -54,7 +54,7 @@ export const packAssets = async (targetDir: string, outputDir: string) : Promise
   // Resolve package metadata
   let resolvedPackageJson: any;
   try {
-    resolvedPackageJson = await resolveRawPackageJson(targetDir);
+    resolvedPackageJson = await resolveRawPackageJsonObject(targetDir, checkWorkingDirectoryStatus);
   } catch (error) {
     // If package.json cannot be read (e.g., file doesn't exist), return undefined
     // This matches npm pack behavior which requires package.json

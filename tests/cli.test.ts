@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, mkdtempSync, readdirSync } from 'fs';
+import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from 'fs';
 import { join, relative, resolve } from 'path';
 import { tmpdir } from 'os';
 import { execSync, spawn } from 'child_process';
@@ -85,7 +85,7 @@ describe('CLI tests', () => {
       const outputDir = join(tempDir, 'output');
       mkdirSync(outputDir, { recursive: true });
 
-      const metadata = await packAssets(targetDir, outputDir);
+      const metadata = await packAssets(targetDir, outputDir, true);
       expect(metadata).toBeDefined();
       expect(metadata?.name).toBe('test-package');
       expect(metadata?.version).toBe('1.0.0');
@@ -138,14 +138,14 @@ describe('CLI tests', () => {
       const outputDir = join(tempDir, 'output');
       mkdirSync(outputDir, { recursive: true });
       
-      const workspaceArchived = await packAssets(workspaceRoot, outputDir);
+      const workspaceArchived = await packAssets(workspaceRoot, outputDir, true);
       expect(workspaceArchived).toBeUndefined();
 
       // Check workspace archive was not created
       const workspaceArchivePath = join(outputDir, 'workspace-root-2.0.0.tgz');
       expect(existsSync(workspaceArchivePath)).toBe(false);
 
-      const childArchived = await packAssets(childDir, outputDir);
+      const childArchived = await packAssets(childDir, outputDir, true);
       expect(childArchived).toBeDefined();
       expect(childArchived?.name).toBe('child-package');
       expect(childArchived?.version).toBe('2.0.0');
@@ -166,7 +166,7 @@ describe('CLI tests', () => {
       const result = await runCLI('diff', ['-r', relative(tempDir, childDir), relative(tempDir, extractDir)]);
       expect(result.exitCode).not.toBe(0);
       expect(result.stderr).toBe('');
-      expect(result.stdout).toBe('diff -r workspace/packages/child/package.json extract/package.json\n3c3,6\n<   "description": "Child package description"\n---\n>   "description": "Child package description",\n>   "version": "2.0.0",\n>   "author": "Workspace Author",\n>   "license": "Apache-2.0"\n');
+      expect(result.stdout).toBe('diff -r workspace/packages/child/package.json extract/package.json\n1a2,4\n>   "version": "2.0.0",\n>   "author": "Workspace Author",\n>   "license": "Apache-2.0",\n');
     });
 
     it('should handle workspace inheritance in package.json', async () => {
@@ -199,7 +199,7 @@ describe('CLI tests', () => {
       const outputDir = join(tempDir, 'output');
       mkdirSync(outputDir, { recursive: true });
 
-      const childArchived = await packAssets(childDir, outputDir);
+      const childArchived = await packAssets(childDir, outputDir, true);
       expect(childArchived).toBeDefined();
       expect(childArchived?.name).toBe('child-package');
       expect(childArchived?.version).toBe('2.0.0');
@@ -674,7 +674,7 @@ describe('CLI tests', () => {
       const outputDir = join(tempDir, 'output');
       mkdirSync(outputDir, { recursive: true });
       
-      const metadata = await packAssets(testSourceDir, outputDir);
+      const metadata = await packAssets(testSourceDir, outputDir, true);
       const tarballPath = join(outputDir, `${metadata.name}-${metadata.version}.tgz`);
       
       // Verify tarball exists
@@ -778,7 +778,7 @@ describe('CLI tests', () => {
       const nestedDir = join(tempDir, 'nested', 'output');
       mkdirSync(nestedDir, { recursive: true });
       
-      const metadata = await packAssets(testSourceDir, nestedDir);
+      const metadata = await packAssets(testSourceDir, nestedDir, true);
       const tarballPath = join(nestedDir, `${metadata.name}-${metadata.version}.tgz`);
       
       const result = runPublishCLI([tarballPath]);
