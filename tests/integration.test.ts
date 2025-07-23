@@ -3,21 +3,18 @@ import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, mkdtempSync
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { build } from 'vite';
-import screwUp from '../src/index.js';
-import { generateBanner, readPackageMetadata, findWorkspaceRoot, mergePackageMetadata, resolvePackageMetadata } from '../src/internal.js';
+import { readPackageMetadata, findWorkspaceRoot, mergePackageMetadata, resolvePackageMetadata } from '../src/internal.js';
+import screwUp, { generateBanner } from '../src/index.js';
+import dayjs from 'dayjs';
 
 describe('screwUp plugin integration tests', () => {
+  const tempBaseDir = join(tmpdir(), 'screw-up', 'integration-test', dayjs().format('YYYYMMDD_HHmmssSSS'));
+  
   let tempDir: string;
 
-  beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), 'screw-up-test-'));
-  });
-
-  afterEach(() => {
-    if (existsSync(tempDir)) {
-      //console.info(tempDir);
-      rmSync(tempDir, { recursive: true, force: true });
-    }
+  beforeEach(fn => {
+    tempDir = join(tempBaseDir, fn.task.name);
+    mkdirSync(tempDir, { recursive: true });
   });
 
   it('should generate correct banner from package metadata', () => {
