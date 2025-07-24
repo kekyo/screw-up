@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { simpleGit } from 'simple-git';
-import { getGitMetadata } from '../src/git-metadata.js';
+import { getGitMetadata } from '../src/analyzer.js';
 
 // Test utilities for creating temporary git repositories
 class GitTestRepository {
@@ -251,13 +251,13 @@ describe('git-metadata', () => {
       expect(metadata.git.commit.hash).toBe(currentCommit);
     });
 
-    it('should handle version increment priority (revision > build > minor > major)', async () => {
+    it('should handle version increment priority (revision > build > minor)', async () => {
       // Test different version formats and their increment behavior
+      // RelaxVersioner requires at least 2 components (major.minor)
       const testCases = [
         { tag: 'v1.2.0.0', expected: '1.2.0.1' }, // increment revision
         { tag: 'v1.2.3', expected: '1.2.4' },     // increment build  
         { tag: 'v1.2', expected: '1.3' },         // increment minor
-        { tag: 'v1', expected: '2' },             // increment major (edge case)
       ];
 
       for (const testCase of testCases) {

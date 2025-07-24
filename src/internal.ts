@@ -6,7 +6,7 @@
 import { existsSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { dirname, join } from 'path';
-import { getGitMetadata } from './git-metadata.js';
+import { getGitMetadata } from './analyzer.js';
 import { PackageMetadata } from './types.js';
 
 /**

@@ -38,7 +38,7 @@ interface CommitInfo {
 interface TagInfo {
   name: string;
   hash: string;
-  version: Version;
+  version: Version | undefined;
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -84,7 +84,7 @@ const parseVersion = (tagName: string): Version | undefined => {
  * @returns True if the version is valid, false otherwise
  */
 const isValidVersion = (version: Version): boolean => {
-  // RelaxVersioner requires at least major component and optionally minor
+  // At least major component and optionally minor
   return version.major >= 0 && (version.minor === undefined || version.minor >= 0);
 };
 
@@ -122,7 +122,7 @@ const compareVersions = (a: Version, b: Version): number => {
  * @returns The incremented version
  */
 const incrementLastVersionComponent = (version: Version): Version => {
-  // RelaxVersioner increment logic: increment the rightmost existing component
+  // Increment the rightmost existing component
   if (version.revision !== undefined) {
     return { ...version, revision: version.revision + 1 };
   }
@@ -133,7 +133,7 @@ const incrementLastVersionComponent = (version: Version): Version => {
     return { ...version, minor: version.minor + 1 };
   }
   
-  // If only major exists, increment major (RelaxVersioner behavior)
+  // If only major exists, increment major
   return { 
     ...version, 
     major: version.major + 1,
@@ -294,9 +294,7 @@ const getRelatedTagsForVersioning = async (repositoryPath: string, commitHash: s
         // Skip tags that can't be resolved
       }
     }
-    
-    // Sort by version descending
-    return tagInfos.sort((a, b) => compareVersions(a.version, b.version));
+    return tagInfos;
   } catch {
     return [];
   }
@@ -357,7 +355,15 @@ const hasModifiedFiles = async (repositoryPath: string): Promise<boolean> => {
 /////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Lookup version label recursively
+ * Scheduled commit
+ */
+interface ScheduledCommit {
+  commit: CommitInfo;
+  parents: CommitInfo[];
+}
+
+/**
+ * Lookup version label recursively core analyzer
  * @param cwd - The directory to check
  * @param commit - The commit to lookup
  * @param reachedCommits - The map of reached commits
@@ -368,55 +374,89 @@ const lookupVersionLabelRecursive = async (
   commit: CommitInfo,
   reachedCommits: Map<string, Version>
 ): Promise<Version | undefined> => {
-  // Check if we've already processed this commit
-  if (reachedCommits.has(commit.hash)) {
-    return reachedCommits.get(commit.hash);
-  }
 
-  // Get tags associated with this commit
-  const relatedTags = await getRelatedTagsForVersioning(cwd, commit.hash);
-  
-  if (relatedTags.length > 0) {
-    // Found tags, use the highest version
-    const highestVersion = relatedTags[0].version;
-    reachedCommits.set(commit.hash, highestVersion);
-    return highestVersion;
-  }
+  // Scheduled commit analysis stack
+  const scheduledStack: ScheduledCommit[] = [];
 
-  // No tags found, explore parent commits
-  let bestVersion: Version | undefined = undefined;
-  
-  // Get parent commits
-  try {
-    const commitObj = await git.readCommit({ fs, dir: cwd, oid: commit.hash });
-    const parentHashes = commitObj.commit.parent || [];
+  let version: Version = { major: 0, minor: 0, build: 1, original: '0.0.1' };
+  let currentCommit = commit;
+
+  // Trace back to the parent commit repeatedly with the following conditions:
+  // * If the commit has already been reached, get its version.
+  // * If there is a recognizable version string in the tag, get its version.
+  // * If the parent commit does not exist, get the default version.
+  // * If other than the above, push the commit on the stack for later processing in reverse order.
+  while (true) {
+    // If the commit has already been reached, get its version.
+    if (reachedCommits.has(currentCommit.hash)) {
+      version = reachedCommits.get(currentCommit.hash)!;
+      break;
+    }
     
-    for (const parentHash of parentHashes) {
-      const parentCommit = await getCommit(cwd, parentHash);
-      if (parentCommit) {
-        const parentVersion = await lookupVersionLabelRecursive(cwd, parentCommit, reachedCommits);
-        if (parentVersion) {
-          if (!bestVersion || compareVersions(parentVersion, bestVersion) < 0) {
-            bestVersion = parentVersion;
-          }
+    // Detected mostly larger version tag.
+    const relatedTags = await getRelatedTagsForVersioning(cwd, currentCommit.hash);
+    const versionCandidates = relatedTags
+      .filter(tag => tag.version && isValidVersion(tag.version))
+      .filter(tag => tag.version!.minor !== undefined)   // "1.2" or more.
+      .sort((a, b) => compareVersions(a.version!, b.version!));
+    if (versionCandidates.length >= 1) {
+      // Found version tags, use the highest version
+      version = versionCandidates[0].version!;
+      reachedCommits.set(currentCommit.hash, version);
+      break;
+    }
+
+    // Get parent commits
+    let parentCommits: CommitInfo[] = [];
+    try {
+      const commitObj = await git.readCommit({ fs, dir: cwd, oid: currentCommit.hash });
+      const parentHashes = commitObj.commit.parent || [];
+      parentCommits =
+        (await Promise.all(parentHashes.map(parentHash => getCommit(cwd, parentHash)))).
+        filter(ci => ci !== undefined);
+    } catch {
+      // If we can't get parent information, use default version
+    }
+    if (parentCommits.length === 0) {
+      // No parents, this is the root commit
+      reachedCommits.set(currentCommit.hash, version);
+      break;
+    }
+
+    // Schedule this commit for later processing
+    scheduledStack.push({ commit: currentCommit, parents: parentCommits });
+    
+    // Move to the first parent (primary branch)
+    currentCommit = parentCommits[0];
+  }
+
+  // As long as there are commits stacked on the stack,
+  // retrieve a commit from the stack, and if there is more than one parent commit for that commit:
+  // * Recursively get versions from parent commits other than the primary one.
+  // * Compare the versions obtained and store the largest version.
+  // * Increment the version and make it the version of the current commit.
+  while (scheduledStack.length >= 1) {
+    const scheduled = scheduledStack.pop()!;
+    const { commit: scheduledCommit, parents } = scheduled;
+
+    // Handle merge commits (multiple parents)
+    if (parents.length >= 2) {
+      // Check alternate parent commits (feature branches)
+      for (let index = 1; index < parents.length; index++) {
+        const alternateParentVersion = await lookupVersionLabelRecursive(cwd, parents[index], reachedCommits);
+        if (alternateParentVersion && compareVersions(alternateParentVersion, version) < 0) {
+          // Use higher version from alternate parent
+          version = alternateParentVersion;
         }
       }
     }
-  } catch {
-    // If we can't get parent information, return undefined
+
+    // Increment version for this commit
+    version = incrementLastVersionComponent(version);
+    reachedCommits.set(scheduledCommit.hash, version);
   }
 
-  if (bestVersion) {
-    // Increment the best version found in parents
-    const incrementedVersion = incrementLastVersionComponent(bestVersion);
-    reachedCommits.set(commit.hash, incrementedVersion);
-    return incrementedVersion;
-  }
-
-  // No version found in parent hierarchy, use default
-  const defaultVersion: Version = { major: 0, minor: 0, build: 1, original: '0.0.1' };
-  reachedCommits.set(commit.hash, defaultVersion);
-  return defaultVersion;
+  return version;
 };
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -444,7 +484,7 @@ export const getGitMetadata = async (repositoryPath: string, checkWorkingDirecto
     // Initialize reached commits cache
     const reachedCommits = new Map<string, Version>();
 
-    // Lookup version using RelaxVersioner algorithm
+    // Lookup version
     let version = await lookupVersionLabelRecursive(repositoryPath, currentCommit, reachedCommits);
     
     // Set git metadata into 'git' key
@@ -452,7 +492,7 @@ export const getGitMetadata = async (repositoryPath: string, checkWorkingDirecto
     metadata.git = gitMetadata;
 
     if (version) {
-      // Check for working directory changes and increment version if needed (RelaxVersioner behavior)
+      // Check for working directory changes and increment version if needed
       const hasModified = checkWorkingDirectoryStatus && await hasModifiedFiles(repositoryPath);
       if (hasModified) {
         version = incrementLastVersionComponent(version);
