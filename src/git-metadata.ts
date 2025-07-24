@@ -3,7 +3,8 @@
 // Under MIT.
 // https://github.com/kekyo/screw-up/
 
-import { simpleGit } from 'simple-git';
+import * as git from 'isomorphic-git';
+import * as fs from 'fs';
 import dayjs from 'dayjs';
 import { GitMetadata } from './types.js';
 
@@ -172,8 +173,7 @@ const formatVersion = (version: Version): string => {
  */
 const isGitRepository = async (repositoryPath: string): Promise<boolean> => {
   try {
-    const git = simpleGit(repositoryPath);
-    await git.status();
+    await git.statusMatrix({ fs, dir: repositoryPath });
     return true;
   } catch {
     return false;
@@ -188,18 +188,14 @@ const isGitRepository = async (repositoryPath: string): Promise<boolean> => {
  */
 const getCommit = async (repositoryPath: string, hash: string): Promise<CommitInfo | undefined> => {
   try {
-    const git = simpleGit(repositoryPath);
-    const log = await git.show([hash, '--format=%H%n%h%n%ci%n%s%n%P', '-s']);
-    const lines = log.trim().split('\n');
-    
-    if (lines.length < 4) return undefined;
+    const commit = await git.readCommit({ fs, dir: repositoryPath, oid: hash });
     
     return {
-      hash: lines[0],
-      shortHash: lines[1],
-      date: lines[2],
-      message: lines[3],
-      parents: lines[4] ? lines[4].split(' ').filter(p => p.length > 0) : []
+      hash: commit.oid,
+      shortHash: commit.oid.substring(0, 7),
+      date: new Date(commit.commit.author.timestamp * 1000).toISOString(),
+      message: commit.commit.message.trim(),
+      parents: commit.commit.parent || []
     };
   } catch {
     return undefined;
@@ -213,16 +209,15 @@ const getCommit = async (repositoryPath: string, hash: string): Promise<CommitIn
  */
 const getCurrentCommit = async (repositoryPath: string): Promise<CommitInfo | undefined> => {
   try {
-    const git = simpleGit(repositoryPath);
-    const log = await git.log({ maxCount: 1 });
-    if (!log.latest) return undefined;
+    const currentOid = await git.resolveRef({ fs, dir: repositoryPath, ref: 'HEAD' });
+    const commit = await git.readCommit({ fs, dir: repositoryPath, oid: currentOid });
 
     return {
-      hash: log.latest.hash,
-      shortHash: log.latest.hash.substring(0, 7),
-      date: log.latest.date,
-      message: log.latest.message,
-      parents: log.latest.refs ? [] : [] // simple-git doesn't provide parent info directly
+      hash: commit.oid,
+      shortHash: commit.oid.substring(0, 7),
+      date: new Date(commit.commit.author.timestamp * 1000).toISOString(),
+      message: commit.commit.message.trim(),
+      parents: commit.commit.parent || []
     };
   } catch {
     return undefined;
@@ -237,28 +232,30 @@ const getCurrentCommit = async (repositoryPath: string): Promise<CommitInfo | un
  */
 const getRelatedTags = async (repositoryPath: string, commitHash: string): Promise<TagInfo[]> => {
   try {
-    const git = simpleGit(repositoryPath);
-    
-    // Get all tags that point to this commit
-    const tagsOutput = await git.raw(['tag', '--points-at', commitHash]);
-    const tagNames = tagsOutput.trim().split('\n').filter(name => name.length > 0);
-    
+    const tags = await git.listTags({ fs, dir: repositoryPath });
     const tagInfos: TagInfo[] = [];
     
-    for (const tagName of tagNames) {
-      const version = parseVersion(tagName);
-      if (version && isValidVersion(version)) {
-        tagInfos.push({
-          name: tagName,
-          hash: commitHash,
-          version
-        });
-      } else {
-        tagInfos.push({
-          name: tagName,
-          hash: commitHash,
-          version: undefined
-        });
+    for (const tagName of tags) {
+      try {
+        const tagOid = await git.resolveRef({ fs, dir: repositoryPath, ref: `refs/tags/${tagName}` });
+        if (tagOid === commitHash) {
+          const version = parseVersion(tagName);
+          if (version && isValidVersion(version)) {
+            tagInfos.push({
+              name: tagName,
+              hash: commitHash,
+              version
+            });
+          } else {
+            tagInfos.push({
+              name: tagName,
+              hash: commitHash,
+              version: undefined
+            });
+          }
+        }
+      } catch {
+        // Skip tags that can't be resolved
       }
     }
     
@@ -277,22 +274,24 @@ const getRelatedTags = async (repositoryPath: string, commitHash: string): Promi
  */
 const getRelatedTagsForVersioning = async (repositoryPath: string, commitHash: string): Promise<TagInfo[]> => {
   try {
-    const git = simpleGit(repositoryPath);
-    
-    // Get all tags that point to this commit
-    const tagsOutput = await git.raw(['tag', '--points-at', commitHash]);
-    const tagNames = tagsOutput.trim().split('\n').filter(name => name.length > 0);
-    
+    const tags = await git.listTags({ fs, dir: repositoryPath });
     const tagInfos: TagInfo[] = [];
     
-    for (const tagName of tagNames) {
-      const version = parseVersion(tagName);
-      if (version && isValidVersion(version)) {
-        tagInfos.push({
-          name: tagName,
-          hash: commitHash,
-          version
-        });
+    for (const tagName of tags) {
+      try {
+        const tagOid = await git.resolveRef({ fs, dir: repositoryPath, ref: `refs/tags/${tagName}` });
+        if (tagOid === commitHash) {
+          const version = parseVersion(tagName);
+          if (version && isValidVersion(version)) {
+            tagInfos.push({
+              name: tagName,
+              hash: commitHash,
+              version
+            });
+          }
+        }
+      } catch {
+        // Skip tags that can't be resolved
       }
     }
     
@@ -311,18 +310,22 @@ const getRelatedTagsForVersioning = async (repositoryPath: string, commitHash: s
  */
 const getRelatedBranches = async (repositoryPath: string, commitHash: string): Promise<string[]> => {
   try {
-    const git = simpleGit(repositoryPath);
+    const branches = await git.listBranches({ fs, dir: repositoryPath });
+    const relatedBranches: string[] = [];
     
-    // Get all branches that contain this commit
-    const branchesOutput = await git.raw(['branch', '-a', '--contains', commitHash]);
-    const branches = branchesOutput
-      .trim()
-      .split('\n')
-      .map(branch => branch.replace(/^\*?\s*/, '').trim())
-      .filter(branch => branch.length > 0 && !branch.startsWith('('))
-      .filter((branch, index, arr) => arr.indexOf(branch) === index); // Remove duplicates
+    for (const branch of branches) {
+      try {
+        // Check if the branch HEAD points to the specified commit
+        const branchOid = await git.resolveRef({ fs, dir: repositoryPath, ref: branch });
+        if (branchOid === commitHash) {
+          relatedBranches.push(branch);
+        }
+      } catch {
+        // Skip branches that can't be resolved
+      }
+    }
 
-    return branches;
+    return relatedBranches;
   } catch {
     return [];
   }
@@ -335,9 +338,17 @@ const getRelatedBranches = async (repositoryPath: string, commitHash: string): P
  */
 const hasModifiedFiles = async (repositoryPath: string): Promise<boolean> => {
   try {
-    const git = simpleGit(repositoryPath);
-    const status = await git.status();
-    return status.modified.length > 0 || status.not_added.length > 0 || status.deleted.length > 0;
+    const status = await git.statusMatrix({ fs, dir: repositoryPath });
+    // statusMatrix returns [filepath, headStatus, workdirStatus, stageStatus]
+    // headStatus: 0=absent, 1=present
+    // workdirStatus: 0=absent, 1=present, 2=modified
+    // stageStatus: 0=absent, 1=present, 2=modified, 3=added
+    return status.some(([, head, workdir, stage]) => 
+      workdir === 2 || // modified in working directory
+      stage === 2 ||   // modified in stage
+      stage === 3 ||   // added to stage
+      (head === 1 && workdir === 0) // deleted from working directory
+    );
   } catch {
     return false;
   }
@@ -376,10 +387,9 @@ const lookupVersionLabelRecursive = async (
   let bestVersion: Version | undefined = undefined;
   
   // Get parent commits
-  const git = simpleGit(cwd);
   try {
-    const parents = await git.raw(['log', '--format=%P', '-n', '1', commit.hash]);
-    const parentHashes = parents.trim().split(' ').filter(h => h.length > 0);
+    const commitObj = await git.readCommit({ fs, dir: cwd, oid: commit.hash });
+    const parentHashes = commitObj.commit.parent || [];
     
     for (const parentHash of parentHashes) {
       const parentCommit = await getCommit(cwd, parentHash);
