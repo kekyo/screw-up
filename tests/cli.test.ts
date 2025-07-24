@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from 'fs';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'fs';
 import { join, relative, resolve } from 'path';
 import { tmpdir } from 'os';
 import { execSync, spawn } from 'child_process';
 import * as tar from 'tar';
 import dayjs from 'dayjs';
-import { packAssets, getComputedPackageJsonObject } from '../src/cli-internal.js';
+import { packAssets } from '../src/cli-internal.js';
 
 const CLI_PATH = join(__dirname, '../dist/cli.js');
 
@@ -111,7 +111,7 @@ describe('CLI tests', () => {
       // Create workspace root with parent package.json
       const workspaceRoot = join(tempDir, 'workspace');
       mkdirSync(workspaceRoot);
-      
+
       const rootPackageJson = {
         name: 'workspace-root',
         version: '2.0.0',
@@ -125,19 +125,19 @@ describe('CLI tests', () => {
       // Create child package
       const childDir = join(workspaceRoot, 'packages', 'child');
       mkdirSync(childDir, { recursive: true });
-      
+
       const childPackageJson = {
         name: 'child-package',
         description: 'Child package description'
       };
       writeFileSync(join(childDir, 'package.json'), JSON.stringify(childPackageJson, null, 2));
-      
+
       // Add test files to child
       writeFileSync(join(childDir, 'index.js'), 'console.log("child");');
 
       const outputDir = join(tempDir, 'output');
       mkdirSync(outputDir, { recursive: true });
-      
+
       const workspaceArchived = await packAssets(workspaceRoot, outputDir, true);
       expect(workspaceArchived).toBeUndefined();
 
@@ -173,7 +173,7 @@ describe('CLI tests', () => {
       // Create workspace root with parent package.json
       const workspaceRoot = join(tempDir, 'workspace');
       mkdirSync(workspaceRoot);
-      
+
       const rootPackageJson = {
         name: 'workspace-root',
         version: '2.0.0',
@@ -186,7 +186,7 @@ describe('CLI tests', () => {
       // Create child package
       const childDir = join(workspaceRoot, 'packages', 'child');
       mkdirSync(childDir, { recursive: true });
-      
+
       const childPackageJson = {
         name: 'child-package',
         description: 'Child package description'
@@ -218,16 +218,16 @@ describe('CLI tests', () => {
       expect(existsSync(extractedPackageJsonPath)).toBe(true);
 
       const extractedPackageJson = JSON.parse(readFileSync(extractedPackageJsonPath, 'utf-8'));
-      
+
       // Verify child overrides
       expect(extractedPackageJson.name).toBe('child-package');
       expect(extractedPackageJson.description).toBe('Child package description');
-      
+
       // Verify inherited from parent
       expect(extractedPackageJson.version).toBe('2.0.0');
       expect(extractedPackageJson.author).toBe('Workspace Author');
       expect(extractedPackageJson.license).toBe('Apache-2.0');
-      
+
       // Workspace field should not be inherited
       expect(extractedPackageJson.workspaces).toBeUndefined();
     }, 10000);
@@ -239,7 +239,7 @@ describe('CLI tests', () => {
     it('should pack current directory when no arguments provided', async () => {
       const outputDir = join(tempDir, 'output');
       mkdirSync(outputDir, { recursive: true });
-      
+
       // Run CLI pack command from the output directory
       const result = execSync(`node "${CLI_PATH}" pack "${testSourceDir}"`, {
         cwd: outputDir,
@@ -285,7 +285,7 @@ describe('CLI tests', () => {
       // Extract and verify contents
       const extractDir = join(tempDir, 'extract');
       mkdirSync(extractDir);
-      
+
       await tar.extract({
         file: archivePath,
         cwd: extractDir
@@ -369,14 +369,14 @@ describe('CLI tests', () => {
     it('should handle empty directory', async () => {
       const emptyDir = join(tempDir, 'empty');
       mkdirSync(emptyDir);
-      
+
       // Create basic package.json for empty directory test
       const emptyPackageJson = {
         name: 'empty-package',
         version: '1.0.0'
       };
       writeFileSync(join(emptyDir, 'package.json'), JSON.stringify(emptyPackageJson, null, 2));
-      
+
       const outputDir = join(tempDir, 'output');
       mkdirSync(outputDir, { recursive: true });
 
@@ -403,19 +403,19 @@ describe('CLI tests', () => {
     it('should handle files with special characters', async () => {
       const specialDir = join(tempDir, 'special');
       mkdirSync(specialDir);
-      
+
       // Create basic package.json for special directory test
       const specialPackageJson = {
         name: 'special-package',
         version: '1.0.0'
       };
       writeFileSync(join(specialDir, 'package.json'), JSON.stringify(specialPackageJson, null, 2));
-      
+
       // Create files with special characters in names
       writeFileSync(join(specialDir, 'file with spaces.txt'), 'content');
       writeFileSync(join(specialDir, 'file-with-dashes.txt'), 'content');
       writeFileSync(join(specialDir, 'file.with.dots.txt'), 'content');
-      
+
       const outputDir = join(tempDir, 'output');
       mkdirSync(outputDir, { recursive: true });
 
@@ -441,7 +441,7 @@ describe('CLI tests', () => {
 
     it('should create output directory if it does not exist', async () => {
       const nonExistentOutput = join(tempDir, 'non-existent', 'nested', 'output');
-      
+
       // Directory should not exist initially
       expect(existsSync(nonExistentOutput)).toBe(false);
 
@@ -523,7 +523,7 @@ describe('CLI tests', () => {
       // Create workspace root with parent package.json
       const workspaceRoot = join(tempDir, 'workspace-cli');
       mkdirSync(workspaceRoot);
-      
+
       const rootPackageJson = {
         name: 'workspace-root',
         version: '2.0.0',
@@ -536,7 +536,7 @@ describe('CLI tests', () => {
       // Create child package
       const childDir = join(workspaceRoot, 'packages', 'child');
       mkdirSync(childDir, { recursive: true });
-      
+
       const childPackageJson = {
         name: 'child-package',
         description: 'Child package description'
@@ -570,16 +570,16 @@ describe('CLI tests', () => {
       expect(existsSync(extractedPackageJsonPath)).toBe(true);
 
       const extractedPackageJson = JSON.parse(readFileSync(extractedPackageJsonPath, 'utf-8'));
-      
+
       // Verify child overrides
       expect(extractedPackageJson.name).toBe('child-package');
       expect(extractedPackageJson.description).toBe('Child package description');
-      
+
       // Verify inherited from parent
       expect(extractedPackageJson.version).toBe('2.0.0');
       expect(extractedPackageJson.author).toBe('Workspace Author');
       expect(extractedPackageJson.license).toBe('Apache-2.0');
-      
+
       // Workspace field should not be inherited
       expect(extractedPackageJson.workspaces).toBeUndefined();
     }, 10000);

@@ -107,18 +107,6 @@ export const mergePackageMetadata = async (
   return merged;
 };
 
-// Package metadata fields that should be inherited from parent
-const inheritableFields = new Set([
-  'version',
-  'description', 
-  'author',
-  'license',
-  'repository',
-  'keywords',
-  'homepage',
-  'bugs'
-]);
-
 /**
  * Merge raw package.json objects with inheritance (child overrides parent)
  * Only inherits package metadata fields, not project-specific configurations
@@ -126,13 +114,15 @@ const inheritableFields = new Set([
  * @param childMetadata - Child package object
  * @param repositoryPath - Path to Git repository root
  * @param checkWorkingDirectoryStatus - Check working directory status to increase version
+ * @param inheritableFields - Package metadata fields that should be inherited from parent
  * @returns Merged package object with only metadata fields
  */
-export const mergeRawPackageJson = async (
+const mergeRawPackageJson = async (
   parentMetadata: any,
   childMetadata: any,
   repositoryPath: string,
-  checkWorkingDirectoryStatus: boolean) => {
+  checkWorkingDirectoryStatus: boolean,
+  inheritableFields: Set<string>) => {
   // Start with default git metadata if repositoryPath is provided
   const merged = await getGitMetadata(repositoryPath, checkWorkingDirectoryStatus) as any;
   
@@ -248,12 +238,19 @@ const readRawPackageJson = async (packagePath: string): Promise<any> => {
 /**
  * Resolve raw package.json for current project with workspace inheritance
  * @param projectRoot - Current project root
+ * @param checkWorkingDirectoryStatus - Check working directory status
+ * @param inheritableFields - Package metadata fields that should be inherited from parent
  * @returns Promise resolving to resolved raw package.json object
  */
-export const resolveRawPackageJsonObject = (projectRoot: string, checkWorkingDirectoryStatus: boolean): Promise<any> => {
+export const resolveRawPackageJsonObject = (
+  projectRoot: string,
+  checkWorkingDirectoryStatus: boolean,
+  inheritableFields: Set<string>): Promise<any> => {
   return resolvePackageMetadataT<any>(
     projectRoot,
     checkWorkingDirectoryStatus,
     readRawPackageJson,
-    mergeRawPackageJson);
+    (parentMetadata, childMetadata, repositoryPath, checkWorkingDirectoryStatus) =>
+      mergeRawPackageJson(
+        parentMetadata, childMetadata, repositoryPath, checkWorkingDirectoryStatus, inheritableFields));
 };

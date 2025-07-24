@@ -109,7 +109,8 @@ const packCommand = async (args: ParsedArgs) => {
   console.log(`[screw-up/cli]: pack: Creating archive of ${targetDir}...`);
 
   try {
-    const metadata = await packAssets(targetDir, outputDir, checkWorkingDirectoryStatus);
+    const metadata = await packAssets(
+      targetDir, outputDir, checkWorkingDirectoryStatus);
     if (metadata) {
       console.log(`[screw-up/cli]: pack: Archive created successfully: ${outputDir}`);
     } else {
@@ -183,7 +184,8 @@ const publishCommand = async (args: ParsedArgs) => {
       console.log(`[screw-up/cli]: publish: Creating archive of ${targetDir}...`);
 
       try {
-        const metadata = await packAssets(targetDir, outputDir, checkWorkingDirectoryStatus);
+        const metadata = await packAssets(
+          targetDir, outputDir, checkWorkingDirectoryStatus);
         if (metadata) {
           const archiveName = `${metadata.name}-${metadata.version}.tgz`;
           const archivePath = join(outputDir, archiveName);
@@ -209,7 +211,8 @@ const publishCommand = async (args: ParsedArgs) => {
         console.log(`[screw-up/cli]: publish: Creating archive of ${targetDir}...`);
 
         try {
-          const metadata = await packAssets(targetDir, outputDir, checkWorkingDirectoryStatus);
+          const metadata = await packAssets(
+            targetDir, outputDir, checkWorkingDirectoryStatus);
           if (metadata) {
             const archiveName = `${metadata.name}-${metadata.version}.tgz`;
             const archivePath = join(outputDir, archiveName);
@@ -263,7 +266,8 @@ const dumpCommand = async (args: ParsedArgs) => {
   const targetDir = resolve(directory ?? process.cwd());
 
   try {
-    const computedPackageJson = await getComputedPackageJsonObject(targetDir, checkWorkingDirectoryStatus);
+    const computedPackageJson = await getComputedPackageJsonObject(
+      targetDir, checkWorkingDirectoryStatus);
     if (computedPackageJson) {
       console.log(JSON.stringify(computedPackageJson, null, 2));
     } else {

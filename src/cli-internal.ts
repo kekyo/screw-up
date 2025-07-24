@@ -5,47 +5,66 @@
 
 import { resolve } from 'path';
 import { glob } from 'glob';
-import { existsSync, createReadStream, createWriteStream, Stats } from 'fs';
+import { existsSync, Stats } from 'fs';
 import { mkdir, lstat } from 'fs/promises';
-import tar from 'tar-stream';
-import zlib from 'zlib';
+import { createTarPacker, createReadFileItem, createFileItem, storeReaderToFile } from 'tar-vern';
 import { resolveRawPackageJsonObject } from './internal.js';
 
 //////////////////////////////////////////////////////////////////////////////////
 
-const addPackContentEntry = async (pack: tar.Pack, name: string, content: string): Promise<void> => {
-  pack.entry({
-    name: name,
-    type: 'file',
-    mode: 0o644,
-    mtime: new Date(),
-    size: Buffer.byteLength(content, 'utf8')
-  }, content);
+/**
+ * Pack entry
+ */
+interface PackEntry {
+  name: string;
+  content?: string;
+  filePath?: string;
+  stat?: Stats;
 }
 
-const addPackFileEntry = async (pack: tar.Pack, baseDir: string, path: string, stat: Stats): Promise<void> => {
-  const writer = pack.entry({
-    name: path,
-    mode: stat.mode,
-    mtime: stat.mtime,
-    size: stat.size
-  });
-  const stream = createReadStream(resolve(baseDir, path));
-  stream.pipe(writer);
-  return new Promise<void>((resolve, reject) => {
-    stream.on('end', resolve);
-    stream.on('error', reject);
-    writer.on('error', reject);
-  });
-}
+/**
+ * Create tar entry generator
+ * @param entries - Pack entries
+ * @param baseDir - Base directory
+ * @returns Tar entry generator
+ */
+const createTarEntryGenerator = async function* (entries: PackEntry[], baseDir: string) {
+  for (const entry of entries) {
+    if (entry.content !== undefined) {
+      // If content is defined, create a file item
+      yield await createFileItem(entry.name, entry.content);
+    } else if (entry.filePath && entry.stat) {
+      // If filePath and stat are defined, create a file item
+      yield await createReadFileItem(entry.name, resolve(baseDir, entry.filePath));
+    }
+  }
+};
+
+// Package metadata fields that should be inherited from parent
+const defaultInheritableFields = new Set([
+  'version',
+  'description', 
+  'author',
+  'license',
+  'repository',
+  'keywords',
+  'homepage',
+  'bugs'
+]);
 
 /**
  * Pack assets into a tar archive
  * @param targetDir - Target directory to pack
  * @param outputDir - Output directory to write the tarball
+ * @param checkWorkingDirectoryStatus - Check working directory status
+ * @param inheritableFields - Package metadata fields that should be inherited from parent
  * @returns Package metadata (package.json) or undefined if failed
  */
-export const packAssets = async (targetDir: string, outputDir: string, checkWorkingDirectoryStatus: boolean) : Promise<any> => {
+export const packAssets = async (
+  targetDir: string,
+  outputDir: string,
+  checkWorkingDirectoryStatus: boolean,
+  inheritableFields?: Set<string>) : Promise<any> => {
   // Check if target directory exists
   if (!existsSync(targetDir)) {
     return undefined;
@@ -54,7 +73,9 @@ export const packAssets = async (targetDir: string, outputDir: string, checkWork
   // Resolve package metadata
   let resolvedPackageJson: any;
   try {
-    resolvedPackageJson = await resolveRawPackageJsonObject(targetDir, checkWorkingDirectoryStatus);
+    resolvedPackageJson = await resolveRawPackageJsonObject(
+      targetDir, checkWorkingDirectoryStatus,
+      inheritableFields ?? defaultInheritableFields);
   } catch (error) {
     // If package.json cannot be read (e.g., file doesn't exist), return undefined
     // This matches npm pack behavior which requires package.json
@@ -69,55 +90,56 @@ export const packAssets = async (targetDir: string, outputDir: string, checkWork
   // Get package name
   const outputFileName = `${resolvedPackageJson?.name?.replace('/', '-') ?? "package"}-${resolvedPackageJson?.version ?? "0.0.0"}.tgz`;
 
-  // Create tar packer
-  const pack = tar.pack();
+  // Collect all entries first
+  const packEntries: PackEntry[] = [];
 
-  try {
-    // Create `package.json` content
-    const packageJsonContent = JSON.stringify(resolvedPackageJson, null, 2);
-    await addPackContentEntry(pack, 'package.json', packageJsonContent);
+  // Add `package.json` content
+  const packageJsonContent = JSON.stringify(resolvedPackageJson, null, 2);
+  packEntries.push({ name: 'package.json', content: packageJsonContent });
 
-    // Get distribution files in `package.json`
-    const distributionFileGlobs = resolvedPackageJson?.files as string[] ?? ['**/*'];
-    const packingFilePaths = distributionFileGlobs.map(fg => glob.sync(fg, { cwd: targetDir })).flat();
+  // Get distribution files in `package.json`
+  const distributionFileGlobs = resolvedPackageJson?.files as string[] ?? ['**/*'];
+  
+  // Convert directory patterns to recursive patterns (like npm pack does)
+  const packingFilePaths = (await Promise.all(
+    distributionFileGlobs.map(async (pattern) => {
+      const fullPath = resolve(targetDir, pattern);
+      try {
+        if (existsSync(fullPath) && (await lstat(fullPath)).isDirectory()) {
+          return await glob(`${pattern}/**/*`, { cwd: targetDir });
+        }
+        return await glob(pattern, { cwd: targetDir });
+      } catch (error) {
+        // If there's an error accessing the path, treat as glob pattern
+        return await glob(pattern, { cwd: targetDir });
+      }
+    }))).flat();
 
-    // Collect target packing files to add to archive
-    for (const packingFilePath of packingFilePaths) {
+  // Collect target packing files to add to archive
+  for (const packingFilePath of packingFilePaths) {
+    // Except `package.json`
+    if (packingFilePath !== 'package.json') {
+      // Is file regular?
       const fullPath = resolve(targetDir, packingFilePath);
-
-      // Is file regular (except `package.json`)?
       const stat = await lstat(fullPath);
-      if (stat.isFile() && packingFilePath !== 'package.json') {
+      if (stat.isFile()) {
         // Add regular file
-        await addPackFileEntry(pack, targetDir, packingFilePath, stat);
+        packEntries.push({ name: packingFilePath, filePath: packingFilePath, stat });
       }
     }
-
-    // Finalize tar archive
-    pack.finalize();
-    
-    // Ensure output directory exists
-    if (!existsSync(outputDir)) {
-      await mkdir(outputDir, { recursive: true });
-    }
-
-    // Compress tar archive
-    const outputFile = resolve(outputDir, outputFileName);
-    const outputStream = createWriteStream(outputFile);
-    const gzip = zlib.createGzip();
-    
-    // Wait for the stream pipeline to complete
-    await new Promise<void>((resolve, reject) => {
-      pack.pipe(gzip).pipe(outputStream);
-      
-      outputStream.on('finish', () => resolve());
-      outputStream.on('error', reject);
-      pack.on('error', reject);
-      gzip.on('error', reject);
-    });
-  } finally {
-    pack.destroy();
   }
+
+  // Ensure output directory exists
+  if (!existsSync(outputDir)) {
+    await mkdir(outputDir, { recursive: true });
+  }
+
+  // Create tar packer with entries and gzip compression
+  const packer = createTarPacker(createTarEntryGenerator(packEntries, targetDir), 'gzip');
+  
+  // Write compressed tar archive to file
+  const outputFile = resolve(outputDir, outputFileName);
+  await storeReaderToFile(packer, outputFile);
 
   return resolvedPackageJson;
 };
@@ -126,18 +148,24 @@ export const packAssets = async (targetDir: string, outputDir: string, checkWork
  * Get computed package.json object
  * @param targetDir - Target directory to resolve package metadata
  * @param checkWorkingDirectoryStatus - Check working directory status
+ * @param inheritableFields - Package metadata fields that should be inherited from parent
  * @returns Computed package.json object or undefined if failed
  */
-export const getComputedPackageJsonObject = async (targetDir: string, checkWorkingDirectoryStatus: boolean) : Promise<any> => {
+export const getComputedPackageJsonObject = async (
+  targetDir: string,
+  checkWorkingDirectoryStatus: boolean,
+  inheritableFields?: Set<string>) : Promise<any> => {
   // Check if target directory exists
   if (!existsSync(targetDir)) {
     return undefined;
   }
 
   // Resolve package metadata
-  const resolvedPackageJson = await resolveRawPackageJsonObject(targetDir, checkWorkingDirectoryStatus);
+  const resolvedPackageJson = await resolveRawPackageJsonObject(
+    targetDir, checkWorkingDirectoryStatus,
+    inheritableFields ?? defaultInheritableFields);
   return resolvedPackageJson;
-}
+};
 
 //////////////////////////////////////////////////////////////////////////////////
 
