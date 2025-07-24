@@ -9,7 +9,7 @@ import { join, resolve } from 'path';
 import { existsSync } from 'fs';
 import { mkdtemp, rm, stat } from 'fs/promises';
 import { spawn } from 'child_process';
-import { packAssets, parseArgs, ParsedArgs } from './cli-internal.js';
+import { packAssets, parseArgs, ParsedArgs, getComputedPackageJsonObject } from './cli-internal.js';
 
 declare const __VERSION__: string;
 declare const __AUTHOR__: string;
@@ -29,6 +29,7 @@ Usage: screw-up <command> [options]
 Commands:
   pack [directory]              Pack the project into a tar archive
   publish [directory|package.tgz]  Publish the project
+  dump [directory]              Dump computed package.json as JSON
 
 Options:
   -h, --help                    Show help
@@ -234,6 +235,47 @@ const publishCommand = async (args: ParsedArgs) => {
   }
 };
 
+const showDumpHelp = () => {
+  console.log(`Usage: screw-up dump [options] [directory]
+
+Dump computed package.json as JSON
+
+Arguments:
+  directory                     Directory to dump package.json from (default: current directory)
+
+Options:
+  --no-wds                      Do not check working directory status to increase version
+  -h, --help                    Show help for dump command
+`);
+};
+
+//////////////////////////////////////////////////////////////////////////////////
+
+const dumpCommand = async (args: ParsedArgs) => {
+  if (args.options.help || args.options.h) {
+    showDumpHelp();
+    return;
+  }
+
+  const directory = args.positional[0];
+  const checkWorkingDirectoryStatus = args.options['no-wds'] ? false : true;
+
+  const targetDir = resolve(directory ?? process.cwd());
+
+  try {
+    const computedPackageJson = await getComputedPackageJsonObject(targetDir, checkWorkingDirectoryStatus);
+    if (computedPackageJson) {
+      console.log(JSON.stringify(computedPackageJson, null, 2));
+    } else {
+      console.error(`[screw-up/cli]: dump: Unable to read package.json from: ${targetDir}`);
+      process.exit(1);
+    }
+  } catch (error) {
+    console.error('[screw-up/cli]: dump: Failed to dump package.json:', error);
+    process.exit(1);
+  }
+};
+
 //////////////////////////////////////////////////////////////////////////////////
 
 const main = async () => {
@@ -252,6 +294,9 @@ const main = async () => {
       break;
     case 'publish':
       await publishCommand(args);
+      break;
+    case 'dump':
+      await dumpCommand(args);
       break;
     default:
       console.error(`Unknown command: ${args.command}`);

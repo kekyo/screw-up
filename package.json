@@ -1,6 +1,6 @@
 {
   "name": "screw-up",
-  "version": "0.9.6",
+  "version": "0.9.8",
   "description": "Simply package metadata inserter on Vite plugin",
   "keywords": [
     "vite",

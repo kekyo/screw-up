@@ -5,7 +5,7 @@ import { tmpdir } from 'os';
 import { execSync, spawn } from 'child_process';
 import * as tar from 'tar';
 import dayjs from 'dayjs';
-import { packAssets } from '../src/cli-internal.js';
+import { packAssets, getComputedPackageJsonObject } from '../src/cli-internal.js';
 
 const CLI_PATH = join(__dirname, '../dist/cli.js');
 
@@ -821,6 +821,211 @@ describe('CLI tests', () => {
       // Should inherit version from workspace root
       expect(result.stdout).toContain('workspace-child-3.0.0.tgz');
       expect(result.stdout).toContain('Successfully published');
+    }, 10000);
+  });
+
+  //////////////////////////////////////////////////////////////////////////////////
+
+  describe('CLI dump command tests', () => {
+    it('should dump package.json from current directory when no arguments provided', () => {
+      const result = execSync(`node "${CLI_PATH}" dump`, {
+        cwd: testSourceDir,
+        encoding: 'utf-8'
+      });
+
+      // Parse the JSON output
+      const packageJson = JSON.parse(result);
+      expect(packageJson.name).toBe('test-package');
+      expect(packageJson.version).toBe('1.0.0');
+    }, 10000);
+
+    it('should dump package.json from specified directory', () => {
+      const result = execSync(`node "${CLI_PATH}" dump "${testSourceDir}"`, {
+        cwd: tempDir,
+        encoding: 'utf-8'
+      });
+
+      // Parse the JSON output
+      const packageJson = JSON.parse(result);
+      expect(packageJson.name).toBe('test-package');
+      expect(packageJson.version).toBe('1.0.0');
+    }, 10000);
+
+    it('should respect --no-wds option', () => {
+      const result = execSync(`node "${CLI_PATH}" dump "${testSourceDir}" --no-wds`, {
+        cwd: tempDir,
+        encoding: 'utf-8'
+      });
+
+      // Parse the JSON output
+      const packageJson = JSON.parse(result);
+      expect(packageJson.name).toBe('test-package');
+      expect(packageJson.version).toBe('1.0.0');
+    }, 10000);
+
+    it('should show help for dump command', () => {
+      const result = execSync(`node "${CLI_PATH}" dump --help`, {
+        encoding: 'utf-8'
+      });
+
+      expect(result).toContain('Usage: screw-up <command> [options]');
+      expect(result).toContain('dump [directory]              Dump computed package.json as JSON');
+      expect(result).toContain('--no-wds');
+    });
+
+    it('should handle workspace inheritance in dump', () => {
+      // Create workspace root with parent package.json
+      const workspaceRoot = join(tempDir, 'workspace-dump');
+      mkdirSync(workspaceRoot);
+      
+      const rootPackageJson = {
+        name: 'workspace-root',
+        version: '2.0.0',
+        author: 'Workspace Author',
+        license: 'Apache-2.0',
+        workspaces: ['packages/*']
+      };
+      writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify(rootPackageJson, null, 2));
+
+      // Create child package
+      const childDir = join(workspaceRoot, 'packages', 'child');
+      mkdirSync(childDir, { recursive: true });
+      
+      const childPackageJson = {
+        name: 'child-package',
+        description: 'Child package description'
+      };
+      writeFileSync(join(childDir, 'package.json'), JSON.stringify(childPackageJson, null, 2));
+
+      const result = execSync(`node "${CLI_PATH}" dump "${childDir}"`, {
+        cwd: tempDir,
+        encoding: 'utf-8'
+      });
+
+      // Parse the JSON output
+      const packageJson = JSON.parse(result);
+      
+      // Verify child overrides
+      expect(packageJson.name).toBe('child-package');
+      expect(packageJson.description).toBe('Child package description');
+      
+      // Verify inherited from parent
+      expect(packageJson.version).toBe('2.0.0');
+      expect(packageJson.author).toBe('Workspace Author');
+      expect(packageJson.license).toBe('Apache-2.0');
+      
+      // Workspace field should not be inherited
+      expect(packageJson.workspaces).toBeUndefined();
+    }, 10000);
+
+    it('should handle error when directory does not exist', () => {
+      const nonExistentDir = join(tempDir, 'does-not-exist');
+
+      try {
+        execSync(`node "${CLI_PATH}" dump "${nonExistentDir}"`, {
+          cwd: tempDir,
+          encoding: 'utf-8'
+        });
+        // Should not reach here, command should fail
+        expect.fail('Command should have failed');
+      } catch (error: any) {
+        // Check error message in stderr
+        expect(error.stderr).toContain('dump: Unable to read package.json from');
+        expect(error.status).toBe(1);
+      }
+    });
+
+    it('should handle directory without package.json', () => {
+      // Create directory without package.json
+      const emptyDir = join(tempDir, 'empty-no-package-dump');
+      mkdirSync(emptyDir);
+      writeFileSync(join(emptyDir, 'readme.txt'), 'test file');
+
+      try {
+        execSync(`node "${CLI_PATH}" dump "${emptyDir}"`, {
+          cwd: tempDir,
+          encoding: 'utf-8'
+        });
+        // Should not reach here, command should fail
+        expect.fail('Command should have failed');
+      } catch (error: any) {
+        // Check error message in stderr or stdout  
+        expect(error.stderr || error.stdout).toContain('dump: Failed to dump package.json');
+        expect(error.status).toBe(1);
+      }
+    }, 10000);
+
+    it('should dump complete package.json with all metadata', () => {
+      // Create comprehensive package.json
+      const comprehensivePackageJson = {
+        name: 'comprehensive-package',
+        version: '3.2.1',
+        description: 'A comprehensive test package',
+        author: 'Test Author <test@example.com>',
+        license: 'MIT',
+        keywords: ['test', 'package'],
+        repository: {
+          type: 'git',
+          url: 'https://github.com/test/repo.git'
+        },
+        dependencies: {
+          'test-dep': '^1.0.0'
+        },
+        devDependencies: {
+          'test-dev-dep': '^2.0.0'
+        },
+        scripts: {
+          test: 'echo "test"',
+          build: 'echo "build"'
+        },
+        files: ['dist/**/*', 'README.md']
+      };
+      writeFileSync(join(testSourceDir, 'package.json'), JSON.stringify(comprehensivePackageJson, null, 2));
+
+      const result = execSync(`node "${CLI_PATH}" dump "${testSourceDir}"`, {
+        cwd: tempDir,
+        encoding: 'utf-8'
+      });
+
+      // Parse the JSON output
+      const packageJson = JSON.parse(result);
+      
+      // Verify all fields are preserved
+      expect(packageJson.name).toBe('comprehensive-package');
+      expect(packageJson.version).toBe('3.2.1');
+      expect(packageJson.description).toBe('A comprehensive test package');
+      expect(packageJson.author).toBe('Test Author <test@example.com>');
+      expect(packageJson.license).toBe('MIT');
+      expect(packageJson.keywords).toEqual(['test', 'package']);
+      expect(packageJson.repository).toEqual({
+        type: 'git',
+        url: 'https://github.com/test/repo.git'
+      });
+      expect(packageJson.dependencies).toEqual({
+        'test-dep': '^1.0.0'
+      });
+      expect(packageJson.devDependencies).toEqual({
+        'test-dev-dep': '^2.0.0'
+      });
+      expect(packageJson.scripts).toEqual({
+        test: 'echo "test"',
+        build: 'echo "build"'
+      });
+      expect(packageJson.files).toEqual(['dist/**/*', 'README.md']);
+    }, 10000);
+
+    it('should output valid JSON format', () => {
+      const result = execSync(`node "${CLI_PATH}" dump "${testSourceDir}"`, {
+        cwd: tempDir,
+        encoding: 'utf-8'
+      });
+
+      // Should be valid JSON that can be parsed
+      expect(() => JSON.parse(result)).not.toThrow();
+      
+      // Should be properly formatted (with indentation)
+      expect(result).toContain('\n');
+      expect(result).toContain('  ');
     }, 10000);
   });
 });

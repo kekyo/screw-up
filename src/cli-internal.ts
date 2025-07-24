@@ -122,6 +122,23 @@ export const packAssets = async (targetDir: string, outputDir: string, checkWork
   return resolvedPackageJson;
 };
 
+/**
+ * Get computed package.json object
+ * @param targetDir - Target directory to resolve package metadata
+ * @param checkWorkingDirectoryStatus - Check working directory status
+ * @returns Computed package.json object or undefined if failed
+ */
+export const getComputedPackageJsonObject = async (targetDir: string, checkWorkingDirectoryStatus: boolean) : Promise<any> => {
+  // Check if target directory exists
+  if (!existsSync(targetDir)) {
+    return undefined;
+  }
+
+  // Resolve package metadata
+  const resolvedPackageJson = await resolveRawPackageJsonObject(targetDir, checkWorkingDirectoryStatus);
+  return resolvedPackageJson;
+}
+
 //////////////////////////////////////////////////////////////////////////////////
 
 export interface ParsedArgs {
