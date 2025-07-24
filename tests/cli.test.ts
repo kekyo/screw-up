@@ -11,7 +11,7 @@ const CLI_PATH = join(__dirname, '../dist/cli.js');
 
 describe('CLI tests', () => {
   const tempBaseDir = join(tmpdir(), 'screw-up', 'cli-test', dayjs().format('YYYYMMDD_HHmmssSSS'));
-  
+
   let tempDir: string;
   let testSourceDir: string;
 
