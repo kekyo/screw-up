@@ -83,10 +83,10 @@ export const mergePackageMetadata = async (
   repositoryPath: string,
   checkWorkingDirectoryStatus: boolean) => {
   // Start with default git metadata if repositoryPath is provided
-  const gitMetadata = await getGitMetadata(repositoryPath, checkWorkingDirectoryStatus);
+  const metadata = await getGitMetadata(repositoryPath, checkWorkingDirectoryStatus);
 
   const merged: PackageMetadata = { };
-  flattenObject(gitMetadata, 'git', merged);
+  flattenObject(metadata, '', merged);
 
   // Start with parent metadata
   for (const key in parentMetadata) {

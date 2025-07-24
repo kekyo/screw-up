@@ -4,6 +4,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { build } from 'vite';
 import dayjs from 'dayjs';
+import { simpleGit } from 'simple-git';
 import { findWorkspaceRoot, mergePackageMetadata, resolvePackageMetadata } from '../src/internal.js';
 import { screwUp, generateBanner } from '../src/vite-plugin.js';
 
@@ -1019,5 +1020,374 @@ describe('metadata file generation tests', () => {
     // But no metadata file should be generated since outputMetadataFile defaults to false
     const metadataPath = join(tempDir, 'src', 'generated', 'packageMetadata.ts');
     expect(existsSync(metadataPath)).toBe(false);
+  }, 30000);
+});
+
+describe('git metadata integration tests', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), 'screw-up-git-test-'));
+  });
+
+  afterEach(() => {
+    if (existsSync(tempDir)) {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('should insert git metadata in banner', async () => {
+    // Initialize git repository
+    const git = simpleGit(tempDir);
+    await git.init();
+    await git.addConfig('user.name', 'Test User');
+    await git.addConfig('user.email', 'test@example.com');
+
+    // Create package.json without version
+    const packageJson = {
+      name: 'git-metadata-test',
+      description: 'Test git metadata insertion',
+      author: 'Test Author',
+      license: 'MIT'
+    };
+    writeFileSync(join(tempDir, 'package.json'), JSON.stringify(packageJson, null, 2));
+
+    // Create source file
+    const srcDir = join(tempDir, 'src');
+    mkdirSync(srcDir);
+    writeFileSync(join(srcDir, 'index.ts'), 'export const hello = "world";');
+
+    // Initial commit and tag
+    await git.add('.');
+    const commitResult = await git.commit('Initial commit');
+    const commitHash = commitResult.commit;
+    await git.tag(['v1.2.3']);
+
+    // Build with git metadata enabled
+    const distDir = join(tempDir, 'dist');
+    await build({
+      root: tempDir,
+      plugins: [screwUp({
+        outputKeys: ['name', 'version', 'author', 'git.commit.hash', 'git.commit.shortHash', 'git.commit.date', 'git.commit.message']
+      })],
+      build: {
+        lib: {
+          entry: join(srcDir, 'index.ts'),
+          name: 'GitMetadataTest',
+          fileName: 'index',
+          formats: ['es']
+        },
+        outDir: distDir,
+        minify: false
+      }
+    });
+
+    // Check if git metadata is inserted in banner
+    const outputPath = join(distDir, 'index.mjs');
+    expect(existsSync(outputPath)).toBe(true);
+    
+    const output = readFileSync(outputPath, 'utf-8');
+    expect(output).toContain('name: git-metadata-test');
+    expect(output).toContain('version: 1.2.3'); // From git tag
+    expect(output).toContain('author: Test Author');
+    expect(output).toContain(`git.commit.hash: ${commitHash}`);
+    expect(output).toContain(`git.commit.shortHash: ${commitHash.substring(0, 7)}`);
+    expect(output).toContain('git.commit.date:'); // Date should be present
+    expect(output).toContain('git.commit.message: Initial commit');
+  }, 30000);
+
+  it('should use git tag version when package.json has no version', async () => {
+    // Initialize git repository
+    const git = simpleGit(tempDir);
+    await git.init();
+    await git.addConfig('user.name', 'Test User');
+    await git.addConfig('user.email', 'test@example.com');
+
+    // Create package.json WITHOUT version field
+    const packageJson = {
+      name: 'git-version-test',
+      description: 'Test git version fallback',
+      author: 'Test Author',
+      license: 'Apache-2.0'
+    };
+    writeFileSync(join(tempDir, 'package.json'), JSON.stringify(packageJson, null, 2));
+
+    // Create source file
+    const srcDir = join(tempDir, 'src');
+    mkdirSync(srcDir);
+    writeFileSync(join(srcDir, 'index.ts'), 'export const version = "from-git";');
+
+    // Initial commit and tag with semantic version
+    await git.add('.');
+    await git.commit('Initial commit');
+    await git.tag(['v2.1.0']);
+
+    // Build with default settings
+    const distDir = join(tempDir, 'dist');
+    await build({
+      root: tempDir,
+      plugins: [screwUp()], // Uses default outputKeys including 'version'
+      build: {
+        lib: {
+          entry: join(srcDir, 'index.ts'),
+          name: 'GitVersionTest',
+          fileName: 'index',
+          formats: ['es']
+        },
+        outDir: distDir,
+        minify: false
+      }
+    });
+
+    // Check if git tag version is used in banner
+    const outputPath = join(distDir, 'index.mjs');
+    expect(existsSync(outputPath)).toBe(true);
+    
+    const output = readFileSync(outputPath, 'utf-8');
+    expect(output).toContain('name: git-version-test');
+    expect(output).toContain('version: 2.1.0'); // Should come from git tag, not package.json
+    expect(output).toContain('description: Test git version fallback');
+  }, 30000);
+
+  it('should increment version for dirty working directory', async () => {
+    // Initialize git repository
+    const git = simpleGit(tempDir);
+    await git.init();
+    await git.addConfig('user.name', 'Test User');  
+    await git.addConfig('user.email', 'test@example.com');
+
+    // Create package.json
+    const packageJson = {
+      name: 'dirty-repo-test',
+      description: 'Test dirty working directory version increment',
+      license: 'MIT'
+    };
+    writeFileSync(join(tempDir, 'package.json'), JSON.stringify(packageJson, null, 2));
+
+    // Create source file
+    const srcDir = join(tempDir, 'src');
+    mkdirSync(srcDir);
+    writeFileSync(join(srcDir, 'index.ts'), 'export const initial = true;');
+
+    // Initial commit and tag
+    await git.add('.');
+    await git.commit('Initial commit');
+    await git.tag(['v1.0.0']);
+
+    // Make working directory dirty by adding untracked file
+    writeFileSync(join(srcDir, 'newfile.ts'), 'export const added = true;');
+
+    // Build with working directory check enabled (default)
+    const distDir = join(tempDir, 'dist');
+    await build({
+      root: tempDir,
+      plugins: [screwUp({
+        outputKeys: ['name', 'version', 'description'],
+        checkWorkingDirectoryStatus: true
+      })],
+      build: {
+        lib: {
+          entry: join(srcDir, 'index.ts'),
+          name: 'DirtyRepoTest',
+          fileName: 'index',
+          formats: ['es']
+        },
+        outDir: distDir,
+        minify: false
+      }
+    });
+
+    // Check if version was incremented due to dirty working directory
+    const outputPath = join(distDir, 'index.mjs');
+    expect(existsSync(outputPath)).toBe(true);
+    
+    const output = readFileSync(outputPath, 'utf-8');
+    expect(output).toContain('name: dirty-repo-test');
+    expect(output).toContain('version: 1.0.1'); // Should be incremented from 1.0.0
+    expect(output).toContain('description: Test dirty working directory version increment');
+  }, 30000);
+
+  it('should respect .gitignore when checking working directory status', async () => {
+    // Initialize git repository
+    const git = simpleGit(tempDir);
+    await git.init();
+    await git.addConfig('user.name', 'Test User');
+    await git.addConfig('user.email', 'test@example.com');
+
+    // Create package.json
+    const packageJson = {
+      name: 'gitignore-test',
+      description: 'Test .gitignore handling in working directory check',
+      license: 'MIT'
+    };
+    writeFileSync(join(tempDir, 'package.json'), JSON.stringify(packageJson, null, 2));
+
+    // Create .gitignore
+    writeFileSync(join(tempDir, '.gitignore'), '*.tmp\nnode_modules/\n.cache/\n');
+
+    // Create source file
+    const srcDir = join(tempDir, 'src');
+    mkdirSync(srcDir);
+    writeFileSync(join(srcDir, 'index.ts'), 'export const test = true;');
+
+    // Initial commit and tag
+    await git.add('.');
+    await git.commit('Initial commit with .gitignore');
+    await git.tag(['v2.0.0']);
+
+    // Add ignored files (should not trigger version increment)
+    writeFileSync(join(tempDir, 'temp.tmp'), 'temporary file');
+    mkdirSync(join(tempDir, 'node_modules'), { recursive: true });
+    writeFileSync(join(tempDir, 'node_modules', 'package.json'), '{}');
+
+    // Build with working directory check enabled
+    const distDir = join(tempDir, 'dist');
+    await build({
+      root: tempDir,
+      plugins: [screwUp({
+        outputKeys: ['name', 'version'],
+        checkWorkingDirectoryStatus: true
+      })],
+      build: {
+        lib: {
+          entry: join(srcDir, 'index.ts'),
+          name: 'GitignoreTest',
+          fileName: 'index',
+          formats: ['es']
+        },
+        outDir: distDir,
+        minify: false
+      }
+    });
+
+    // Check that version was NOT incremented (ignored files don't count)
+    const outputPath = join(distDir, 'index.mjs');
+    expect(existsSync(outputPath)).toBe(true);
+    
+    const output = readFileSync(outputPath, 'utf-8');
+    expect(output).toContain('name: gitignore-test');
+    expect(output).toContain('version: 2.0.0'); // Should NOT be incremented
+  }, 30000);
+
+  it('should generate metadata file with git information', async () => {
+    // Initialize git repository
+    const git = simpleGit(tempDir);
+    await git.init();
+    await git.addConfig('user.name', 'Test User');
+    await git.addConfig('user.email', 'test@example.com');
+
+    // Create package.json
+    const packageJson = {
+      name: 'git-metadata-file-test',
+      description: 'Test git metadata in generated file',
+      license: 'MIT'
+    };
+    writeFileSync(join(tempDir, 'package.json'), JSON.stringify(packageJson, null, 2));
+
+    // Create source file
+    const srcDir = join(tempDir, 'src');
+    mkdirSync(srcDir);
+    writeFileSync(join(srcDir, 'index.ts'), 'export const app = "test";');
+
+    // Initial commit and tag
+    await git.add('.');
+    const commitResult = await git.commit('Add metadata file test');
+    const commitHash = commitResult.commit;
+    await git.tag(['v3.1.0']);
+
+    // Build with metadata file generation enabled
+    const distDir = join(tempDir, 'dist');
+    await build({
+      root: tempDir,
+      plugins: [screwUp({
+        outputMetadataFile: true,
+        outputMetadataKeys: ['name', 'version', 'git.commit.hash', 'git.commit.message']
+      })],
+      build: {
+        lib: {
+          entry: join(srcDir, 'index.ts'),
+          name: 'GitMetadataFileTest',
+          fileName: 'index',
+          formats: ['es']
+        },
+        outDir: distDir,
+        minify: false
+      }
+    });
+
+    // Check if metadata file contains git information
+    const metadataPath = join(tempDir, 'src', 'generated', 'packageMetadata.ts');
+    expect(existsSync(metadataPath)).toBe(true);
+    
+    const metadataContent = readFileSync(metadataPath, 'utf-8');
+    expect(metadataContent).toContain('export const name = "git-metadata-file-test";');
+    expect(metadataContent).toContain('export const version = "3.1.0";');
+    expect(metadataContent).toContain(`export const git_commit_hash = "${commitHash}";`);
+    expect(metadataContent).toContain('export const git_commit_message = "Add metadata file test";');
+  }, 30000);
+
+  it('should handle complex git history with branches and merges', async () => {
+    // Initialize git repository
+    const git = simpleGit(tempDir);
+    await git.init();
+    await git.addConfig('user.name', 'Test User');
+    await git.addConfig('user.email', 'test@example.com');
+
+    // Create package.json
+    const packageJson = {
+      name: 'complex-git-test',
+      description: 'Test complex git history',
+      license: 'MIT'
+    };
+    writeFileSync(join(tempDir, 'package.json'), JSON.stringify(packageJson, null, 2));
+
+    // Create source file
+    const srcDir = join(tempDir, 'src');
+    mkdirSync(srcDir);
+    writeFileSync(join(srcDir, 'index.ts'), 'export const version = "1.0.0";');
+
+    // Initial commit and tag
+    await git.add('.');
+    await git.commit('Initial commit');
+    await git.tag(['v1.0.0']);
+
+    // Create feature branch with higher version tag
+    await git.checkoutLocalBranch('feature');
+    writeFileSync(join(srcDir, 'feature.ts'), 'export const feature = true;');
+    await git.add('.');
+    await git.commit('Add feature');
+    await git.tag(['v2.0.0']); // Higher version on feature branch
+
+    // Switch back to main and merge
+    await git.checkout('main');
+    await git.merge(['feature', '--no-ff', '-m', 'Merge feature branch']);
+
+    // Build and verify highest version is used
+    const distDir = join(tempDir, 'dist');
+    await build({
+      root: tempDir,
+      plugins: [screwUp({
+        outputKeys: ['name', 'version', 'git.commit.message']
+      })],
+      build: {
+        lib: {
+          entry: join(srcDir, 'index.ts'),
+          name: 'ComplexGitTest',
+          fileName: 'index',
+          formats: ['es']
+        },
+        outDir: distDir,
+        minify: false
+      }
+    });
+
+    // Check that highest version from git history is used
+    const outputPath = join(distDir, 'index.mjs');
+    expect(existsSync(outputPath)).toBe(true);
+    
+    const output = readFileSync(outputPath, 'utf-8');
+    expect(output).toContain('name: complex-git-test');
+    expect(output).toContain('version: 2.0.1'); // Should be incremented from highest tag v2.0.0
+    expect(output).toContain('git.commit.message: Merge feature branch');
   }, 30000);
 });
