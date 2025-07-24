@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm } from 'fs/promises';
+import { mkdtemp, rm, mkdir } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { simpleGit } from 'simple-git';
@@ -585,6 +585,202 @@ describe('git-metadata', () => {
 
       // Verify: Should detect modifications
       expect(metadata.git.version).toBe(checkWorkingDirectoryStatus ? '0.0.2' : '0.0.1');
+    });
+  });
+
+  describe('.gitignore handling', () => {
+    it('should exclude ignored files from version increment detection', async () => {
+      // Setup: Create repository with .gitignore
+      await testRepo.createFile('README.md', '# Test Project');
+      await testRepo.commit('Initial commit');
+      await testRepo.createTag('v1.0.0');
+
+      // Create .gitignore file
+      await testRepo.createFile('.gitignore', 'temp.txt\n*.log\nnode_modules/\n');
+      await testRepo.commit('Add .gitignore');
+
+      // Create ignored files (should not trigger version increment)
+      await testRepo.createFile('temp.txt', 'temporary content');
+      await testRepo.createFile('debug.log', 'log content');
+      
+      // Test: Extract git metadata with working directory check
+      const metadata = await getGitMetadata(testRepo.path, true);
+
+      // Verify: Should not increment version because all files are ignored
+      expect(metadata.git.version).toBe('1.0.1'); // Only increment for .gitignore commit
+    });
+
+    it('should include ignored files except version increment detection', async () => {
+      // Setup: Create repository with .gitignore
+      await testRepo.createFile('README.md', '# Test Project');
+      await testRepo.commit('Initial commit');
+      await testRepo.createTag('v1.0.0');
+
+      // Create .gitignore file
+      await testRepo.createFile('.gitignore', 'test.txt\n*.log\ntemp/\n');
+      await testRepo.commit('Add .gitignore');
+
+      // Create mix of ignored and non-ignored files
+      await testRepo.createFile('debug.log', 'log content'); // ignored
+      await testRepo.createFile('test.txt', 'test content'); // ignored
+      
+      // Test: Extract git metadata with working directory check
+      const metadata = await getGitMetadata(testRepo.path, true);
+
+      // Verify: Should not increment version because all files are ignored
+      expect(metadata.git.version).toBe('1.0.1'); // .gitignore commit
+    });
+
+    it('should include non-ignored files in version increment detection', async () => {
+      // Setup: Create repository with .gitignore
+      await testRepo.createFile('README.md', '# Test Project');
+      await testRepo.commit('Initial commit');
+      await testRepo.createTag('v1.0.0');
+
+      // Create .gitignore file
+      await testRepo.createFile('.gitignore', '*.log\ntemp/\n');
+      await testRepo.commit('Add .gitignore');
+
+      // Create mix of ignored and non-ignored files
+      await testRepo.createFile('debug.log', 'log content'); // ignored
+      await testRepo.createFile('important.txt', 'important content'); // not ignored
+      
+      // Test: Extract git metadata with working directory check
+      const metadata = await getGitMetadata(testRepo.path, true);
+
+      // Verify: Should increment version because important.txt is not ignored
+      expect(metadata.git.version).toBe('1.0.2'); // .gitignore commit + untracked file
+    });
+
+    it('should handle subdirectory .gitignore files', async () => {
+      // Setup: Create repository with subdirectory structure
+      await testRepo.createFile('README.md', '# Test Project');
+      await testRepo.commit('Initial commit');
+      await testRepo.createTag('v1.0.0');
+
+      // Create subdirectory with its own .gitignore
+      await mkdir(join(testRepo.path, 'src'), { recursive: true });
+      await testRepo.createFile('src/.gitignore', '*.tmp\ndebug/\n');
+      await testRepo.commit('Add src/.gitignore');
+
+      // Create files in subdirectory - mix of ignored and non-ignored
+      await testRepo.createFile('src/temp.tmp', 'temp content'); // ignored by src/.gitignore
+      await testRepo.createFile('src/code.js', 'console.log("hello");'); // not ignored
+      
+      // Test: Extract git metadata with working directory check
+      const metadata = await getGitMetadata(testRepo.path, true);
+
+      // Verify: Should increment version because code.js is not ignored
+      expect(metadata.git.version).toBe('1.0.2'); // src/.gitignore commit + untracked file
+    });
+
+    it('should handle complex .gitignore patterns', async () => {
+      // Setup: Create repository with complex .gitignore patterns
+      await testRepo.createFile('README.md', '# Test Project');
+      await testRepo.commit('Initial commit');
+      await testRepo.createTag('v1.0.0');
+
+      // Create .gitignore with various patterns
+      const gitignoreContent = `# Logs
+*.log
+logs/
+
+# Dependencies
+node_modules/
+bower_components/
+
+# Build outputs
+dist/
+build/
+*.min.js
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+.cache/
+
+# But include some exceptions
+!important.log
+!dist/index.html
+`;
+      await testRepo.createFile('.gitignore', gitignoreContent);
+      await testRepo.commit('Add comprehensive .gitignore');
+
+      // Create various files matching different patterns
+      await testRepo.createFile('debug.log', 'debug content'); // ignored
+      await testRepo.createFile('important.log', 'important content'); // exception - not ignored
+      await testRepo.createFile('app.min.js', 'minified js'); // ignored
+      await testRepo.createFile('regular.js', 'regular js'); // not ignored
+      await testRepo.createFile('temp.tmp', 'temp'); // ignored
+      
+      // Test: Extract git metadata with working directory check
+      const metadata = await getGitMetadata(testRepo.path, true);
+
+      // Verify: Should increment version because important.log and regular.js are not ignored
+      expect(metadata.git.version).toBe('1.0.2'); // .gitignore commit + untracked files
+    });
+
+    it('should handle nested .gitignore files with different rules', async () => {
+      // Setup: Create repository with nested .gitignore structure
+      await testRepo.createFile('README.md', '# Test Project');
+      await testRepo.commit('Initial commit');
+      await testRepo.createTag('v1.0.0');
+
+      // Root .gitignore
+      await testRepo.createFile('.gitignore', '*.log\ntemp/\n');
+      
+      // Create nested directory structure
+      await mkdir(join(testRepo.path, 'src/utils'), { recursive: true });
+      
+      // Subdirectory .gitignore with different rules
+      await testRepo.createFile('src/.gitignore', '*.tmp\n!important.tmp\n');
+      await testRepo.createFile('src/utils/.gitignore', '*.cache\n');
+      
+      await testRepo.commit('Add nested .gitignore files');
+
+      // Create files at different levels
+      await testRepo.createFile('app.log', 'app logs'); // ignored by root
+      await testRepo.createFile('config.txt', 'config'); // not ignored
+      await testRepo.createFile('src/temp.tmp', 'temp'); // ignored by src/
+      await testRepo.createFile('src/important.tmp', 'important'); // exception in src/
+      await testRepo.createFile('src/code.js', 'code'); // not ignored
+      await testRepo.createFile('src/utils/data.cache', 'cache'); // ignored by src/utils/
+      await testRepo.createFile('src/utils/helper.js', 'helper'); // not ignored
+      
+      // Test: Extract git metadata with working directory check
+      const metadata = await getGitMetadata(testRepo.path, true);
+
+      // Verify: Should increment version for non-ignored files
+      // config.txt, src/important.tmp, src/code.js, src/utils/helper.js are not ignored
+      expect(metadata.git.version).toBe('1.0.2'); // .gitignore commits + untracked files
+    });
+
+    it('should handle .gitignore with working directory status disabled', async () => {
+      // Setup: Create repository with .gitignore
+      await testRepo.createFile('README.md', '# Test Project');
+      await testRepo.commit('Initial commit');
+      await testRepo.createTag('v1.0.0');
+
+      await testRepo.createFile('.gitignore', '*.tmp\n');
+      await testRepo.commit('Add .gitignore');
+
+      // Create files that would normally be ignored
+      await testRepo.createFile('temp.tmp', 'temp content');
+      await testRepo.createFile('important.txt', 'important content');
+      
+      // Test: Extract git metadata without working directory check
+      const metadata = await getGitMetadata(testRepo.path, false);
+
+      // Verify: Should not check working directory status at all
+      expect(metadata.git.version).toBe('1.0.1'); // Only .gitignore commit, no working dir check
     });
   });
 });

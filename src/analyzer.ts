@@ -330,7 +330,8 @@ const getRelatedBranches = async (repositoryPath: string, commitHash: string): P
 };
 
 /**
- * Check if the repository has modified files.
+ * Check if the repository has modified files (following RelaxVersioner logic).
+ * Checks for staged files, unstaged files, and untracked files (respecting .gitignore).
  * @param repositoryPath - Local Git repository directory
  * @returns True if the repository has modified files, false otherwise
  */
@@ -341,14 +342,32 @@ const hasModifiedFiles = async (repositoryPath: string): Promise<boolean> => {
     // headStatus: 0=absent, 1=present
     // workdirStatus: 0=absent, 1=present, 2=modified
     // stageStatus: 0=absent, 1=present, 2=modified, 3=added
+    // By default, ignored files are excluded (ignored: false)
     return status.some(([, head, workdir, stage]) => 
-      workdir === 2 || // modified in working directory
-      stage === 2 ||   // modified in stage
-      stage === 3 ||   // added to stage
-      (head === 1 && workdir === 0) // deleted from working directory
+      workdir === 2 ||     // modified in working directory (unstaged)
+      stage === 2 ||       // modified in stage (staged)  
+      stage === 3 ||       // added to stage (staged)
+      (head === 1 && workdir === 0) ||  // deleted from working directory
+      (head === 0 && workdir === 1)     // untracked files (respecting .gitignore)
     );
   } catch {
     return false;
+  }
+};
+
+/**
+ * Get untracked files respecting .gitignore
+ * @param repositoryPath - Local Git repository directory
+ * @returns Array of untracked file paths
+ */
+const getUntrackedFiles = async (repositoryPath: string): Promise<string[]> => {
+  try {
+    const status = await git.statusMatrix({ fs, dir: repositoryPath });
+    return status
+      .filter(([, head, workdir]) => head === 0 && workdir === 1)  // untracked files
+      .map(([filepath]) => filepath);
+  } catch {
+    return [];
   }
 };
 
