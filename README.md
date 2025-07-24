@@ -37,6 +37,7 @@ To insert banner header each bundled source files (`dist/index.js` and etc.):
  * author: Jane Developer <jane@example.com>
  * license: Apache-2.0
  * repository.url: https://github.com/user/my-awesome-library
+ * git.commit.hash: c94eaf71dcc6522aae593c7daf85bb745112caf0
  */
 // Your bundled code here...
 ```
@@ -49,6 +50,7 @@ To insert banner header each bundled source files (`dist/index.js` and etc.):
 * Nested object support: Handles nested objects like `author.name`, `repository.url`.
 * Customizable: Choose which metadata fields to include in your banner.
 * TypeScript metadata generation: Automatically generates TypeScript files with metadata constants for use in your source code.
+* Git metadata extraction: Automatically extracts Git commit hash, tags, branches, and version information from local Git repository.
 * Supported pack/publish CLI interface. When publishing using this feature, the package is generated after applying the above processing to `package.json`.
 
 ## Installation
@@ -84,7 +86,7 @@ export default defineConfig({
 ```
 
 When no `outputKeys` are specified, the plugin uses these default keys with exact sequence:
-`name`, `version`, `description`, `author`, `license` and `repository.url`.
+`name`, `version`, `description`, `author`, `license`, `repository.url` and `git.commit.hash`.
 
 ### Custom Output Keys
 
@@ -217,6 +219,49 @@ Keys with special characters are automatically sanitized to valid TypeScript ide
 - `custom-key` → `custom_key`
 - `123invalid` → `_123invalid`
 
+### Git Metadata
+
+The plugin automatically extracts Git metadata from your local Git repository and makes it available as metadata keys:
+
+#### Available Git Metadata
+
+- `git.version`: Automatically computed version based on Git tags using RelaxVersioner algorithm
+- `git.commit.hash`: Full commit hash of the current commit
+- `git.commit.short`: Short commit hash (first 7 characters)
+- `git.commit.date`: Commit date in ISO format
+- `git.commit.message`: Commit message
+- `git.tags`: Array of all tags pointing to the current commit
+- `git.branches`: Array of branches containing the current commit
+
+#### Version Calculation
+
+The Git version follows the RelaxVersioner algorithm:
+
+1. Tagged commits: Uses the tag version directly (e.g., `v1.2.3` → `1.2.3`)
+2. Untagged commits: Finds the nearest ancestor tag and increments the last version component
+3. Modified working directory: When uncommitted changes exist, increments the version by one
+4. No tags found: Defaults to `0.0.1` and increments for each commit
+
+Example with Git metadata:
+
+```typescript
+screwUp({
+  outputKeys: ['name', 'version', 'git.version', 'git.commit.hash', 'git.commit.short']
+})
+```
+
+Results in:
+
+```javascript
+/*!
+ * name: my-awesome-library
+ * version: 2.1.0
+ * git.version: 1.2.4
+ * git.commit.hash: c94eaf71dcc6522aae593c7daf85bb745112caf0
+ * git.commit.short: c94eaf7
+ */
+```
+
 ----
 
 ## Advanced Usage
@@ -322,6 +367,11 @@ The pack command:
 - Supports workspace inheritance (inherits metadata from parent packages)
 - Creates a compressed `.tgz` archive with format: `{name}-{version}.tgz`
 
+#### Options
+
+- `--pack-destination <path>`: Specify output directory for the archive
+- `--no-wds`: Disable working directory status check for version increment (bypasses RelaxVersioner's modified file detection)
+
 ### Publish Command
 
 Publish your project to registry server:
@@ -346,6 +396,11 @@ The publish command:
 - Can publish from directory (automatically creates archive) or existing tarball
 - Handles workspace packages with proper metadata inheritance
 - Uses the same packaging logic as the pack command
+
+#### Options
+
+- `--no-wds`: Disable working directory status check for version increment
+- All `npm publish` options are supported (e.g., `--dry-run`, `--tag`, `--access`, `--registry`)
 
 ### Examples
 

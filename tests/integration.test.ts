@@ -3,9 +3,9 @@ import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, mkdtempSync
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { build } from 'vite';
-import { readPackageMetadata, findWorkspaceRoot, mergePackageMetadata, resolvePackageMetadata } from '../src/internal.js';
-import screwUp, { generateBanner } from '../src/index.js';
 import dayjs from 'dayjs';
+import { findWorkspaceRoot, mergePackageMetadata, resolvePackageMetadata } from '../src/internal.js';
+import { screwUp, generateBanner } from '../src/vite-plugin.js';
 
 describe('screwUp plugin integration tests', () => {
   const tempBaseDir = join(tmpdir(), 'screw-up', 'integration-test', dayjs().format('YYYYMMDD_HHmmssSSS'));
@@ -64,26 +64,6 @@ describe('screwUp plugin integration tests', () => {
     const expectedBanner = '';
     expect(banner).toBe(expectedBanner);
   })
-
-  it('should read package metadata correctly', async () => {
-    const packageJson = {
-      name: 'test-package',
-      version: '1.0.0',
-      description: 'A test package',
-      author: 'Test Author',
-      license: 'MIT'
-    };
-
-    const packagePath = join(tempDir, 'package.json');
-    writeFileSync(packagePath, JSON.stringify(packageJson, null, 2));
-
-    const metadata = await readPackageMetadata(packagePath);
-    expect(metadata.name).toBe('test-package');
-    expect(metadata.version).toBe('1.0.0');
-    expect(metadata.description).toBe('A test package');
-    expect(metadata.author).toBe('Test Author');
-    expect(metadata.license).toBe('MIT');
-  });
 
   it('should build with banner inserted', async () => {
     // Create test package.json
@@ -439,7 +419,7 @@ describe('workspace functionality tests', () => {
   });
 
 
-  it('should merge package metadata correctly', () => {
+  it('should merge package metadata correctly', async () => {
     const parentMetadata = {
       name: 'parent',
       version: '1.0.0',
@@ -452,7 +432,7 @@ describe('workspace functionality tests', () => {
       description: 'Child package'
     };
 
-    const merged = mergePackageMetadata(parentMetadata, childMetadata);
+    const merged = await mergePackageMetadata(parentMetadata, childMetadata, tempDir, true);
     expect(merged.name).toBe('child'); // Child overrides
     expect(merged.version).toBe('1.0.0'); // Inherited from parent
     expect(merged.author).toBe('Parent Author'); // Inherited from parent
@@ -469,7 +449,7 @@ describe('workspace functionality tests', () => {
     };
     writeFileSync(join(tempDir, 'package.json'), JSON.stringify(packageJson, null, 2));
 
-    const metadata = await resolvePackageMetadata(tempDir);
+    const metadata = await resolvePackageMetadata(tempDir, true);
     expect(metadata.name).toBe('standalone');
     expect(metadata.version).toBe('2.0.0');
     expect(metadata.author).toBe('Standalone Author');
@@ -495,7 +475,7 @@ describe('workspace functionality tests', () => {
     };
     writeFileSync(join(childDir, 'package.json'), JSON.stringify(childPackageJson, null, 2));
 
-    const metadata = await resolvePackageMetadata(childDir);
+    const metadata = await resolvePackageMetadata(childDir, true);
     expect(metadata.name).toBe('child-package'); // From child
     expect(metadata.version).toBe('1.0.0'); // Inherited from root
     expect(metadata.author).toBe('Workspace Author'); // Inherited from root

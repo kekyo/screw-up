@@ -1,6 +1,6 @@
 {
   "name": "screw-up",
-  "version": "0.8.3",
+  "version": "0.9.4",
   "description": "Simply package metadata inserter on Vite plugin",
   "keywords": [
     "vite",
@@ -38,15 +38,17 @@
     "test": "rv --npm . && npm i && npm run build && vitest run"
   },
   "peerDependencies": {
+    "dayjs": ">=1.11.0",
     "glob": ">=11.0.0",
+    "isomorphic-git": ">=1.30.0",
     "tar-stream": ">=3.0.0",
     "vite": ">=5.0.0"
   },
   "devDependencies": {
     "@types/node": ">=20.0.0",
-    "@types/tar-stream": "^3.1.4",
-    "dayjs": "^1.11.13",
+    "@types/tar-stream": ">=3.1.4",
     "tar": ">=7.4.0",
+    "simple-git": ">=3.0.0",
     "typescript": ">=5.0.0",
     "vite-plugin-dts": ">=3.0.0",
     "vitest": ">=1.0.0"

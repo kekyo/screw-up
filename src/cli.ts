@@ -35,6 +35,7 @@ Options:
 
 Pack Options:
   --pack-destination <path>     Directory to write the tarball
+  --no-wds                      Do not check working directory status to increase version
 
 Publish Options:
   All npm publish options are supported (e.g., --dry-run, --tag, --access, --registry)
@@ -60,6 +61,7 @@ Arguments:
 
 Options:
   --pack-destination <path>     Directory to write the tarball
+  --no-wds                      Do not check working directory status to increase version
   -h, --help                    Show help for pack command
 `);
 };
@@ -98,6 +100,7 @@ const packCommand = async (args: ParsedArgs) => {
 
   const directory = args.positional[0];
   const packDestination = args.options['pack-destination'] as string;
+  const checkWorkingDirectoryStatus = args.options['no-wds'] ? false : true;
 
   const targetDir = resolve(directory ?? process.cwd());
   const outputDir = packDestination ? resolve(packDestination) : process.cwd();
@@ -105,7 +108,7 @@ const packCommand = async (args: ParsedArgs) => {
   console.log(`[screw-up/cli]: pack: Creating archive of ${targetDir}...`);
 
   try {
-    const metadata = await packAssets(targetDir, outputDir);
+    const metadata = await packAssets(targetDir, outputDir, checkWorkingDirectoryStatus);
     if (metadata) {
       console.log(`[screw-up/cli]: pack: Archive created successfully: ${outputDir}`);
     } else {
@@ -126,7 +129,7 @@ const publishCommand = async (args: ParsedArgs) => {
     return;
   }
 
-  const runNpmPublish = async (tarballPath: string, npmOptions: string[] = []) => {
+  const runNpmPublish = async (tarballPath: string, npmOptions: string[]) => {
     console.log(`[screw-up/cli]: publish: Publishing ${tarballPath} to npm...`);
     
     const publishArgs = ['publish', tarballPath, ...npmOptions];
@@ -156,12 +159,13 @@ const publishCommand = async (args: ParsedArgs) => {
   };
 
   const path = args.positional[0];
-  
+  const checkWorkingDirectoryStatus = args.options['no-wds'] ? false : true;
+
   // Convert parsed options to npm options
   const npmOptions: string[] = [];
   Object.entries(args.options).forEach(([key, value]) => {
-    if (key === 'help' || key === 'h') return; // Skip help options
-    
+    if (key === 'help' || key === 'h' || key === 'no-wds') return; // Skip help and no-wds options
+
     if (value === true) {
       npmOptions.push(`--${key}`);
     } else {
@@ -178,7 +182,7 @@ const publishCommand = async (args: ParsedArgs) => {
       console.log(`[screw-up/cli]: publish: Creating archive of ${targetDir}...`);
 
       try {
-        const metadata = await packAssets(targetDir, outputDir);
+        const metadata = await packAssets(targetDir, outputDir, checkWorkingDirectoryStatus);
         if (metadata) {
           const archiveName = `${metadata.name}-${metadata.version}.tgz`;
           const archivePath = join(outputDir, archiveName);
@@ -204,7 +208,7 @@ const publishCommand = async (args: ParsedArgs) => {
         console.log(`[screw-up/cli]: publish: Creating archive of ${targetDir}...`);
 
         try {
-          const metadata = await packAssets(targetDir, outputDir);
+          const metadata = await packAssets(targetDir, outputDir, checkWorkingDirectoryStatus);
           if (metadata) {
             const archiveName = `${metadata.name}-${metadata.version}.tgz`;
             const archivePath = join(outputDir, archiveName);
