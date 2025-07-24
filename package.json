@@ -1,6 +1,5 @@
 {
   "name": "screw-up",
-  "version": "0.9.8",
   "description": "Simply package metadata inserter on Vite plugin",
   "keywords": [
     "vite",
@@ -16,6 +15,7 @@
     "url": "https://github.com/kekyo/screw-up.git"
   },
   "homepage": "https://github.com/kekyo/screw-up#readme",
+  "readme": "README_pack.md",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -31,11 +31,14 @@
     "screw-up": "./dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README_pack.md"
   ],
   "scripts": {
-    "build": "rv --npm . && npm i && vite build",
-    "test": "rv --npm . && npm i && npm run build && vitest run"
+    "build": "vite build",
+    "test": "npm run build && vitest run",
+    "dump": "npm run build && node dist/cli.js dump",
+    "pack": "npm run build && node dist/cli.js pack --pack-destination artifacts/"
   },
   "peerDependencies": {
     "dayjs": ">=1.11.0",
