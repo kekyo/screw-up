@@ -489,13 +489,18 @@ const lookupVersionLabelRecursive = async (
 export const getGitMetadata = async (repositoryPath: string, checkWorkingDirectoryStatus: boolean) => {
   const metadata: any = {};
 
-  if (!(await isGitRepository(repositoryPath))) {
+  // Try to find git root directory from the given path
+  let gitRootPath: string;
+  try {
+    gitRootPath = await git.findRoot({ fs, filepath: repositoryPath });
+  } catch {
+    // No git repository found
     return metadata;
   }
 
   try {
     // Get current commit
-    const currentCommit = await getCurrentCommit(repositoryPath);
+    const currentCommit = await getCurrentCommit(gitRootPath);
     if (!currentCommit) {
       return metadata;
     }
@@ -504,7 +509,7 @@ export const getGitMetadata = async (repositoryPath: string, checkWorkingDirecto
     const reachedCommits = new Map<string, Version>();
 
     // Lookup version
-    let version = await lookupVersionLabelRecursive(repositoryPath, currentCommit, reachedCommits);
+    let version = await lookupVersionLabelRecursive(gitRootPath, currentCommit, reachedCommits);
     
     // Set git metadata into 'git' key
     const gitMetadata: GitMetadata = { tags: [], branches: [] };
@@ -512,7 +517,7 @@ export const getGitMetadata = async (repositoryPath: string, checkWorkingDirecto
 
     if (version) {
       // Check for working directory changes and increment version if needed
-      const hasModified = checkWorkingDirectoryStatus && await hasModifiedFiles(repositoryPath);
+      const hasModified = checkWorkingDirectoryStatus && await hasModifiedFiles(gitRootPath);
       if (hasModified) {
         version = incrementLastVersionComponent(version);
       }
@@ -531,11 +536,11 @@ export const getGitMetadata = async (repositoryPath: string, checkWorkingDirecto
     };
 
     // Try to find the actual tag name if it exists
-    const relatedTags = await getRelatedTags(repositoryPath, currentCommit.hash);
+    const relatedTags = await getRelatedTags(gitRootPath, currentCommit.hash);
     gitMetadata.tags = relatedTags.map(tag => tag.name);
 
     // Get branch information
-    const relatedBranches = await getRelatedBranches(repositoryPath, currentCommit.hash);
+    const relatedBranches = await getRelatedBranches(gitRootPath, currentCommit.hash);
     gitMetadata.branches = relatedBranches;
   } catch (error) {
     // If any error occurs, return empty metadata
