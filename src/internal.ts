@@ -6,6 +6,7 @@
 import { existsSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { dirname, join } from 'path';
+import JSON5 from 'json5';
 import { getGitMetadata } from './analyzer.js';
 import { PackageMetadata } from './types.js';
 
@@ -197,12 +198,12 @@ const resolvePackageMetadataT = async <T>(
 const readPackageMetadata = async (packagePath: string): Promise<PackageMetadata> => {
   try {
     const content = await readFile(packagePath, 'utf-8');
-    const json = JSON.parse(content);
+    const json = JSON5.parse(content);
     const map: PackageMetadata = {};
     flattenObject(json, '', map);
     return map;
   } catch (error) {
-    console.warn(`Failed to read package.json from ${packagePath}:`, error);
+    console.error(`Failed to read package.json from ${packagePath}:`, error);
     return {};
   }
 };
@@ -228,7 +229,7 @@ export const resolvePackageMetadata = (projectRoot: string, checkWorkingDirector
 const readRawPackageJson = async (packagePath: string): Promise<any> => {
   try {
     const content = await readFile(packagePath, 'utf-8');
-    return JSON.parse(content);
+    return JSON5.parse(content);
   } catch (error) {
     console.error(`Failed to read package.json from ${packagePath}:`, error);
     throw error;
