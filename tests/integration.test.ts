@@ -353,6 +353,180 @@ export declare function createTest(name: string): TestInterface;
     expect(txtContent).not.toContain('name: custom-assets-lib');
     expect(txtContent).toBe('This is a text file.\n');
   }, 30000);
+
+  it('should not insert banner when insertMetadataBanner is false', async () => {
+    // Create test package.json
+    const packageJson = {
+      name: 'no-banner-test',
+      version: '1.0.0',
+      description: 'Test with banner insertion disabled',
+      author: 'Test Author',
+      license: 'MIT'
+    };
+    writeFileSync(join(tempDir, 'package.json'), JSON.stringify(packageJson, null, 2));
+
+    // Create test source file
+    const srcDir = join(tempDir, 'src')
+    mkdirSync(srcDir)
+    writeFileSync(join(srcDir, 'index.ts'), `
+export function hello(name: string): string {
+  return \`Hello, \${name}!\`;
+}
+`)
+
+    // Build with banner insertion disabled
+    const distDir = join(tempDir, 'dist');
+    await build({
+      root: tempDir,
+      plugins: [screwUp({ insertMetadataBanner: false })],
+      build: {
+        lib: {
+          entry: join(srcDir, 'index.ts'),
+          name: 'NoBannerTest',
+          fileName: 'index',
+          formats: ['es']
+        },
+        outDir: distDir,
+        minify: false
+      }
+    });
+
+    // Check that banner is NOT inserted
+    const outputPath = join(distDir, 'index.mjs');
+    expect(existsSync(outputPath)).toBe(true);
+    
+    const output = readFileSync(outputPath, 'utf-8');
+    expect(output).not.toContain('name: no-banner-test');
+    expect(output).not.toContain('version: 1.0.0');
+    expect(output).not.toContain('/*!');
+    expect(output).toContain('function hello'); // Verify the actual code is still there
+  }, 30000);
+
+  it('should not insert banner to asset files when insertMetadataBanner is false', async () => {
+    const packageJson = {
+      name: 'no-asset-banner-test',
+      version: '2.0.0',
+      description: 'Test asset banner insertion disabled',
+      author: 'Test Author',
+      license: 'Apache-2.0'
+    };
+    writeFileSync(join(tempDir, 'package.json'), JSON.stringify(packageJson, null, 2));
+
+    const srcDir = join(tempDir, 'src');
+    mkdirSync(srcDir);
+    writeFileSync(join(srcDir, 'index.ts'), `
+export interface TestInterface {
+  name: string;
+  version: number;
+}
+
+export function createTest(name: string): TestInterface {
+  return { name, version: 1 };
+}
+`);
+
+    const distDir = join(tempDir, 'dist');
+    await build({
+      root: tempDir,
+      plugins: [
+        {
+          name: 'dts-generator',
+          generateBundle() {
+            // Simulate .d.ts file generation
+            this.emitFile({
+              type: 'asset',
+              fileName: 'index.d.ts',
+              source: `export interface TestInterface {
+  name: string;
+  version: number;
+}
+
+export declare function createTest(name: string): TestInterface;
+`
+            });
+          }
+        },
+        screwUp({ insertMetadataBanner: false }) // Banner insertion disabled
+      ],
+      build: {
+        lib: {
+          entry: join(srcDir, 'index.ts'),
+          name: 'NoAssetBannerTest',
+          fileName: 'index',
+          formats: ['es']
+        },
+        outDir: distDir,
+        minify: false
+      }
+    });
+
+    // Check that banner is NOT added to .d.ts file
+    const dtsPath = join(distDir, 'index.d.ts');
+    expect(existsSync(dtsPath)).toBe(true);
+    
+    const dtsContent = readFileSync(dtsPath, 'utf-8');
+    expect(dtsContent).not.toContain('name: no-asset-banner-test');
+    expect(dtsContent).not.toContain('/*!');
+    expect(dtsContent).toContain('export interface TestInterface'); // Verify the actual content is still there
+  }, 30000);
+
+  it('should not process files in writeBundle when insertMetadataBanner is false', async () => {
+    const packageJson = {
+      name: 'no-writebundle-banner-test',
+      version: '1.5.0',
+      license: 'Apache-2.0'
+    };
+    writeFileSync(join(tempDir, 'package.json'), JSON.stringify(packageJson, null, 2));
+
+    const srcDir = join(tempDir, 'src');
+    mkdirSync(srcDir);
+    writeFileSync(join(srcDir, 'index.ts'), 'export const name = "test"');
+
+    const distDir = join(tempDir, 'dist');
+    
+    // Build first to create the dist directory
+    await build({
+      root: tempDir,
+      plugins: [screwUp({ insertMetadataBanner: false, assetFilters: ['\\.d\\.ts$'] })],
+      build: {
+        lib: {
+          entry: join(srcDir, 'index.ts'),
+          name: 'NoWriteBundleBannerTest',
+          fileName: 'index',
+          formats: ['es']
+        },
+        outDir: distDir,
+        minify: false
+      }
+    });
+    
+    // Create files that simulate what other plugins would generate after the build
+    const externalDtsPath = join(distDir, 'external.d.ts');
+    writeFileSync(externalDtsPath, 'export declare const external: string;');
+
+    // Second build to trigger writeBundle which processes existing files
+    await build({
+      root: tempDir,
+      plugins: [screwUp({ insertMetadataBanner: false, assetFilters: ['\\.d\\.ts$'] })],
+      build: {
+        lib: {
+          entry: join(srcDir, 'index.ts'),
+          name: 'NoWriteBundleBannerTest',
+          fileName: 'index',
+          formats: ['es']
+        },
+        outDir: distDir,
+        minify: false,
+        emptyOutDir: false // Don't empty the dist directory
+      }
+    });
+
+    // Check that banner was NOT added to external file
+    const externalContent = readFileSync(externalDtsPath, 'utf-8');
+    expect(externalContent).not.toContain('name: no-writebundle-banner-test');
+    expect(externalContent).not.toContain('/*!');
+    expect(externalContent).toBe('export declare const external: string;'); // Content should be unchanged
+  }, 30000);
 });
 
 describe('workspace functionality tests', () => {

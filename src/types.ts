@@ -28,6 +28,11 @@ export interface GitMetadata {
  */
 export interface ScrewUpOptions {
   /**
+   * Insert metadata banner to output files
+   * @default true
+   */
+  insertMetadataBanner?: boolean;
+  /**
    * Array of keys to output in banner in the specified order
    * @default ['name', 'version', 'description', 'author', 'license', 'repository.url', 'git.commit.hash']
    */
@@ -35,6 +40,7 @@ export interface ScrewUpOptions {
   /**
    * Array of asset file regex to add banner to
    * @default ['\.d\.ts$']
+   * @remarks Some output source files (includes '*.d.ts') are grouped into "Asset files" and are not included in the output. This option is used to specify the regex of asset files to add banner to.
    */
   assetFilters?: string[];
   /**

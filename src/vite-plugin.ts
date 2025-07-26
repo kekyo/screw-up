@@ -98,7 +98,8 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
     outputMetadataFile = false,
     outputMetadataFilePath = 'src/generated/packageMetadata.ts',
     outputMetadataKeys = ['name', 'version', 'description', 'author', 'license', 'repository.url', 'git.commit.hash'],
-    checkWorkingDirectoryStatus = true} = options;
+    checkWorkingDirectoryStatus = true,
+    insertMetadataBanner = true} = options;
 
   const assetFiltersRegex = assetFilters.map(filter => new RegExp(filter));
   let banner: string;
@@ -136,22 +137,24 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
     },
     // Generate bundle phase
     generateBundle: (_options, bundle) => {
-      // Add banner to each output file
-      for (const fileName in bundle) {
-        const chunk = bundle[fileName];
-        if (chunk.type === 'chunk') {
-          chunk.code = insertBannerHeader(chunk.code, banner);
-        } else if (chunk.type === 'asset' && assetFiltersRegex.some(filter => filter.test(fileName))) {
-          if (typeof chunk.source === 'string') {
-            chunk.source = insertBannerHeader(chunk.source, banner + '\n');  // insert more blank line
+      // Add banner to each output file if enabled
+      if (insertMetadataBanner) {
+        for (const fileName in bundle) {
+          const chunk = bundle[fileName];
+          if (chunk.type === 'chunk') {
+            chunk.code = insertBannerHeader(chunk.code, banner);
+          } else if (chunk.type === 'asset' && assetFiltersRegex.some(filter => filter.test(fileName))) {
+            if (typeof chunk.source === 'string') {
+              chunk.source = insertBannerHeader(chunk.source, banner + '\n');  // insert more blank line
+            }
           }
         }
       }
     },
     // Write bundle phase
     writeBundle: async options => {
-      // Handle files written by other plugins (like vite-plugin-dts)
-      if (!options.dir) return;
+      // Handle files written by other plugins (like vite-plugin-dts) if banner insertion is enabled
+      if (!insertMetadataBanner || !options.dir) return;
 
       try {
         // Read all files in the output directory
