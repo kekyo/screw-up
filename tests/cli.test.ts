@@ -116,7 +116,7 @@ describe('CLI tests', () => {
       });
 
       // Compare and verify archive contents each file by file
-      const result = await runCLI('diff', ['-r', relative(tempDir, targetDir), relative(tempDir, extractDir)]);
+      const result = await runCLI('diff', ['-r', relative(tempDir, targetDir), relative(tempDir, join(extractDir, 'package'))]);
       expectCLISuccess(result);
     });
 
@@ -176,10 +176,10 @@ describe('CLI tests', () => {
       });
 
       // Compare and verify child package archive contents each file by file
-      const result = await runCLI('diff', ['-r', relative(tempDir, childDir), relative(tempDir, extractDir)]);
+      const result = await runCLI('diff', ['-r', relative(tempDir, childDir), relative(tempDir, join(extractDir, 'package'))]);
       expect(result.exitCode).not.toBe(0);
       expect(result.stderr).toBe('');
-      expect(result.stdout).toBe('diff -r workspace/packages/child/package.json extract/package.json\n1a2,4\n>   "version": "2.0.0",\n>   "author": "Workspace Author",\n>   "license": "Apache-2.0",\n');
+      expect(result.stdout).toBe('diff -r workspace/packages/child/package.json extract/package/package.json\n1a2,4\n>   "version": "2.0.0",\n>   "author": "Workspace Author",\n>   "license": "Apache-2.0",\n');
     });
 
     it('should handle workspace inheritance in package.json', async () => {
@@ -227,7 +227,7 @@ describe('CLI tests', () => {
         cwd: extractDir
       });
 
-      const extractedPackageJsonPath = join(extractDir, 'package.json');
+      const extractedPackageJsonPath = join(extractDir, 'package/package.json');
       expect(existsSync(extractedPackageJsonPath)).toBe(true);
 
       const extractedPackageJson = JSON.parse(readFileSync(extractedPackageJsonPath, 'utf-8'));
@@ -273,7 +273,7 @@ describe('CLI tests', () => {
         cwd: extractDir
       });
 
-      const extractedReadme = join(extractDir, 'README.md');
+      const extractedReadme = join(extractDir, 'package/README.md');
       expect(existsSync(extractedReadme)).toBe(true);
       
       const readmeContent = readFileSync(extractedReadme, 'utf-8');
@@ -327,7 +327,7 @@ describe('CLI tests', () => {
         cwd: extractDir
       });
 
-      const extractedReadme = join(extractDir, 'README.md');
+      const extractedReadme = join(extractDir, 'package/README.md');
       expect(existsSync(extractedReadme)).toBe(true);
       
       const readmeContent = readFileSync(extractedReadme, 'utf-8');
@@ -384,7 +384,7 @@ describe('CLI tests', () => {
         cwd: extractDir
       });
 
-      const extractedReadme = join(extractDir, 'README.md');
+      const extractedReadme = join(extractDir, 'package/README.md');
       expect(existsSync(extractedReadme)).toBe(true);
       
       const readmeContent = readFileSync(extractedReadme, 'utf-8');
@@ -434,7 +434,7 @@ describe('CLI tests', () => {
         cwd: extractDir
       });
 
-      const extractedReadme = join(extractDir, 'README.md');
+      const extractedReadme = join(extractDir, 'package/README.md');
       expect(existsSync(extractedReadme)).toBe(true);
       
       const readmeContent = readFileSync(extractedReadme, 'utf-8');
@@ -478,10 +478,10 @@ describe('CLI tests', () => {
         file: archivePath,
         onentry: (entry: any) => files.push(entry.path)
       });
-      expect(files).toContain('package.json');
-      expect(files).toContain('file1.txt');
-      expect(files).toContain('file2.js');
-      expect(files).toContain('subdir/nested.json');
+      expect(files).toContain('package/package.json');
+      expect(files).toContain('package/file1.txt');
+      expect(files).toContain('package/file2.js');
+      expect(files).toContain('package/subdir/nested.json');
     }, 10000);
 
     it('should pack specified directory', async () => {
@@ -510,14 +510,14 @@ describe('CLI tests', () => {
         cwd: extractDir
       });
 
-      expect(existsSync(join(extractDir, 'file1.txt'))).toBe(true);
-      expect(existsSync(join(extractDir, 'file2.js'))).toBe(true);
-      expect(existsSync(join(extractDir, 'subdir', 'nested.json'))).toBe(true);
+      expect(existsSync(join(extractDir, 'package', 'file1.txt'))).toBe(true);
+      expect(existsSync(join(extractDir, 'package', 'file2.js'))).toBe(true);
+      expect(existsSync(join(extractDir, 'package', 'subdir', 'nested.json'))).toBe(true);
 
-      const content1 = readFileSync(join(extractDir, 'file1.txt'), 'utf-8');
+      const content1 = readFileSync(join(extractDir, 'package', 'file1.txt'), 'utf-8');
       expect(content1).toBe('Test content 1\n');
 
-      const content2 = readFileSync(join(extractDir, 'subdir', 'nested.json'), 'utf-8');
+      const content2 = readFileSync(join(extractDir, 'package', 'subdir', 'nested.json'), 'utf-8');
       expect(content2).toBe('{"test": true}\n');
     }, 10000);
 
@@ -548,10 +548,10 @@ describe('CLI tests', () => {
         file: archivePath,
         onentry: (entry: any) => files.push(entry.path)
       });
-      expect(files).toContain('package.json');
-      expect(files).toContain('file1.txt');
-      expect(files).toContain('file2.js');
-      expect(files).toContain('subdir/nested.json');
+      expect(files).toContain('package/package.json');
+      expect(files).toContain('package/file1.txt');
+      expect(files).toContain('package/file2.js');
+      expect(files).toContain('package/subdir/nested.json');
     }, 10000);
 
     it('should handle relative paths in --pack-destination', async () => {
@@ -616,7 +616,7 @@ describe('CLI tests', () => {
         file: archivePath,
         onentry: (entry: any) => files.push(entry.path)
       });
-      expect(files).toContain('package.json');
+      expect(files).toContain('package/package.json');
     }, 10000);
 
     it('should handle files with special characters', async () => {
@@ -652,10 +652,10 @@ describe('CLI tests', () => {
         onentry: (entry: any) => files.push(entry.path)
       });
 
-      expect(files).toContain('package.json');
-      expect(files).toContain('file with spaces.txt');
-      expect(files).toContain('file-with-dashes.txt');
-      expect(files).toContain('file.with.dots.txt');
+      expect(files).toContain('package/package.json');
+      expect(files).toContain('package/file with spaces.txt');
+      expect(files).toContain('package/file-with-dashes.txt');
+      expect(files).toContain('package/file.with.dots.txt');
     }, 10000);
 
     it('should create output directory if it does not exist', async () => {
@@ -727,7 +727,7 @@ describe('CLI tests', () => {
       });
 
       // Verify package.json exists and has resolved content
-      const extractedPackageJsonPath = join(extractDir, 'package.json');
+      const extractedPackageJsonPath = join(extractDir, 'package/package.json');
       expect(existsSync(extractedPackageJsonPath)).toBe(true);
 
       const extractedPackageJson = JSON.parse(readFileSync(extractedPackageJsonPath, 'utf-8'));
@@ -785,7 +785,7 @@ describe('CLI tests', () => {
         cwd: extractDir
       });
 
-      const extractedPackageJsonPath = join(extractDir, 'package.json');
+      const extractedPackageJsonPath = join(extractDir, 'package/package.json');
       expect(existsSync(extractedPackageJsonPath)).toBe(true);
 
       const extractedPackageJson = JSON.parse(readFileSync(extractedPackageJsonPath, 'utf-8'));
@@ -861,7 +861,7 @@ describe('CLI tests', () => {
         cwd: extractDir
       });
 
-      const extractedReadme = join(extractDir, 'README.md');
+      const extractedReadme = join(extractDir, 'package/README.md');
       expect(existsSync(extractedReadme)).toBe(true);
       
       const readmeContent = readFileSync(extractedReadme, 'utf-8');
@@ -919,7 +919,7 @@ describe('CLI tests', () => {
         cwd: extractDir
       });
 
-      const extractedReadme = join(extractDir, 'README.md');
+      const extractedReadme = join(extractDir, 'package/README.md');
       expect(existsSync(extractedReadme)).toBe(true);
       
       const readmeContent = readFileSync(extractedReadme, 'utf-8');
@@ -980,7 +980,7 @@ describe('CLI tests', () => {
         cwd: extractDir
       });
 
-      const extractedReadme = join(extractDir, 'README.md');
+      const extractedReadme = join(extractDir, 'package/README.md');
       expect(existsSync(extractedReadme)).toBe(true);
       
       const readmeContent = readFileSync(extractedReadme, 'utf-8');
@@ -1055,7 +1055,7 @@ describe('CLI tests', () => {
         cwd: extractDir
       });
 
-      const extractedReadme = join(extractDir, 'README.md');
+      const extractedReadme = join(extractDir, 'package/README.md');
       expect(existsSync(extractedReadme)).toBe(true);
       
       const readmeContent = readFileSync(extractedReadme, 'utf-8');
@@ -1538,7 +1538,7 @@ describe('CLI tests', () => {
         cwd: extractDir
       });
 
-      const extractedReadme = join(extractDir, 'README.md');
+      const extractedReadme = join(extractDir, 'package/README.md');
       expect(existsSync(extractedReadme)).toBe(true);
       
       const readmeContent = readFileSync(extractedReadme, 'utf-8');
@@ -1600,7 +1600,7 @@ describe('CLI tests', () => {
         cwd: extractDir
       });
 
-      const extractedReadme = join(extractDir, 'README.md');
+      const extractedReadme = join(extractDir, 'package/README.md');
       expect(existsSync(extractedReadme)).toBe(true);
       
       const readmeContent = readFileSync(extractedReadme, 'utf-8');
@@ -1661,7 +1661,7 @@ describe('CLI tests', () => {
         cwd: extractDir
       });
 
-      const extractedReadme = join(extractDir, 'README.md');
+      const extractedReadme = join(extractDir, 'package/README.md');
       expect(existsSync(extractedReadme)).toBe(true);
       
       const readmeContent = readFileSync(extractedReadme, 'utf-8');
@@ -1719,7 +1719,7 @@ describe('CLI tests', () => {
         cwd: extractDir
       });
 
-      const extractedPackageJsonPath = join(extractDir, 'package.json');
+      const extractedPackageJsonPath = join(extractDir, 'package/package.json');
       const extractedPackageJson = JSON.parse(readFileSync(extractedPackageJsonPath, 'utf-8'));
 
       // Verify child name is preserved

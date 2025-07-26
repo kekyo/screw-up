@@ -22,7 +22,7 @@ import { resolveRawPackageJsonObject, PackageResolutionResult } from './internal
 const createPackEntryGenerator = async function* (targetDir: string, resolvedPackageJson: any, readmeReplacementPath: string | undefined) {
   // First yield package.json content
   const packageJsonContent = JSON.stringify(resolvedPackageJson, null, 2);
-  yield await createFileItem('package.json', packageJsonContent);
+  yield await createFileItem('package/package.json', packageJsonContent);
 
   // Get distribution files in package.json
   const distributionFileGlobs = resolvedPackageJson?.files as string[] ?? ['**/*'];
@@ -53,10 +53,10 @@ const createPackEntryGenerator = async function* (targetDir: string, resolvedPac
         // Handle README.md replacement
         if (packingFilePath === 'README.md' && readmeReplacementPath) {
           // Use replacement file but keep README.md as the archive entry name
-          yield await createReadFileItem('README.md', readmeReplacementPath);
+          yield await createReadFileItem('package/README.md', readmeReplacementPath);
         } else {
           // Yield regular file
-          yield await createReadFileItem(packingFilePath, fullPath);
+          yield await createReadFileItem(`package/${packingFilePath}`, fullPath);
         }
       }
     }
@@ -65,7 +65,7 @@ const createPackEntryGenerator = async function* (targetDir: string, resolvedPac
   // Handle case where README.md doesn't exist in files but we have a replacement
   if (readmeReplacementPath && !packingFilePaths.includes('README.md')) {
     // Add README.md to the archive using replacement file
-    yield await createReadFileItem('README.md', readmeReplacementPath);
+    yield await createReadFileItem('package/README.md', readmeReplacementPath);
   }
 };
 
