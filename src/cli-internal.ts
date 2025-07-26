@@ -5,7 +5,7 @@
 
 import { resolve } from 'path';
 import { glob } from 'glob';
-import { existsSync, Stats } from 'fs';
+import { existsSync } from 'fs';
 import { mkdir, lstat } from 'fs/promises';
 import { createTarPacker, createReadFileItem, createFileItem, storeReaderToFile } from 'tar-vern';
 import { resolveRawPackageJsonObject } from './internal.js';
@@ -13,29 +13,45 @@ import { resolveRawPackageJsonObject } from './internal.js';
 //////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Pack entry
+ * Create pack entry generator that collects and yields entries on-demand
+ * @param targetDir - Target directory to pack
+ * @param resolvedPackageJson - Resolved package.json object
+ * @returns Pack entry generator
  */
-interface PackEntry {
-  name: string;
-  content?: string;
-  filePath?: string;
-  stat?: Stats;
-}
+const createPackEntryGenerator = async function* (targetDir: string, resolvedPackageJson: any) {
+  // First yield package.json content
+  const packageJsonContent = JSON.stringify(resolvedPackageJson, null, 2);
+  yield await createFileItem('package.json', packageJsonContent);
 
-/**
- * Create tar entry generator
- * @param entries - Pack entries
- * @param baseDir - Base directory
- * @returns Tar entry generator
- */
-const createTarEntryGenerator = async function* (entries: PackEntry[], baseDir: string) {
-  for (const entry of entries) {
-    if (entry.content !== undefined) {
-      // If content is defined, create a file item
-      yield await createFileItem(entry.name, entry.content);
-    } else if (entry.filePath && entry.stat) {
-      // If filePath and stat are defined, create a file item
-      yield await createReadFileItem(entry.name, resolve(baseDir, entry.filePath));
+  // Get distribution files in package.json
+  const distributionFileGlobs = resolvedPackageJson?.files as string[] ?? ['**/*'];
+  
+  // Convert directory patterns to recursive patterns (like npm pack does)
+  const packingFilePaths = (await Promise.all(
+    distributionFileGlobs.map(async (pattern) => {
+      const fullPath = resolve(targetDir, pattern);
+      try {
+        if (existsSync(fullPath) && (await lstat(fullPath)).isDirectory()) {
+          return await glob(`${pattern}/**/*`, { cwd: targetDir });
+        }
+        return await glob(pattern, { cwd: targetDir });
+      } catch (error) {
+        // If there's an error accessing the path, treat as glob pattern
+        return await glob(pattern, { cwd: targetDir });
+      }
+    }))).flat();
+
+  // Yield target packing files
+  for (const packingFilePath of packingFilePaths) {
+    // Except package.json (already yielded)
+    if (packingFilePath !== 'package.json') {
+      // Is file regular?
+      const fullPath = resolve(targetDir, packingFilePath);
+      const stat = await lstat(fullPath);
+      if (stat.isFile()) {
+        // Yield regular file
+        yield await createReadFileItem(packingFilePath, fullPath);
+      }
     }
   }
 };
@@ -90,53 +106,16 @@ export const packAssets = async (
   // Get package name
   const outputFileName = `${resolvedPackageJson?.name?.replace('/', '-') ?? "package"}-${resolvedPackageJson?.version ?? "0.0.0"}.tgz`;
 
-  // Collect all entries first
-  const packEntries: PackEntry[] = [];
-
-  // Add `package.json` content
-  const packageJsonContent = JSON.stringify(resolvedPackageJson, null, 2);
-  packEntries.push({ name: 'package.json', content: packageJsonContent });
-
-  // Get distribution files in `package.json`
-  const distributionFileGlobs = resolvedPackageJson?.files as string[] ?? ['**/*'];
-  
-  // Convert directory patterns to recursive patterns (like npm pack does)
-  const packingFilePaths = (await Promise.all(
-    distributionFileGlobs.map(async (pattern) => {
-      const fullPath = resolve(targetDir, pattern);
-      try {
-        if (existsSync(fullPath) && (await lstat(fullPath)).isDirectory()) {
-          return await glob(`${pattern}/**/*`, { cwd: targetDir });
-        }
-        return await glob(pattern, { cwd: targetDir });
-      } catch (error) {
-        // If there's an error accessing the path, treat as glob pattern
-        return await glob(pattern, { cwd: targetDir });
-      }
-    }))).flat();
-
-  // Collect target packing files to add to archive
-  for (const packingFilePath of packingFilePaths) {
-    // Except `package.json`
-    if (packingFilePath !== 'package.json') {
-      // Is file regular?
-      const fullPath = resolve(targetDir, packingFilePath);
-      const stat = await lstat(fullPath);
-      if (stat.isFile()) {
-        // Add regular file
-        packEntries.push({ name: packingFilePath, filePath: packingFilePath, stat });
-      }
-    }
-  }
-
   // Ensure output directory exists
   if (!existsSync(outputDir)) {
     await mkdir(outputDir, { recursive: true });
   }
 
-  // Create tar packer with entries and gzip compression
-  const packer = createTarPacker(createTarEntryGenerator(packEntries, targetDir), 'gzip');
-  
+  // Create tar packer with generator and gzip compression
+  const packer = createTarPacker(
+    createPackEntryGenerator(targetDir, resolvedPackageJson),
+    'gzip');
+
   // Write compressed tar archive to file
   const outputFile = resolve(outputDir, outputFileName);
   await storeReaderToFile(packer, outputFile);
