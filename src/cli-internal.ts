@@ -16,9 +16,10 @@ import { resolveRawPackageJsonObject } from './internal.js';
  * Create pack entry generator that collects and yields entries on-demand
  * @param targetDir - Target directory to pack
  * @param resolvedPackageJson - Resolved package.json object
+ * @param readmeReplacementPath - Optional path to replacement README file
  * @returns Pack entry generator
  */
-const createPackEntryGenerator = async function* (targetDir: string, resolvedPackageJson: any) {
+const createPackEntryGenerator = async function* (targetDir: string, resolvedPackageJson: any, readmeReplacementPath: string | undefined) {
   // First yield package.json content
   const packageJsonContent = JSON.stringify(resolvedPackageJson, null, 2);
   yield await createFileItem('package.json', packageJsonContent);
@@ -49,10 +50,22 @@ const createPackEntryGenerator = async function* (targetDir: string, resolvedPac
       const fullPath = resolve(targetDir, packingFilePath);
       const stat = await lstat(fullPath);
       if (stat.isFile()) {
-        // Yield regular file
-        yield await createReadFileItem(packingFilePath, fullPath);
+        // Handle README.md replacement
+        if (packingFilePath === 'README.md' && readmeReplacementPath) {
+          // Use replacement file but keep README.md as the archive entry name
+          yield await createReadFileItem('README.md', readmeReplacementPath);
+        } else {
+          // Yield regular file
+          yield await createReadFileItem(packingFilePath, fullPath);
+        }
       }
     }
+  }
+
+  // Handle case where README.md doesn't exist in files but we have a replacement
+  if (readmeReplacementPath && !packingFilePaths.includes('README.md')) {
+    // Add README.md to the archive using replacement file
+    yield await createReadFileItem('README.md', readmeReplacementPath);
   }
 };
 
@@ -74,13 +87,15 @@ const defaultInheritableFields = new Set([
  * @param outputDir - Output directory to write the tarball
  * @param checkWorkingDirectoryStatus - Check working directory status
  * @param inheritableFields - Package metadata fields that should be inherited from parent
+ * @param readmeReplacementPath - Optional path to replacement README file
  * @returns Package metadata (package.json) or undefined if failed
  */
 export const packAssets = async (
   targetDir: string,
   outputDir: string,
   checkWorkingDirectoryStatus: boolean,
-  inheritableFields?: Set<string>) : Promise<any> => {
+  inheritableFields?: Set<string>,
+  readmeReplacementPath?: string) : Promise<any> => {
   // Check if target directory exists
   if (!existsSync(targetDir)) {
     return undefined;
@@ -103,6 +118,21 @@ export const packAssets = async (
     return undefined;
   }
 
+  // Determine README replacement path
+  // Priority: CLI option > package.json.readme > none
+  let finalReadmeReplacementPath = readmeReplacementPath;
+  if (!finalReadmeReplacementPath && resolvedPackageJson?.readme) {
+    const packageReadmePath = resolve(targetDir, resolvedPackageJson.readme);
+    if (existsSync(packageReadmePath)) {
+      finalReadmeReplacementPath = packageReadmePath;
+    }
+  }
+
+  // Validate README replacement path before creating generator
+  if (finalReadmeReplacementPath && !existsSync(finalReadmeReplacementPath)) {
+    throw new Error(`README replacement file not found: ${finalReadmeReplacementPath}`);
+  }
+
   // Get package name
   const outputFileName = `${resolvedPackageJson?.name?.replace('/', '-') ?? "package"}-${resolvedPackageJson?.version ?? "0.0.0"}.tgz`;
 
@@ -113,7 +143,7 @@ export const packAssets = async (
 
   // Create tar packer with generator and gzip compression
   const packer = createTarPacker(
-    createPackEntryGenerator(targetDir, resolvedPackageJson),
+    createPackEntryGenerator(targetDir, resolvedPackageJson, finalReadmeReplacementPath),
     'gzip');
 
   // Write compressed tar archive to file

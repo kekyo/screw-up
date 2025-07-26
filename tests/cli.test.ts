@@ -231,6 +231,212 @@ describe('CLI tests', () => {
       // Workspace field should not be inherited
       expect(extractedPackageJson.workspaces).toBeUndefined();
     }, 10000);
+
+    it('should pack with README replacement using CLI option', async () => {
+      // Create README replacement file
+      const readmeReplacement = join(testSourceDir, 'README_custom.md');
+      writeFileSync(readmeReplacement, '# Custom README for packaging\nThis is a custom README file.');
+
+      // Create regular README.md
+      const regularReadme = join(testSourceDir, 'README.md');
+      writeFileSync(regularReadme, '# Regular README\nThis should be ignored.');
+
+      const outputDir = join(tempDir, 'output');
+      mkdirSync(outputDir, { recursive: true });
+
+      const metadata = await packAssets(testSourceDir, outputDir, true, undefined, readmeReplacement);
+      expect(metadata).toBeDefined();
+      expect(metadata?.name).toBe('test-package');
+
+      // Check if archive was created
+      const archivePath = join(outputDir, 'test-package-1.0.0.tgz');
+      expect(existsSync(archivePath)).toBe(true);
+
+      // Extract and verify README.md content
+      const extractDir = join(tempDir, 'extract-readme');
+      mkdirSync(extractDir);
+      await tar.extract({
+        file: archivePath,
+        cwd: extractDir
+      });
+
+      const extractedReadme = join(extractDir, 'README.md');
+      expect(existsSync(extractedReadme)).toBe(true);
+      
+      const readmeContent = readFileSync(extractedReadme, 'utf-8');
+      expect(readmeContent).toBe('# Custom README for packaging\nThis is a custom README file.');
+      expect(readmeContent).not.toContain('Regular README');
+    });
+
+    it('should pack with README replacement using package.json readme field', async () => {
+      // Create separate test directory for this test
+      const testDir = join(tempDir, 'package-json-readme-test');
+      mkdirSync(testDir, { recursive: true });
+
+      // Create package.json with readme field
+      const packageJsonWithReadme = {
+        name: 'test-package-readme',
+        version: '1.0.0',
+        description: 'Test package with readme field',
+        author: 'Test Author',
+        license: 'MIT',
+        readme: 'README_pack.md',
+        files: ['**/*']
+      };
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify(packageJsonWithReadme, null, 2));
+
+      // Create README files
+      const packReadme = join(testDir, 'README_pack.md');
+      writeFileSync(packReadme, '# Pack README\nThis is the pack-specific README.');
+
+      const regularReadme = join(testDir, 'README.md');
+      writeFileSync(regularReadme, '# Regular README\nThis should be ignored.');
+
+      writeFileSync(join(testDir, 'index.js'), 'console.log("test");');
+
+      const outputDir = join(tempDir, 'output');
+      mkdirSync(outputDir, { recursive: true });
+
+      // No CLI readme option provided - should use package.json readme field
+      const metadata = await packAssets(testDir, outputDir, true);
+      expect(metadata).toBeDefined();
+      expect(metadata?.name).toBe('test-package-readme');
+
+      // Check if archive was created
+      const archivePath = join(outputDir, 'test-package-readme-1.0.0.tgz');
+      expect(existsSync(archivePath)).toBe(true);
+
+      // Extract and verify README.md content
+      const extractDir = join(tempDir, 'extract-pack-readme');
+      mkdirSync(extractDir);
+      await tar.extract({
+        file: archivePath,
+        cwd: extractDir
+      });
+
+      const extractedReadme = join(extractDir, 'README.md');
+      expect(existsSync(extractedReadme)).toBe(true);
+      
+      const readmeContent = readFileSync(extractedReadme, 'utf-8');
+      expect(readmeContent).toBe('# Pack README\nThis is the pack-specific README.');
+      expect(readmeContent).not.toContain('Regular README');
+    });
+
+    it('should prioritize CLI option over package.json readme field', async () => {
+      // Create separate test directory for this test
+      const testDir = join(tempDir, 'priority-test');
+      mkdirSync(testDir, { recursive: true });
+
+      // Create package.json with readme field
+      const packageJsonWithReadme = {
+        name: 'test-priority',
+        version: '1.0.0',
+        description: 'Test priority handling',
+        author: 'Test Author',
+        license: 'MIT',
+        readme: 'README_pack.md',
+        files: ['**/*']
+      };
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify(packageJsonWithReadme, null, 2));
+
+      // Create multiple README files
+      const packReadme = join(testDir, 'README_pack.md');
+      writeFileSync(packReadme, '# Pack README\nFrom package.json readme field.');
+
+      const cliReadme = join(testDir, 'README_cli.md');
+      writeFileSync(cliReadme, '# CLI README\nFrom CLI option - should take priority.');
+
+      const regularReadme = join(testDir, 'README.md');
+      writeFileSync(regularReadme, '# Regular README\nShould be ignored.');
+
+      writeFileSync(join(testDir, 'index.js'), 'console.log("test");');
+
+      const outputDir = join(tempDir, 'output');
+      mkdirSync(outputDir, { recursive: true });
+
+      // CLI option should take priority over package.json readme field
+      const metadata = await packAssets(testDir, outputDir, true, undefined, cliReadme);
+      expect(metadata).toBeDefined();
+      expect(metadata?.name).toBe('test-priority');
+
+      // Check if archive was created
+      const archivePath = join(outputDir, 'test-priority-1.0.0.tgz');
+      expect(existsSync(archivePath)).toBe(true);
+
+      // Extract and verify README.md content
+      const extractDir = join(tempDir, 'extract-priority');
+      mkdirSync(extractDir);
+      await tar.extract({
+        file: archivePath,
+        cwd: extractDir
+      });
+
+      const extractedReadme = join(extractDir, 'README.md');
+      expect(existsSync(extractedReadme)).toBe(true);
+      
+      const readmeContent = readFileSync(extractedReadme, 'utf-8');
+      expect(readmeContent).toBe('# CLI README\nFrom CLI option - should take priority.');
+      expect(readmeContent).not.toContain('Pack README');
+      expect(readmeContent).not.toContain('Regular README');
+    });
+
+    it('should add README.md even when not in files array', async () => {
+      // Create separate test directory for this test
+      const testDir = join(tempDir, 'no-files-test');
+      mkdirSync(testDir, { recursive: true });
+
+      // Create package.json without README.md in files array
+      const packageJsonNoReadme = {
+        name: 'test-no-readme-in-files',
+        version: '1.0.0',
+        description: 'Test adding README when not in files',
+        author: 'Test Author',
+        license: 'MIT',
+        files: ['index.js'] // README.md not included
+      };
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify(packageJsonNoReadme, null, 2));
+
+      writeFileSync(join(testDir, 'index.js'), 'console.log("test");');
+
+      // Create replacement README file
+      const replacementReadme = join(testDir, 'README_replacement.md');
+      writeFileSync(replacementReadme, '# Replacement README\nAdded even though not in files array.');
+
+      const outputDir = join(tempDir, 'output');
+      mkdirSync(outputDir, { recursive: true });
+
+      const metadata = await packAssets(testDir, outputDir, true, undefined, replacementReadme);
+      expect(metadata).toBeDefined();
+      expect(metadata?.name).toBe('test-no-readme-in-files');
+
+      // Check if archive was created
+      const archivePath = join(outputDir, 'test-no-readme-in-files-1.0.0.tgz');
+      expect(existsSync(archivePath)).toBe(true);
+
+      // Extract and verify README.md was added
+      const extractDir = join(tempDir, 'extract-no-files');
+      mkdirSync(extractDir);
+      await tar.extract({
+        file: archivePath,
+        cwd: extractDir
+      });
+
+      const extractedReadme = join(extractDir, 'README.md');
+      expect(existsSync(extractedReadme)).toBe(true);
+      
+      const readmeContent = readFileSync(extractedReadme, 'utf-8');
+      expect(readmeContent).toBe('# Replacement README\nAdded even though not in files array.');
+    });
+
+    it('should throw error when replacement file does not exist', async () => {
+      const outputDir = join(tempDir, 'output');
+      mkdirSync(outputDir, { recursive: true });
+
+      const nonExistentReadme = join(testSourceDir, 'non-existent-readme.md');
+
+      await expect(packAssets(testSourceDir, outputDir, true, undefined, nonExistentReadme))
+        .rejects.toThrow('README replacement file not found:');
+    }, 10000);
   });
 
   //////////////////////////////////////////////////////////////////////////////////
@@ -607,6 +813,240 @@ describe('CLI tests', () => {
         expect(error.stderr || error.stdout).toContain('Unable to find any files to pack');
         expect(error.status).toBe(1);
       }
+    }, 10000);
+
+    it('should pack with --readme option to replace README.md', async () => {
+      // Create README replacement file
+      const readmeReplacement = join(testSourceDir, 'README_custom.md');
+      writeFileSync(readmeReplacement, '# Custom README for packaging\nThis is a custom README file.');
+
+      // Create regular README.md
+      const regularReadme = join(testSourceDir, 'README.md');
+      writeFileSync(regularReadme, '# Regular README\nThis should be ignored.');
+
+      const outputDir = join(tempDir, 'output');
+      mkdirSync(outputDir, { recursive: true });
+
+      // Run CLI pack command with --readme option
+      const result = execSync(`node "${CLI_PATH}" pack "${testSourceDir}" --readme "${readmeReplacement}"`, {
+        cwd: outputDir,
+        encoding: 'utf-8'
+      });
+
+      expect(result).toContain('Creating archive of');
+      expect(result).toContain('Archive created successfully');
+
+      // Check if archive was created
+      const archivePath = join(outputDir, 'test-package-1.0.0.tgz');
+      expect(existsSync(archivePath)).toBe(true);
+
+      // Extract and verify README.md content
+      const extractDir = join(tempDir, 'extract-readme');
+      mkdirSync(extractDir);
+      await tar.extract({
+        file: archivePath,
+        cwd: extractDir
+      });
+
+      const extractedReadme = join(extractDir, 'README.md');
+      expect(existsSync(extractedReadme)).toBe(true);
+      
+      const readmeContent = readFileSync(extractedReadme, 'utf-8');
+      expect(readmeContent).toBe('# Custom README for packaging\nThis is a custom README file.');
+      expect(readmeContent).not.toContain('Regular README');
+    }, 10000);
+
+    it('should pack with package.json readme field when no --readme option', async () => {
+      // Create separate test directory for this test
+      const testDir = join(tempDir, 'package-json-readme-test');
+      mkdirSync(testDir, { recursive: true });
+
+      // Create package.json with readme field
+      const packageJsonWithReadme = {
+        name: 'test-package-readme',
+        version: '1.0.0',
+        description: 'Test package with readme field',
+        author: 'Test Author',
+        license: 'MIT',
+        readme: 'README_pack.md',
+        files: ['**/*']
+      };
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify(packageJsonWithReadme, null, 2));
+
+      // Create README files
+      const packReadme = join(testDir, 'README_pack.md');
+      writeFileSync(packReadme, '# Pack README\nThis is the pack-specific README.');
+
+      const regularReadme = join(testDir, 'README.md');
+      writeFileSync(regularReadme, '# Regular README\nThis should be ignored.');
+
+      writeFileSync(join(testDir, 'index.js'), 'console.log("test");');
+
+      const outputDir = join(tempDir, 'output');
+      mkdirSync(outputDir, { recursive: true });
+
+      // Run CLI pack command without --readme option
+      const result = execSync(`node "${CLI_PATH}" pack "${testDir}"`, {
+        cwd: outputDir,
+        encoding: 'utf-8'
+      });
+
+      expect(result).toContain('Creating archive of');
+      expect(result).toContain('Archive created successfully');
+
+      // Check if archive was created
+      const archivePath = join(outputDir, 'test-package-readme-1.0.0.tgz');
+      expect(existsSync(archivePath)).toBe(true);
+
+      // Extract and verify README.md content
+      const extractDir = join(tempDir, 'extract-pack-readme');
+      mkdirSync(extractDir);
+      await tar.extract({
+        file: archivePath,
+        cwd: extractDir
+      });
+
+      const extractedReadme = join(extractDir, 'README.md');
+      expect(existsSync(extractedReadme)).toBe(true);
+      
+      const readmeContent = readFileSync(extractedReadme, 'utf-8');
+      expect(readmeContent).toBe('# Pack README\nThis is the pack-specific README.');
+      expect(readmeContent).not.toContain('Regular README');
+    }, 10000);
+
+    it('should prioritize --readme option over package.json readme field', async () => {
+      // Create separate test directory for this test
+      const testDir = join(tempDir, 'priority-test');
+      mkdirSync(testDir, { recursive: true });
+
+      // Create package.json with readme field
+      const packageJsonWithReadme = {
+        name: 'test-priority',
+        version: '1.0.0',
+        description: 'Test priority handling',
+        author: 'Test Author',
+        license: 'MIT',
+        readme: 'README_pack.md',
+        files: ['**/*']
+      };
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify(packageJsonWithReadme, null, 2));
+
+      // Create multiple README files
+      const packReadme = join(testDir, 'README_pack.md');
+      writeFileSync(packReadme, '# Pack README\nFrom package.json readme field.');
+
+      const cliReadme = join(testDir, 'README_cli.md');
+      writeFileSync(cliReadme, '# CLI README\nFrom CLI option - should take priority.');
+
+      const regularReadme = join(testDir, 'README.md');
+      writeFileSync(regularReadme, '# Regular README\nShould be ignored.');
+
+      writeFileSync(join(testDir, 'index.js'), 'console.log("test");');
+
+      const outputDir = join(tempDir, 'output');
+      mkdirSync(outputDir, { recursive: true });
+
+      // Run CLI pack command with --readme option (should override package.json readme)
+      const result = execSync(`node "${CLI_PATH}" pack "${testDir}" --readme "${cliReadme}"`, {
+        cwd: outputDir,
+        encoding: 'utf-8'
+      });
+
+      expect(result).toContain('Creating archive of');
+      expect(result).toContain('Archive created successfully');
+
+      // Check if archive was created
+      const archivePath = join(outputDir, 'test-priority-1.0.0.tgz');
+      expect(existsSync(archivePath)).toBe(true);
+
+      // Extract and verify README.md content
+      const extractDir = join(tempDir, 'extract-priority');
+      mkdirSync(extractDir);
+      await tar.extract({
+        file: archivePath,
+        cwd: extractDir
+      });
+
+      const extractedReadme = join(extractDir, 'README.md');
+      expect(existsSync(extractedReadme)).toBe(true);
+      
+      const readmeContent = readFileSync(extractedReadme, 'utf-8');
+      expect(readmeContent).toBe('# CLI README\nFrom CLI option - should take priority.');
+      expect(readmeContent).not.toContain('Pack README');
+      expect(readmeContent).not.toContain('Regular README');
+    }, 10000);
+
+    it('should handle error when --readme file does not exist', async () => {
+      const outputDir = join(tempDir, 'output');
+      mkdirSync(outputDir, { recursive: true });
+
+      const nonExistentReadme = join(testSourceDir, 'non-existent-readme.md');
+
+      try {
+        execSync(`node "${CLI_PATH}" pack "${testSourceDir}" --readme "${nonExistentReadme}"`, {
+          cwd: outputDir,
+          encoding: 'utf-8'
+        });
+        // Should not reach here, command should fail
+        expect.fail('Command should have failed');
+      } catch (error: any) {
+        // Check error message in stderr
+        expect(error.stderr || error.stdout).toContain('README replacement file not found:');
+        expect(error.status).toBe(1);
+      }
+    }, 10000);
+
+    it('should add README.md even when not in files array with --readme option', async () => {
+      // Create separate test directory for this test
+      const testDir = join(tempDir, 'no-files-test');
+      mkdirSync(testDir, { recursive: true });
+
+      // Create package.json without README.md in files array
+      const packageJsonNoReadme = {
+        name: 'test-no-readme-in-files',
+        version: '1.0.0',
+        description: 'Test adding README when not in files',
+        author: 'Test Author',
+        license: 'MIT',
+        files: ['index.js'] // README.md not included
+      };
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify(packageJsonNoReadme, null, 2));
+
+      writeFileSync(join(testDir, 'index.js'), 'console.log("test");');
+
+      // Create replacement README file
+      const replacementReadme = join(testDir, 'README_replacement.md');
+      writeFileSync(replacementReadme, '# Replacement README\nAdded even though not in files array.');
+
+      const outputDir = join(tempDir, 'output');
+      mkdirSync(outputDir, { recursive: true });
+
+      // Run CLI pack command with --readme option
+      const result = execSync(`node "${CLI_PATH}" pack "${testDir}" --readme "${replacementReadme}"`, {
+        cwd: outputDir,
+        encoding: 'utf-8'
+      });
+
+      expect(result).toContain('Creating archive of');
+      expect(result).toContain('Archive created successfully');
+
+      // Check if archive was created
+      const archivePath = join(outputDir, 'test-no-readme-in-files-1.0.0.tgz');
+      expect(existsSync(archivePath)).toBe(true);
+
+      // Extract and verify README.md was added
+      const extractDir = join(tempDir, 'extract-no-files');
+      mkdirSync(extractDir);
+      await tar.extract({
+        file: archivePath,
+        cwd: extractDir
+      });
+
+      const extractedReadme = join(extractDir, 'README.md');
+      expect(existsSync(extractedReadme)).toBe(true);
+      
+      const readmeContent = readFileSync(extractedReadme, 'utf-8');
+      expect(readmeContent).toBe('# Replacement README\nAdded even though not in files array.');
     }, 10000);
   });
 

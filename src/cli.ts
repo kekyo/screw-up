@@ -42,13 +42,14 @@ Publish Options:
   All npm publish options are supported (e.g., --dry-run, --tag, --access, --registry)
 
 Examples:
-  screw-up pack                          # Pack current directory
-  screw-up pack ./my-project             # Pack specific directory
-  screw-up pack --pack-destination ./dist # Pack to specific output directory
-  screw-up publish                       # Publish current directory
-  screw-up publish ./my-project          # Publish specific directory
-  screw-up publish package.tgz           # Publish existing tarball
-  screw-up publish --dry-run --tag beta  # Publish with npm options
+  screw-up pack                            # Pack current directory
+  screw-up pack ./my-project               # Pack specific directory
+  screw-up pack --pack-destination ./dist  # Pack to specific output directory
+  screw-up pack --readme ./README_pack.md  # Pack with custom README
+  screw-up publish                         # Publish current directory
+  screw-up publish ./my-project            # Publish specific directory
+  screw-up publish package.tgz             # Publish existing tarball
+  screw-up publish --dry-run --tag beta    # Publish with npm options
 `);
 };
 
@@ -62,6 +63,7 @@ Arguments:
 
 Options:
   --pack-destination <path>     Directory to write the tarball
+  --readme <path>               Replace README.md with specified file
   --no-wds                      Do not check working directory status to increase version
   -h, --help                    Show help for pack command
 `);
@@ -101,16 +103,18 @@ const packCommand = async (args: ParsedArgs) => {
 
   const directory = args.positional[0];
   const packDestination = args.options['pack-destination'] as string;
+  const readmeOption = args.options['readme'] as string;
   const checkWorkingDirectoryStatus = args.options['no-wds'] ? false : true;
 
   const targetDir = resolve(directory ?? process.cwd());
   const outputDir = packDestination ? resolve(packDestination) : process.cwd();
+  const readmeReplacementPath = readmeOption ? resolve(readmeOption) : undefined;
 
   console.log(`[screw-up/cli]: pack: Creating archive of ${targetDir}...`);
 
   try {
     const metadata = await packAssets(
-      targetDir, outputDir, checkWorkingDirectoryStatus);
+      targetDir, outputDir, checkWorkingDirectoryStatus, undefined, readmeReplacementPath);
     if (metadata) {
       console.log(`[screw-up/cli]: pack: Archive created successfully: ${outputDir}`);
     } else {
