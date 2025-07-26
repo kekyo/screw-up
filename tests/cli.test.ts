@@ -1468,4 +1468,192 @@ describe('CLI tests', () => {
       expect(result).toContain('  ');
     }, 10000);
   });
+
+  //////////////////////////////////////////////////////////////////////////////////
+
+  describe('Workspace README replacement tests', () => {
+    it('should use workspace root README when specified in parent package.json', async () => {
+      // Create workspace root with parent package.json
+      const workspaceRoot = join(tempDir, 'workspace-readme');
+      mkdirSync(workspaceRoot);
+
+      // Create workspace root README
+      const workspaceReadme = join(workspaceRoot, 'README_workspace.md');
+      writeFileSync(workspaceReadme, '# Workspace README\nThis is the workspace-level README file.');
+
+      const rootPackageJson = {
+        name: 'workspace-root',
+        version: '2.0.0',
+        author: 'Workspace Author',
+        license: 'Apache-2.0',
+        readme: 'README_workspace.md',
+        workspaces: ['packages/*']
+      };
+      writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify(rootPackageJson, null, 2));
+
+      // Create child package without readme field
+      const childDir = join(workspaceRoot, 'packages', 'child');
+      mkdirSync(childDir, { recursive: true });
+
+      const childPackageJson = {
+        name: 'child-package',
+        description: 'Child package description',
+        files: ['**/*']
+      };
+      writeFileSync(join(childDir, 'package.json'), JSON.stringify(childPackageJson, null, 2));
+      writeFileSync(join(childDir, 'index.js'), 'console.log("child");');
+
+      // Create child-level README that should be ignored
+      const childReadme = join(childDir, 'README.md');
+      writeFileSync(childReadme, '# Child README\nThis should be ignored in favor of workspace README.');
+
+      const outputDir = join(tempDir, 'output');
+      mkdirSync(outputDir, { recursive: true });
+
+      // Pack child package - should use workspace root's README
+      const metadata = await packAssets(childDir, outputDir, true);
+      expect(metadata).toBeDefined();
+      expect(metadata?.name).toBe('child-package');
+
+      // Extract and verify README.md content
+      const archivePath = join(outputDir, 'child-package-2.0.0.tgz');
+      const extractDir = join(tempDir, 'extract-workspace');
+      mkdirSync(extractDir);
+
+      await tar.extract({
+        file: archivePath,
+        cwd: extractDir
+      });
+
+      const extractedReadme = join(extractDir, 'README.md');
+      expect(existsSync(extractedReadme)).toBe(true);
+      
+      const readmeContent = readFileSync(extractedReadme, 'utf-8');
+      expect(readmeContent).toBe('# Workspace README\nThis is the workspace-level README file.');
+      expect(readmeContent).not.toContain('Child README');
+    }, 10000);
+
+    it('should prioritize child package readme over inherited workspace readme', async () => {
+      // Create workspace root with parent package.json
+      const workspaceRoot = join(tempDir, 'workspace-priority');
+      mkdirSync(workspaceRoot);
+
+      // Create workspace root README
+      const workspaceReadme = join(workspaceRoot, 'README_workspace.md');
+      writeFileSync(workspaceReadme, '# Workspace README\nInherited from workspace root.');
+
+      const rootPackageJson = {
+        name: 'workspace-root',
+        version: '3.0.0',
+        author: 'Workspace Author',
+        license: 'Apache-2.0',
+        readme: 'README_workspace.md',
+        workspaces: ['packages/*']
+      };
+      writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify(rootPackageJson, null, 2));
+
+      // Create child package WITH its own readme field
+      const childDir = join(workspaceRoot, 'packages', 'child');
+      mkdirSync(childDir, { recursive: true });
+
+      // Create child-specific README
+      const childReadme = join(childDir, 'README_child.md');
+      writeFileSync(childReadme, '# Child README\nChild-specific README file.');
+
+      const childPackageJson = {
+        name: 'child-package',
+        description: 'Child package description',
+        readme: 'README_child.md',
+        files: ['**/*']
+      };
+      writeFileSync(join(childDir, 'package.json'), JSON.stringify(childPackageJson, null, 2));
+      writeFileSync(join(childDir, 'index.js'), 'console.log("child");');
+
+      const outputDir = join(tempDir, 'output');
+      mkdirSync(outputDir, { recursive: true });
+
+      // Pack child package - should use child's own README, not workspace README
+      const metadata = await packAssets(childDir, outputDir, true);
+      expect(metadata).toBeDefined();
+      expect(metadata?.name).toBe('child-package');
+
+      // Extract and verify README.md content
+      const archivePath = join(outputDir, 'child-package-3.0.0.tgz');
+      const extractDir = join(tempDir, 'extract-priority');
+      mkdirSync(extractDir);
+
+      await tar.extract({
+        file: archivePath,
+        cwd: extractDir
+      });
+
+      const extractedReadme = join(extractDir, 'README.md');
+      expect(existsSync(extractedReadme)).toBe(true);
+      
+      const readmeContent = readFileSync(extractedReadme, 'utf-8');
+      expect(readmeContent).toBe('# Child README\nChild-specific README file.');
+      expect(readmeContent).not.toContain('Workspace README');
+    }, 10000);
+
+    it('should handle CLI --readme option overriding workspace inheritance', async () => {
+      // Create workspace root with parent package.json
+      const workspaceRoot = join(tempDir, 'workspace-cli-override');
+      mkdirSync(workspaceRoot);
+
+      // Create workspace root README
+      const workspaceReadme = join(workspaceRoot, 'README_workspace.md');
+      writeFileSync(workspaceReadme, '# Workspace README\nInherited from workspace root.');
+
+      const rootPackageJson = {
+        name: 'workspace-root',
+        version: '4.0.0',
+        author: 'Workspace Author',
+        license: 'Apache-2.0',
+        readme: 'README_workspace.md',
+        workspaces: ['packages/*']
+      };
+      writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify(rootPackageJson, null, 2));
+
+      // Create child package without readme field
+      const childDir = join(workspaceRoot, 'packages', 'child');
+      mkdirSync(childDir, { recursive: true });
+
+      const childPackageJson = {
+        name: 'child-package',
+        description: 'Child package description',
+        files: ['**/*']
+      };
+      writeFileSync(join(childDir, 'package.json'), JSON.stringify(childPackageJson, null, 2));
+      writeFileSync(join(childDir, 'index.js'), 'console.log("child");');
+
+      // Create CLI-specified README
+      const cliReadme = join(childDir, 'README_cli.md');
+      writeFileSync(cliReadme, '# CLI README\nSpecified via CLI option - should override workspace inheritance.');
+
+      const outputDir = join(tempDir, 'output');
+      mkdirSync(outputDir, { recursive: true });
+
+      // Pack child package with CLI option - should use CLI README, not workspace README
+      const metadata = await packAssets(childDir, outputDir, true, undefined, cliReadme);
+      expect(metadata).toBeDefined();
+      expect(metadata?.name).toBe('child-package');
+
+      // Extract and verify README.md content
+      const archivePath = join(outputDir, 'child-package-4.0.0.tgz');
+      const extractDir = join(tempDir, 'extract-cli-override');
+      mkdirSync(extractDir);
+
+      await tar.extract({
+        file: archivePath,
+        cwd: extractDir
+      });
+
+      const extractedReadme = join(extractDir, 'README.md');
+      expect(existsSync(extractedReadme)).toBe(true);
+      
+      const readmeContent = readFileSync(extractedReadme, 'utf-8');
+      expect(readmeContent).toBe('# CLI README\nSpecified via CLI option - should override workspace inheritance.');
+      expect(readmeContent).not.toContain('Workspace README');
+    }, 10000);
+  });
 });

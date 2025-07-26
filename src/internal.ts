@@ -11,6 +11,14 @@ import { getGitMetadata } from './analyzer.js';
 import { PackageMetadata } from './types.js';
 
 /**
+ * Result of package resolution with source tracking
+ */
+export interface PackageResolutionResult {
+  packageJson: any;
+  sourceMap: Map<string, string>;
+}
+
+/**
  * Recursively flatten an object into dot-notation key-value pairs
  * @param obj - Object to flatten
  * @param prefix - Current key prefix
@@ -113,17 +121,23 @@ export const mergePackageMetadata = async (
  * Only inherits package metadata fields, not project-specific configurations
  * @param parentMetadata - Parent package object
  * @param childMetadata - Child package object
+ * @param parentSourceDir - Parent package.json directory (for source tracking)
+ * @param childSourceDir - Child package.json directory (for source tracking)
  * @param repositoryPath - Path to Git repository root
  * @param checkWorkingDirectoryStatus - Check working directory status to increase version
  * @param inheritableFields - Package metadata fields that should be inherited from parent
+ * @param sourceMap - Map to track field sources
  * @returns Merged package object with only metadata fields
  */
 const mergeRawPackageJson = async (
   parentMetadata: any,
   childMetadata: any,
+  parentSourceDir: string,
+  childSourceDir: string,
   repositoryPath: string,
   checkWorkingDirectoryStatus: boolean,
-  inheritableFields: Set<string>) => {
+  inheritableFields: Set<string>,
+  sourceMap: Map<string, string>) => {
   // Start with default git metadata if repositoryPath is provided
   const merged = await getGitMetadata(repositoryPath, checkWorkingDirectoryStatus) as any;
   
@@ -133,6 +147,7 @@ const mergeRawPackageJson = async (
       const value = parentMetadata[key];
       if (value !== undefined) {
         merged[key] = value;
+        sourceMap.set(key, parentSourceDir);
       }
     }
   }
@@ -142,11 +157,13 @@ const mergeRawPackageJson = async (
     const value = childMetadata[key];
     if (value !== undefined) {
       merged[key] = value;
+      sourceMap.set(key, childSourceDir);
     }
   }
  
   return merged;
 };
+
 
 //////////////////////////////////////////////////////////////////////////////////////
 
@@ -162,7 +179,7 @@ const resolvePackageMetadataT = async <T>(
   projectRoot: string,
   checkWorkingDirectoryStatus: boolean,
   readPackageMetadataFn: (path: string) => Promise<T>,
-  mergePackageMetadataFn: (a: T, b: T, repositoryPath: string, checkWorkingDirectoryStatus: boolean) => Promise<T>): Promise<T> => {
+  mergePackageMetadataFn: (a: T, b: T, aDir: string, bDir: string, repositoryPath: string, checkWorkingDirectoryStatus: boolean) => Promise<T>): Promise<T> => {
   
   const workspaceRoot = await findWorkspaceRoot(projectRoot);
   
@@ -170,7 +187,13 @@ const resolvePackageMetadataT = async <T>(
     // No workspace, just read local package.json
     const localPackagePath = join(projectRoot, 'package.json');
     const localMetadata = await readPackageMetadataFn(localPackagePath);
-    return mergePackageMetadataFn({} as T, localMetadata, projectRoot, checkWorkingDirectoryStatus);
+    return mergePackageMetadataFn(
+      {} as T,
+      localMetadata,
+      '',  // dummy
+      projectRoot,
+      projectRoot,
+      checkWorkingDirectoryStatus);
   }
   
   const projectPackagePath = join(projectRoot, 'package.json');
@@ -182,11 +205,22 @@ const resolvePackageMetadataT = async <T>(
   // If current project is not the root, merge with project-specific metadata
   if (projectPackagePath !== rootPackagePath && existsSync(projectPackagePath)) {
     const projectMetadata = await readPackageMetadataFn(projectPackagePath);
-    return mergePackageMetadataFn(metadata, projectMetadata, projectRoot, checkWorkingDirectoryStatus);
+    return mergePackageMetadataFn(
+      metadata, projectMetadata,
+      workspaceRoot, projectRoot,
+      projectRoot,
+      checkWorkingDirectoryStatus);
   } else {
-    return mergePackageMetadataFn({} as T, metadata, projectRoot, checkWorkingDirectoryStatus);
+    return mergePackageMetadataFn(
+      {} as T,
+      metadata,
+      '',  // dummy
+      workspaceRoot,
+      projectRoot,
+      checkWorkingDirectoryStatus);
   }
 };
+
 
 //////////////////////////////////////////////////////////////////////////////////////
 
@@ -218,7 +252,8 @@ export const resolvePackageMetadata = (projectRoot: string, checkWorkingDirector
     projectRoot,
     checkWorkingDirectoryStatus,
     readPackageMetadata,
-    mergePackageMetadata);
+    (parentMetadata, childMetadata, _parentDir, _childDir, repositoryPath, checkWorkingDirectoryStatus) =>
+      mergePackageMetadata(parentMetadata, childMetadata, repositoryPath, checkWorkingDirectoryStatus));
 };
 
 /**
@@ -241,17 +276,22 @@ const readRawPackageJson = async (packagePath: string): Promise<any> => {
  * @param projectRoot - Current project root
  * @param checkWorkingDirectoryStatus - Check working directory status
  * @param inheritableFields - Package metadata fields that should be inherited from parent
- * @returns Promise resolving to resolved raw package.json object
+ * @returns Promise resolving to resolved raw package.json object with source tracking
  */
-export const resolveRawPackageJsonObject = (
+export const resolveRawPackageJsonObject = async (
   projectRoot: string,
   checkWorkingDirectoryStatus: boolean,
-  inheritableFields: Set<string>): Promise<any> => {
-  return resolvePackageMetadataT<any>(
+  inheritableFields: Set<string>): Promise<PackageResolutionResult> => {
+  const sourceMap = new Map<string, string>();
+  const packageJson = await resolvePackageMetadataT<any>(
     projectRoot,
     checkWorkingDirectoryStatus,
     readRawPackageJson,
-    (parentMetadata, childMetadata, repositoryPath, checkWorkingDirectoryStatus) =>
+    (parentMetadata, childMetadata, parentSourceDir, childSourceDir, repositoryPath, checkWorkingDirectoryStatus) =>
       mergeRawPackageJson(
-        parentMetadata, childMetadata, repositoryPath, checkWorkingDirectoryStatus, inheritableFields));
+        parentMetadata, childMetadata, parentSourceDir, childSourceDir, repositoryPath, checkWorkingDirectoryStatus, inheritableFields, sourceMap));
+  return {
+    packageJson,
+    sourceMap
+  };
 };

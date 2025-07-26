@@ -8,7 +8,7 @@ import { glob } from 'glob';
 import { existsSync } from 'fs';
 import { mkdir, lstat } from 'fs/promises';
 import { createTarPacker, createReadFileItem, createFileItem, storeReaderToFile } from 'tar-vern';
-import { resolveRawPackageJsonObject } from './internal.js';
+import { resolveRawPackageJsonObject, PackageResolutionResult } from './internal.js';
 
 //////////////////////////////////////////////////////////////////////////////////
 
@@ -78,7 +78,8 @@ const defaultInheritableFields = new Set([
   'repository',
   'keywords',
   'homepage',
-  'bugs'
+  'bugs',
+  'readme'
 ]);
 
 /**
@@ -101,10 +102,10 @@ export const packAssets = async (
     return undefined;
   }
 
-  // Resolve package metadata
-  let resolvedPackageJson: any;
+  // Resolve package metadata with source tracking
+  let result: PackageResolutionResult;
   try {
-    resolvedPackageJson = await resolveRawPackageJsonObject(
+    result = await resolveRawPackageJsonObject(
       targetDir, checkWorkingDirectoryStatus,
       inheritableFields ?? defaultInheritableFields);
   } catch (error) {
@@ -112,6 +113,8 @@ export const packAssets = async (
     // This matches npm pack behavior which requires package.json
     return undefined;
   }
+
+  const { packageJson: resolvedPackageJson, sourceMap } = result;
 
   // Check if package is private
   if (resolvedPackageJson?.private) {
@@ -122,7 +125,9 @@ export const packAssets = async (
   // Priority: CLI option > package.json.readme > none
   let finalReadmeReplacementPath = readmeReplacementPath;
   if (!finalReadmeReplacementPath && resolvedPackageJson?.readme) {
-    const packageReadmePath = resolve(targetDir, resolvedPackageJson.readme);
+    // Get the correct base directory for readme field
+    const readmeSourceDir = sourceMap.get('readme') ?? targetDir;
+    const packageReadmePath = resolve(readmeSourceDir, resolvedPackageJson.readme);
     if (existsSync(packageReadmePath)) {
       finalReadmeReplacementPath = packageReadmePath;
     }
@@ -170,10 +175,10 @@ export const getComputedPackageJsonObject = async (
   }
 
   // Resolve package metadata
-  const resolvedPackageJson = await resolveRawPackageJsonObject(
+  const result = await resolveRawPackageJsonObject(
     targetDir, checkWorkingDirectoryStatus,
     inheritableFields ?? defaultInheritableFields);
-  return resolvedPackageJson;
+  return result.packageJson;
 };
 
 //////////////////////////////////////////////////////////////////////////////////
