@@ -16,6 +16,30 @@ declare const __AUTHOR__: string;
 declare const __REPOSITORY_URL__: string;
 declare const __LICENSE__: string;
 
+// Package metadata fields that should be inherited from parent
+const defaultInheritableFields = new Set([
+  'version',
+  'description', 
+  'author',
+  'license',
+  'repository',
+  'keywords',
+  'homepage',
+  'bugs',
+  'readme'
+]);
+
+// Parse inheritable fields from CLI option string
+const parseInheritableFields = (inheritableFieldsOption: string | boolean | undefined): Set<string> => {
+  if (typeof inheritableFieldsOption !== 'string') {
+    return defaultInheritableFields;
+  }
+  if (!inheritableFieldsOption.trim()) {
+    return new Set(); // Empty set for empty string (no inheritance)
+  }
+  return new Set(inheritableFieldsOption.split(',').map(field => field.trim()).filter(field => field.length > 0));
+};
+
 //////////////////////////////////////////////////////////////////////////////////
 
 const showHelp = () => {
@@ -36,6 +60,8 @@ Options:
 
 Pack Options:
   --pack-destination <path>     Directory to write the tarball
+  --readme <path>               Replace README.md with specified file
+  --inheritable-fields <list>   Comma-separated list of fields to inherit from parent (default: version,description,author,license,repository,keywords,homepage,bugs,readme)
   --no-wds                      Do not check working directory status to increase version
 
 Publish Options:
@@ -64,6 +90,7 @@ Arguments:
 Options:
   --pack-destination <path>     Directory to write the tarball
   --readme <path>               Replace README.md with specified file
+  --inheritable-fields <list>   Comma-separated list of fields to inherit from parent
   --no-wds                      Do not check working directory status to increase version
   -h, --help                    Show help for pack command
 `);
@@ -104,17 +131,21 @@ const packCommand = async (args: ParsedArgs) => {
   const directory = args.positional[0];
   const packDestination = args.options['pack-destination'] as string;
   const readmeOption = args.options['readme'] as string;
+  const inheritableFieldsOption = args.options['inheritable-fields'] as string;
   const checkWorkingDirectoryStatus = args.options['no-wds'] ? false : true;
 
   const targetDir = resolve(directory ?? process.cwd());
   const outputDir = packDestination ? resolve(packDestination) : process.cwd();
   const readmeReplacementPath = readmeOption ? resolve(readmeOption) : undefined;
+  
+  // Parse inheritable fields from CLI option or use defaults
+  const inheritableFields = parseInheritableFields(inheritableFieldsOption);
 
   console.log(`[screw-up/cli]: pack: Creating archive of ${targetDir}...`);
 
   try {
     const metadata = await packAssets(
-      targetDir, outputDir, checkWorkingDirectoryStatus, undefined, readmeReplacementPath);
+      targetDir, outputDir, checkWorkingDirectoryStatus, inheritableFields, readmeReplacementPath);
     if (metadata) {
       console.log(`[screw-up/cli]: pack: Archive created successfully: ${outputDir}`);
     } else {
@@ -165,12 +196,16 @@ const publishCommand = async (args: ParsedArgs) => {
   };
 
   const path = args.positional[0];
+  const inheritableFieldsOption = args.options['inheritable-fields'] as string;
   const checkWorkingDirectoryStatus = args.options['no-wds'] ? false : true;
+
+  // Parse inheritable fields from CLI option or use defaults
+  const inheritableFields = parseInheritableFields(inheritableFieldsOption);
 
   // Convert parsed options to npm options
   const npmOptions: string[] = [];
   Object.entries(args.options).forEach(([key, value]) => {
-    if (key === 'help' || key === 'h' || key === 'no-wds') return; // Skip help and no-wds options
+    if (key === 'help' || key === 'h' || key === 'no-wds' || key === 'inheritable-fields') return; // Skip help, no-wds, and inheritable-fields options
 
     if (value === true) {
       npmOptions.push(`--${key}`);
@@ -189,7 +224,7 @@ const publishCommand = async (args: ParsedArgs) => {
 
       try {
         const metadata = await packAssets(
-          targetDir, outputDir, checkWorkingDirectoryStatus);
+          targetDir, outputDir, checkWorkingDirectoryStatus, inheritableFields, undefined);
         if (metadata) {
           const archiveName = `${metadata.name}-${metadata.version}.tgz`;
           const archivePath = join(outputDir, archiveName);
@@ -216,7 +251,7 @@ const publishCommand = async (args: ParsedArgs) => {
 
         try {
           const metadata = await packAssets(
-            targetDir, outputDir, checkWorkingDirectoryStatus);
+            targetDir, outputDir, checkWorkingDirectoryStatus, inheritableFields, undefined);
           if (metadata) {
             const archiveName = `${metadata.name}-${metadata.version}.tgz`;
             const archivePath = join(outputDir, archiveName);
@@ -251,6 +286,7 @@ Arguments:
   directory                     Directory to dump package.json from (default: current directory)
 
 Options:
+  --inheritable-fields <list>   Comma-separated list of fields to inherit from parent
   --no-wds                      Do not check working directory status to increase version
   -h, --help                    Show help for dump command
 `);
@@ -265,13 +301,17 @@ const dumpCommand = async (args: ParsedArgs) => {
   }
 
   const directory = args.positional[0];
+  const inheritableFieldsOption = args.options['inheritable-fields'] as string;
   const checkWorkingDirectoryStatus = args.options['no-wds'] ? false : true;
+
+  // Parse inheritable fields from CLI option or use defaults
+  const inheritableFields = parseInheritableFields(inheritableFieldsOption);
 
   const targetDir = resolve(directory ?? process.cwd());
 
   try {
     const computedPackageJson = await getComputedPackageJsonObject(
-      targetDir, checkWorkingDirectoryStatus);
+      targetDir, checkWorkingDirectoryStatus, inheritableFields);
     if (computedPackageJson) {
       console.log(JSON.stringify(computedPackageJson, null, 2));
     } else {

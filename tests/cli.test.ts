@@ -9,6 +9,19 @@ import { packAssets } from '../src/cli-internal.js';
 
 const CLI_PATH = join(__dirname, '../dist/cli.js');
 
+// Default inheritable fields (copied from cli.ts)
+const defaultInheritableFields = new Set([
+  'version',
+  'description', 
+  'author',
+  'license',
+  'repository',
+  'keywords',
+  'homepage',
+  'bugs',
+  'readme'
+]);
+
 describe('CLI tests', () => {
   const tempBaseDir = join(tmpdir(), 'screw-up', 'cli-test', dayjs().format('YYYYMMDD_HHmmssSSS'));
 
@@ -85,7 +98,7 @@ describe('CLI tests', () => {
       const outputDir = join(tempDir, 'output');
       mkdirSync(outputDir, { recursive: true });
 
-      const metadata = await packAssets(targetDir, outputDir, true);
+      const metadata = await packAssets(targetDir, outputDir, true, defaultInheritableFields, undefined);
       expect(metadata).toBeDefined();
       expect(metadata?.name).toBe('test-package');
       expect(metadata?.version).toBe('1.0.0');
@@ -138,14 +151,14 @@ describe('CLI tests', () => {
       const outputDir = join(tempDir, 'output');
       mkdirSync(outputDir, { recursive: true });
 
-      const workspaceArchived = await packAssets(workspaceRoot, outputDir, true);
+      const workspaceArchived = await packAssets(workspaceRoot, outputDir, true, defaultInheritableFields, undefined);
       expect(workspaceArchived).toBeUndefined();
 
       // Check workspace archive was not created
       const workspaceArchivePath = join(outputDir, 'workspace-root-2.0.0.tgz');
       expect(existsSync(workspaceArchivePath)).toBe(false);
 
-      const childArchived = await packAssets(childDir, outputDir, true);
+      const childArchived = await packAssets(childDir, outputDir, true, defaultInheritableFields, undefined);
       expect(childArchived).toBeDefined();
       expect(childArchived?.name).toBe('child-package');
       expect(childArchived?.version).toBe('2.0.0');
@@ -199,7 +212,7 @@ describe('CLI tests', () => {
       const outputDir = join(tempDir, 'output');
       mkdirSync(outputDir, { recursive: true });
 
-      const childArchived = await packAssets(childDir, outputDir, true);
+      const childArchived = await packAssets(childDir, outputDir, true, defaultInheritableFields, undefined);
       expect(childArchived).toBeDefined();
       expect(childArchived?.name).toBe('child-package');
       expect(childArchived?.version).toBe('2.0.0');
@@ -244,7 +257,7 @@ describe('CLI tests', () => {
       const outputDir = join(tempDir, 'output');
       mkdirSync(outputDir, { recursive: true });
 
-      const metadata = await packAssets(testSourceDir, outputDir, true, undefined, readmeReplacement);
+      const metadata = await packAssets(testSourceDir, outputDir, true, defaultInheritableFields, readmeReplacement);
       expect(metadata).toBeDefined();
       expect(metadata?.name).toBe('test-package');
 
@@ -298,7 +311,7 @@ describe('CLI tests', () => {
       mkdirSync(outputDir, { recursive: true });
 
       // No CLI readme option provided - should use package.json readme field
-      const metadata = await packAssets(testDir, outputDir, true);
+      const metadata = await packAssets(testDir, outputDir, true, defaultInheritableFields, undefined);
       expect(metadata).toBeDefined();
       expect(metadata?.name).toBe('test-package-readme');
 
@@ -355,7 +368,7 @@ describe('CLI tests', () => {
       mkdirSync(outputDir, { recursive: true });
 
       // CLI option should take priority over package.json readme field
-      const metadata = await packAssets(testDir, outputDir, true, undefined, cliReadme);
+      const metadata = await packAssets(testDir, outputDir, true, defaultInheritableFields, cliReadme);
       expect(metadata).toBeDefined();
       expect(metadata?.name).toBe('test-priority');
 
@@ -405,7 +418,7 @@ describe('CLI tests', () => {
       const outputDir = join(tempDir, 'output');
       mkdirSync(outputDir, { recursive: true });
 
-      const metadata = await packAssets(testDir, outputDir, true, undefined, replacementReadme);
+      const metadata = await packAssets(testDir, outputDir, true, defaultInheritableFields, replacementReadme);
       expect(metadata).toBeDefined();
       expect(metadata?.name).toBe('test-no-readme-in-files');
 
@@ -434,7 +447,7 @@ describe('CLI tests', () => {
 
       const nonExistentReadme = join(testSourceDir, 'non-existent-readme.md');
 
-      await expect(packAssets(testSourceDir, outputDir, true, undefined, nonExistentReadme))
+      await expect(packAssets(testSourceDir, outputDir, true, defaultInheritableFields, nonExistentReadme))
         .rejects.toThrow('README replacement file not found:');
     }, 10000);
   });
@@ -1114,7 +1127,7 @@ describe('CLI tests', () => {
       const outputDir = join(tempDir, 'output');
       mkdirSync(outputDir, { recursive: true });
       
-      const metadata = await packAssets(testSourceDir, outputDir, true);
+      const metadata = await packAssets(testSourceDir, outputDir, true, defaultInheritableFields, undefined);
       const tarballPath = join(outputDir, `${metadata.name}-${metadata.version}.tgz`);
       
       // Verify tarball exists
@@ -1218,7 +1231,7 @@ describe('CLI tests', () => {
       const nestedDir = join(tempDir, 'nested', 'output');
       mkdirSync(nestedDir, { recursive: true });
       
-      const metadata = await packAssets(testSourceDir, nestedDir, true);
+      const metadata = await packAssets(testSourceDir, nestedDir, true, defaultInheritableFields, undefined);
       const tarballPath = join(nestedDir, `${metadata.name}-${metadata.version}.tgz`);
       
       const result = runPublishCLI([tarballPath]);
@@ -1511,7 +1524,7 @@ describe('CLI tests', () => {
       mkdirSync(outputDir, { recursive: true });
 
       // Pack child package - should use workspace root's README
-      const metadata = await packAssets(childDir, outputDir, true);
+      const metadata = await packAssets(childDir, outputDir, true, defaultInheritableFields, undefined);
       expect(metadata).toBeDefined();
       expect(metadata?.name).toBe('child-package');
 
@@ -1573,7 +1586,7 @@ describe('CLI tests', () => {
       mkdirSync(outputDir, { recursive: true });
 
       // Pack child package - should use child's own README, not workspace README
-      const metadata = await packAssets(childDir, outputDir, true);
+      const metadata = await packAssets(childDir, outputDir, true, defaultInheritableFields, undefined);
       expect(metadata).toBeDefined();
       expect(metadata?.name).toBe('child-package');
 
@@ -1634,7 +1647,7 @@ describe('CLI tests', () => {
       mkdirSync(outputDir, { recursive: true });
 
       // Pack child package with CLI option - should use CLI README, not workspace README
-      const metadata = await packAssets(childDir, outputDir, true, undefined, cliReadme);
+      const metadata = await packAssets(childDir, outputDir, true, defaultInheritableFields, cliReadme);
       expect(metadata).toBeDefined();
       expect(metadata?.name).toBe('child-package');
 
@@ -1654,6 +1667,210 @@ describe('CLI tests', () => {
       const readmeContent = readFileSync(extractedReadme, 'utf-8');
       expect(readmeContent).toBe('# CLI README\nSpecified via CLI option - should override workspace inheritance.');
       expect(readmeContent).not.toContain('Workspace README');
+    }, 10000);
+
+    it('should use --inheritable-fields CLI option in pack command', async () => {
+      // Create workspace root with parent package.json
+      const workspaceRoot = join(tempDir, 'workspace-cli-fields');
+      mkdirSync(workspaceRoot);
+
+      const rootPackageJson = {
+        name: 'workspace-root',
+        version: '2.5.0',
+        author: 'Workspace Author',
+        license: 'Apache-2.0',
+        description: 'Root description',
+        keywords: ['root', 'workspace'],
+        homepage: 'https://workspace.example.com',
+        workspaces: ['packages/*']
+      };
+      writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify(rootPackageJson, null, 2));
+
+      // Create child package
+      const childDir = join(workspaceRoot, 'packages', 'child');
+      mkdirSync(childDir, { recursive: true });
+
+      const childPackageJson = {
+        name: 'child-package'
+        // version and homepage should be inherited from parent
+      };
+      writeFileSync(join(childDir, 'package.json'), JSON.stringify(childPackageJson, null, 2));
+      writeFileSync(join(childDir, 'index.js'), 'console.log("child");');
+
+      const outputDir = join(tempDir, 'output');
+      mkdirSync(outputDir, { recursive: true });
+
+      // Run CLI pack command with custom --inheritable-fields (only version and homepage)
+      const result = execSync(`node "${CLI_PATH}" pack "${childDir}" --inheritable-fields "version,homepage"`, {
+        cwd: outputDir,
+        encoding: 'utf-8'
+      });
+
+      expect(result).toContain('Creating archive of');
+      expect(result).toContain('Archive created successfully');
+
+      // Extract and verify package.json content
+      const archivePath = join(outputDir, 'child-package-2.5.0.tgz');
+      const extractDir = join(tempDir, 'extract-cli-fields');
+      mkdirSync(extractDir);
+
+      await tar.extract({
+        file: archivePath,
+        cwd: extractDir
+      });
+
+      const extractedPackageJsonPath = join(extractDir, 'package.json');
+      const extractedPackageJson = JSON.parse(readFileSync(extractedPackageJsonPath, 'utf-8'));
+
+      // Verify child name is preserved
+      expect(extractedPackageJson.name).toBe('child-package');
+
+      // Verify only specified fields are inherited
+      expect(extractedPackageJson.version).toBe('2.5.0'); // Should be inherited
+      expect(extractedPackageJson.homepage).toBe('https://workspace.example.com'); // Should be inherited
+
+      // Verify other fields are NOT inherited
+      expect(extractedPackageJson.author).toBeUndefined();
+      expect(extractedPackageJson.license).toBeUndefined();
+      expect(extractedPackageJson.description).toBeUndefined();
+      expect(extractedPackageJson.keywords).toBeUndefined();
+      expect(extractedPackageJson.workspaces).toBeUndefined();
+    }, 10000);
+
+    it('should use --inheritable-fields CLI option in publish command', async () => {
+      // Create workspace root with parent package.json
+      const workspaceRoot = join(tempDir, 'workspace-publish-fields');
+      mkdirSync(workspaceRoot);
+
+      const rootPackageJson = {
+        name: 'workspace-root',
+        version: '3.5.0',
+        author: 'Workspace Author',
+        license: 'MIT',
+        description: 'Root description',
+        repository: 'https://github.com/test/repo.git',
+        workspaces: ['packages/*']
+      };
+      writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify(rootPackageJson, null, 2));
+
+      // Create child package
+      const childDir = join(workspaceRoot, 'packages', 'child');
+      mkdirSync(childDir, { recursive: true });
+
+      const childPackageJson = {
+        name: 'child-package'
+      };
+      writeFileSync(join(childDir, 'package.json'), JSON.stringify(childPackageJson, null, 2));
+      writeFileSync(join(childDir, 'index.js'), 'console.log("child");');
+
+      // Run CLI publish command with custom --inheritable-fields
+      const result = execSync(`node "${CLI_PATH}" publish "${childDir}" --inheritable-fields "version,license,repository" --dry-run`, {
+        cwd: tempDir,
+        encoding: 'utf-8',
+        env: { 
+          ...process.env, 
+          SCREW_UP_TEST_MODE: 'true'
+        }
+      });
+
+      expect(result).toContain('Creating archive of');
+      expect(result).toContain('TEST_MODE: Would execute: npm publish');
+      expect(result).toContain('child-package-3.5.0.tgz');
+      expect(result).toContain('TEST_MODE: Options: --dry-run'); // inheritable-fields should not be passed to npm
+      expect(result).toContain('Successfully published');
+    }, 10000);
+
+    it('should use --inheritable-fields CLI option in dump command', async () => {
+      // Create workspace root with parent package.json
+      const workspaceRoot = join(tempDir, 'workspace-dump-fields');
+      mkdirSync(workspaceRoot);
+
+      const rootPackageJson = {
+        name: 'workspace-root',
+        version: '4.5.0',
+        author: 'Workspace Author',
+        license: 'BSD-3-Clause',
+        description: 'Root description',
+        keywords: ['test', 'workspace'],
+        workspaces: ['packages/*']
+      };
+      writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify(rootPackageJson, null, 2));
+
+      // Create child package
+      const childDir = join(workspaceRoot, 'packages', 'child');
+      mkdirSync(childDir, { recursive: true });
+
+      const childPackageJson = {
+        name: 'child-package',
+        description: 'Child description override'
+      };
+      writeFileSync(join(childDir, 'package.json'), JSON.stringify(childPackageJson, null, 2));
+
+      // Run CLI dump command with custom --inheritable-fields (only author and keywords)
+      const result = execSync(`node "${CLI_PATH}" dump "${childDir}" --inheritable-fields "author,keywords"`, {
+        cwd: tempDir,
+        encoding: 'utf-8'
+      });
+
+      // Parse the JSON output
+      const packageJson = JSON.parse(result);
+      
+      // Verify child overrides
+      expect(packageJson.name).toBe('child-package');
+      expect(packageJson.description).toBe('Child description override');
+      
+      // Verify only specified fields are inherited
+      expect(packageJson.author).toBe('Workspace Author');
+      expect(packageJson.keywords).toEqual(['test', 'workspace']);
+      
+      // Verify other fields are NOT inherited
+      expect(packageJson.version).toBeUndefined();
+      expect(packageJson.license).toBeUndefined();
+      expect(packageJson.workspaces).toBeUndefined();
+    }, 10000);
+
+    it('should handle empty --inheritable-fields option', async () => {
+      // Create workspace root with parent package.json
+      const workspaceRoot = join(tempDir, 'workspace-empty-fields');
+      mkdirSync(workspaceRoot);
+
+      const rootPackageJson = {
+        name: 'workspace-root',
+        version: '5.0.0',
+        author: 'Workspace Author',
+        license: 'MIT',
+        workspaces: ['packages/*']
+      };
+      writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify(rootPackageJson, null, 2));
+
+      // Create child package
+      const childDir = join(workspaceRoot, 'packages', 'child');
+      mkdirSync(childDir, { recursive: true });
+
+      const childPackageJson = {
+        name: 'child-package',
+        version: '1.0.0'
+      };
+      writeFileSync(join(childDir, 'package.json'), JSON.stringify(childPackageJson, null, 2));
+      writeFileSync(join(childDir, 'index.js'), 'console.log("child");');
+
+      // Run CLI dump command with empty --inheritable-fields (no inheritance)
+      const result = execSync(`node "${CLI_PATH}" dump "${childDir}" --inheritable-fields ""`, {
+        cwd: tempDir,
+        encoding: 'utf-8'
+      });
+
+      // Parse the JSON output
+      const packageJson = JSON.parse(result);
+      
+      // Verify only child package fields (no inheritance)
+      expect(packageJson.name).toBe('child-package');
+      expect(packageJson.version).toBe('1.0.0');
+      
+      // Verify no fields are inherited from parent
+      expect(packageJson.author).toBeUndefined();
+      expect(packageJson.license).toBeUndefined();
+      expect(packageJson.workspaces).toBeUndefined();
     }, 10000);
   });
 });

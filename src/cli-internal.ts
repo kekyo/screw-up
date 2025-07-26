@@ -69,18 +69,6 @@ const createPackEntryGenerator = async function* (targetDir: string, resolvedPac
   }
 };
 
-// Package metadata fields that should be inherited from parent
-const defaultInheritableFields = new Set([
-  'version',
-  'description', 
-  'author',
-  'license',
-  'repository',
-  'keywords',
-  'homepage',
-  'bugs',
-  'readme'
-]);
 
 /**
  * Pack assets into a tar archive
@@ -95,8 +83,8 @@ export const packAssets = async (
   targetDir: string,
   outputDir: string,
   checkWorkingDirectoryStatus: boolean,
-  inheritableFields?: Set<string>,
-  readmeReplacementPath?: string) : Promise<any> => {
+  inheritableFields: Set<string>,
+  readmeReplacementPath: string | undefined) : Promise<any> => {
   // Check if target directory exists
   if (!existsSync(targetDir)) {
     return undefined;
@@ -107,7 +95,7 @@ export const packAssets = async (
   try {
     result = await resolveRawPackageJsonObject(
       targetDir, checkWorkingDirectoryStatus,
-      inheritableFields ?? defaultInheritableFields);
+      inheritableFields);
   } catch (error) {
     // If package.json cannot be read (e.g., file doesn't exist), return undefined
     // This matches npm pack behavior which requires package.json
@@ -168,7 +156,7 @@ export const packAssets = async (
 export const getComputedPackageJsonObject = async (
   targetDir: string,
   checkWorkingDirectoryStatus: boolean,
-  inheritableFields?: Set<string>) : Promise<any> => {
+  inheritableFields: Set<string>) : Promise<any> => {
   // Check if target directory exists
   if (!existsSync(targetDir)) {
     return undefined;
@@ -177,7 +165,7 @@ export const getComputedPackageJsonObject = async (
   // Resolve package metadata
   const result = await resolveRawPackageJsonObject(
     targetDir, checkWorkingDirectoryStatus,
-    inheritableFields ?? defaultInheritableFields);
+    inheritableFields);
   return result.packageJson;
 };
 
@@ -210,7 +198,7 @@ export const parseArgs = (argv: string[]): ParsedArgs => {
         const optionName = arg.slice(2);
         const nextArg = args[i + 1];
 
-        if (nextArg && !nextArg.startsWith('-')) {
+        if (nextArg !== undefined && !nextArg.startsWith('-')) {
           result.options[optionName] = nextArg;
           i += 2;
         } else {
@@ -239,7 +227,7 @@ export const parseArgs = (argv: string[]): ParsedArgs => {
       const optionName = arg.slice(2);
       const nextArg = args[i + 1];
 
-      if (nextArg && !nextArg.startsWith('-')) {
+      if (nextArg !== undefined && !nextArg.startsWith('-')) {
         result.options[optionName] = nextArg;
         i += 2;
       } else {
