@@ -30,9 +30,10 @@ export default defineConfig({
       formats: ['es', 'cjs']
     },
     rollupOptions: {
-      external: ['fs', 'path', 'fs/promises', 'vite', 'tar', 'zlib', 'events', 'stream', 'tar-stream', 'glob', 'string_decoder', 'child_process']
+      external: ['fs', 'path', 'fs/promises', 'vite', 'tar', 'zlib', 'events', 'stream', 'stream/promises', 'tar-stream', 'glob', 'string_decoder', 'child_process', 'isomorphic-git', 'simple-git']
     },
     target: 'es2018',
-    minify: false
+    minify: false,
+    sourcemap: true
   }
 });

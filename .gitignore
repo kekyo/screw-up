@@ -60,3 +60,5 @@ dist/
 debug-test/
 test-results/
 playwright-report/
+
+artifacts/

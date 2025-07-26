@@ -9,12 +9,36 @@ import { join, resolve } from 'path';
 import { existsSync } from 'fs';
 import { mkdtemp, rm, stat } from 'fs/promises';
 import { spawn } from 'child_process';
-import { packAssets, parseArgs, ParsedArgs } from './cli-internal.js';
+import { packAssets, parseArgs, ParsedArgs, getComputedPackageJsonObject } from './cli-internal.js';
 
 declare const __VERSION__: string;
 declare const __AUTHOR__: string;
 declare const __REPOSITORY_URL__: string;
 declare const __LICENSE__: string;
+
+// Package metadata fields that should be inherited from parent
+const defaultInheritableFields = new Set([
+  'version',
+  'description', 
+  'author',
+  'license',
+  'repository',
+  'keywords',
+  'homepage',
+  'bugs',
+  'readme'
+]);
+
+// Parse inheritable fields from CLI option string
+const parseInheritableFields = (inheritableFieldsOption: string | boolean | undefined): Set<string> => {
+  if (typeof inheritableFieldsOption !== 'string') {
+    return defaultInheritableFields;
+  }
+  if (!inheritableFieldsOption.trim()) {
+    return new Set(); // Empty set for empty string (no inheritance)
+  }
+  return new Set(inheritableFieldsOption.split(',').map(field => field.trim()).filter(field => field.length > 0));
+};
 
 //////////////////////////////////////////////////////////////////////////////////
 
@@ -29,24 +53,29 @@ Usage: screw-up <command> [options]
 Commands:
   pack [directory]              Pack the project into a tar archive
   publish [directory|package.tgz]  Publish the project
+  dump [directory]              Dump computed package.json as JSON
 
 Options:
   -h, --help                    Show help
 
 Pack Options:
   --pack-destination <path>     Directory to write the tarball
+  --readme <path>               Replace README.md with specified file
+  --inheritable-fields <list>   Comma-separated list of fields to inherit from parent (default: version,description,author,license,repository,keywords,homepage,bugs,readme)
+  --no-wds                      Do not check working directory status to increase version
 
 Publish Options:
   All npm publish options are supported (e.g., --dry-run, --tag, --access, --registry)
 
 Examples:
-  screw-up pack                          # Pack current directory
-  screw-up pack ./my-project             # Pack specific directory
-  screw-up pack --pack-destination ./dist # Pack to specific output directory
-  screw-up publish                       # Publish current directory
-  screw-up publish ./my-project          # Publish specific directory
-  screw-up publish package.tgz           # Publish existing tarball
-  screw-up publish --dry-run --tag beta  # Publish with npm options
+  screw-up pack                            # Pack current directory
+  screw-up pack ./my-project               # Pack specific directory
+  screw-up pack --pack-destination ./dist  # Pack to specific output directory
+  screw-up pack --readme ./README_pack.md  # Pack with custom README
+  screw-up publish                         # Publish current directory
+  screw-up publish ./my-project            # Publish specific directory
+  screw-up publish package.tgz             # Publish existing tarball
+  screw-up publish --dry-run --tag beta    # Publish with npm options
 `);
 };
 
@@ -60,6 +89,9 @@ Arguments:
 
 Options:
   --pack-destination <path>     Directory to write the tarball
+  --readme <path>               Replace README.md with specified file
+  --inheritable-fields <list>   Comma-separated list of fields to inherit from parent
+  --no-wds                      Do not check working directory status to increase version
   -h, --help                    Show help for pack command
 `);
 };
@@ -98,14 +130,22 @@ const packCommand = async (args: ParsedArgs) => {
 
   const directory = args.positional[0];
   const packDestination = args.options['pack-destination'] as string;
+  const readmeOption = args.options['readme'] as string;
+  const inheritableFieldsOption = args.options['inheritable-fields'] as string;
+  const checkWorkingDirectoryStatus = args.options['no-wds'] ? false : true;
 
   const targetDir = resolve(directory ?? process.cwd());
   const outputDir = packDestination ? resolve(packDestination) : process.cwd();
+  const readmeReplacementPath = readmeOption ? resolve(readmeOption) : undefined;
+  
+  // Parse inheritable fields from CLI option or use defaults
+  const inheritableFields = parseInheritableFields(inheritableFieldsOption);
 
   console.log(`[screw-up/cli]: pack: Creating archive of ${targetDir}...`);
 
   try {
-    const metadata = await packAssets(targetDir, outputDir);
+    const metadata = await packAssets(
+      targetDir, outputDir, checkWorkingDirectoryStatus, inheritableFields, readmeReplacementPath);
     if (metadata) {
       console.log(`[screw-up/cli]: pack: Archive created successfully: ${outputDir}`);
     } else {
@@ -126,7 +166,7 @@ const publishCommand = async (args: ParsedArgs) => {
     return;
   }
 
-  const runNpmPublish = async (tarballPath: string, npmOptions: string[] = []) => {
+  const runNpmPublish = async (tarballPath: string, npmOptions: string[]) => {
     console.log(`[screw-up/cli]: publish: Publishing ${tarballPath} to npm...`);
     
     const publishArgs = ['publish', tarballPath, ...npmOptions];
@@ -156,12 +196,17 @@ const publishCommand = async (args: ParsedArgs) => {
   };
 
   const path = args.positional[0];
-  
+  const inheritableFieldsOption = args.options['inheritable-fields'] as string;
+  const checkWorkingDirectoryStatus = args.options['no-wds'] ? false : true;
+
+  // Parse inheritable fields from CLI option or use defaults
+  const inheritableFields = parseInheritableFields(inheritableFieldsOption);
+
   // Convert parsed options to npm options
   const npmOptions: string[] = [];
   Object.entries(args.options).forEach(([key, value]) => {
-    if (key === 'help' || key === 'h') return; // Skip help options
-    
+    if (key === 'help' || key === 'h' || key === 'no-wds' || key === 'inheritable-fields') return; // Skip help, no-wds, and inheritable-fields options
+
     if (value === true) {
       npmOptions.push(`--${key}`);
     } else {
@@ -178,7 +223,8 @@ const publishCommand = async (args: ParsedArgs) => {
       console.log(`[screw-up/cli]: publish: Creating archive of ${targetDir}...`);
 
       try {
-        const metadata = await packAssets(targetDir, outputDir);
+        const metadata = await packAssets(
+          targetDir, outputDir, checkWorkingDirectoryStatus, inheritableFields, undefined);
         if (metadata) {
           const archiveName = `${metadata.name}-${metadata.version}.tgz`;
           const archivePath = join(outputDir, archiveName);
@@ -204,7 +250,8 @@ const publishCommand = async (args: ParsedArgs) => {
         console.log(`[screw-up/cli]: publish: Creating archive of ${targetDir}...`);
 
         try {
-          const metadata = await packAssets(targetDir, outputDir);
+          const metadata = await packAssets(
+            targetDir, outputDir, checkWorkingDirectoryStatus, inheritableFields, undefined);
           if (metadata) {
             const archiveName = `${metadata.name}-${metadata.version}.tgz`;
             const archivePath = join(outputDir, archiveName);
@@ -230,6 +277,53 @@ const publishCommand = async (args: ParsedArgs) => {
   }
 };
 
+const showDumpHelp = () => {
+  console.log(`Usage: screw-up dump [options] [directory]
+
+Dump computed package.json as JSON
+
+Arguments:
+  directory                     Directory to dump package.json from (default: current directory)
+
+Options:
+  --inheritable-fields <list>   Comma-separated list of fields to inherit from parent
+  --no-wds                      Do not check working directory status to increase version
+  -h, --help                    Show help for dump command
+`);
+};
+
+//////////////////////////////////////////////////////////////////////////////////
+
+const dumpCommand = async (args: ParsedArgs) => {
+  if (args.options.help || args.options.h) {
+    showDumpHelp();
+    return;
+  }
+
+  const directory = args.positional[0];
+  const inheritableFieldsOption = args.options['inheritable-fields'] as string;
+  const checkWorkingDirectoryStatus = args.options['no-wds'] ? false : true;
+
+  // Parse inheritable fields from CLI option or use defaults
+  const inheritableFields = parseInheritableFields(inheritableFieldsOption);
+
+  const targetDir = resolve(directory ?? process.cwd());
+
+  try {
+    const computedPackageJson = await getComputedPackageJsonObject(
+      targetDir, checkWorkingDirectoryStatus, inheritableFields);
+    if (computedPackageJson) {
+      console.log(JSON.stringify(computedPackageJson, null, 2));
+    } else {
+      console.error(`[screw-up/cli]: dump: Unable to read package.json from: ${targetDir}`);
+      process.exit(1);
+    }
+  } catch (error) {
+    console.error('[screw-up/cli]: dump: Failed to dump package.json:', error);
+    process.exit(1);
+  }
+};
+
 //////////////////////////////////////////////////////////////////////////////////
 
 const main = async () => {
@@ -248,6 +342,9 @@ const main = async () => {
       break;
     case 'publish':
       await publishCommand(args);
+      break;
+    case 'dump':
+      await dumpCommand(args);
       break;
     default:
       console.error(`Unknown command: ${args.command}`);

@@ -6,8 +6,17 @@
 import { existsSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { dirname, join } from 'path';
+import JSON5 from 'json5';
+import { getGitMetadata } from './analyzer.js';
+import { PackageMetadata } from './types.js';
 
-export type PackageMetadata = Record<string, string>;
+/**
+ * Result of package resolution with source tracking
+ */
+export interface PackageResolutionResult {
+  packageJson: any;
+  sourceMap: Map<string, string>;
+}
 
 /**
  * Recursively flatten an object into dot-notation key-value pairs
@@ -31,24 +40,6 @@ const flattenObject = (obj: any, prefix: string, map: PackageMetadata) => {
       // Convert other types to string
       map[fullKey] = String(value);
     }
-  }
-};
-
-/**
- * Read and parse package.json file
- * @param packagePath - Path to package.json
- * @returns Promise resolving to package metadata
- */
-export const readPackageMetadata = async (packagePath: string): Promise<PackageMetadata> => {
-  try {
-    const content = await readFile(packagePath, 'utf-8');
-    const json = JSON.parse(content);
-    const map = {};
-    flattenObject(json, '', map);
-    return map;
-  } catch (error) {
-    console.warn(`Failed to read package.json from ${packagePath}:`, error);
-    return {};
   }
 };
 
@@ -85,18 +76,27 @@ export const findWorkspaceRoot = async (startPath: string): Promise<string | und
   return undefined;
 };
 
+//////////////////////////////////////////////////////////////////////////////////////
+
 /**
  * Merge package metadata with inheritance (child overrides parent)
  * @param parentMetadata - Parent package metadata
  * @param childMetadata - Child package metadata
+ * @param repositoryPath - Path to Git repository root
+ * @param checkWorkingDirectoryStatus - Check working directory status to increase version
  * @returns Merged metadata
  */
-export const mergePackageMetadata = (
+export const mergePackageMetadata = async (
   parentMetadata: PackageMetadata, 
-  childMetadata: PackageMetadata
-): PackageMetadata => {
-  const merged: PackageMetadata = {};
-  
+  childMetadata: PackageMetadata,
+  repositoryPath: string,
+  checkWorkingDirectoryStatus: boolean) => {
+  // Start with default git metadata if repositoryPath is provided
+  const metadata = await getGitMetadata(repositoryPath, checkWorkingDirectoryStatus);
+
+  const merged: PackageMetadata = { };
+  flattenObject(metadata, '', merged);
+
   // Start with parent metadata
   for (const key in parentMetadata) {
     const value = parentMetadata[key];
@@ -104,7 +104,7 @@ export const mergePackageMetadata = (
       merged[key] = value;
     }
   }
-  
+
   // Override with child metadata
   for (const key in childMetadata) {
     const value = childMetadata[key];
@@ -117,23 +117,83 @@ export const mergePackageMetadata = (
 };
 
 /**
+ * Merge raw package.json objects with inheritance (child overrides parent)
+ * Only inherits package metadata fields, not project-specific configurations
+ * @param parentMetadata - Parent package object
+ * @param childMetadata - Child package object
+ * @param parentSourceDir - Parent package.json directory (for source tracking)
+ * @param childSourceDir - Child package.json directory (for source tracking)
+ * @param repositoryPath - Path to Git repository root
+ * @param checkWorkingDirectoryStatus - Check working directory status to increase version
+ * @param inheritableFields - Package metadata fields that should be inherited from parent
+ * @param sourceMap - Map to track field sources
+ * @returns Merged package object with only metadata fields
+ */
+const mergeRawPackageJson = async (
+  parentMetadata: any,
+  childMetadata: any,
+  parentSourceDir: string,
+  childSourceDir: string,
+  repositoryPath: string,
+  checkWorkingDirectoryStatus: boolean,
+  inheritableFields: Set<string>,
+  sourceMap: Map<string, string>) => {
+  // Start with default git metadata if repositoryPath is provided
+  const merged = await getGitMetadata(repositoryPath, checkWorkingDirectoryStatus) as any;
+  
+  // Start with parent metadata
+  for (const key in parentMetadata) {
+    if (inheritableFields.has(key)) {
+      const value = parentMetadata[key];
+      if (value !== undefined) {
+        merged[key] = value;
+        sourceMap.set(key, parentSourceDir);
+      }
+    }
+  }
+  
+  // Override with child metadata
+  for (const key in childMetadata) {
+    const value = childMetadata[key];
+    if (value !== undefined) {
+      merged[key] = value;
+      sourceMap.set(key, childSourceDir);
+    }
+  }
+ 
+  return merged;
+};
+
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+/**
  * Resolve package metadata for current project with workspace inheritance
  * @param projectRoot - Current project root
+ * @param checkWorkingDirectoryStatus - Check working directory status to increase version
  * @param readPackageMetadataFn - Function to read package metadata
  * @param mergePackageMetadataFn - Function to merge package metadata
  * @returns Promise resolving to resolved package metadata
  */
 const resolvePackageMetadataT = async <T>(
   projectRoot: string,
+  checkWorkingDirectoryStatus: boolean,
   readPackageMetadataFn: (path: string) => Promise<T>,
-  mergePackageMetadataFn: (a: T, b: T) => T): Promise<T> => {
+  mergePackageMetadataFn: (a: T, b: T, aDir: string, bDir: string, repositoryPath: string, checkWorkingDirectoryStatus: boolean) => Promise<T>): Promise<T> => {
   
   const workspaceRoot = await findWorkspaceRoot(projectRoot);
   
   if (!workspaceRoot) {
     // No workspace, just read local package.json
     const localPackagePath = join(projectRoot, 'package.json');
-    return await readPackageMetadataFn(localPackagePath);
+    const localMetadata = await readPackageMetadataFn(localPackagePath);
+    return mergePackageMetadataFn(
+      {} as T,
+      localMetadata,
+      '',  // dummy
+      projectRoot,
+      projectRoot,
+      checkWorkingDirectoryStatus);
   }
   
   const projectPackagePath = join(projectRoot, 'package.json');
@@ -145,58 +205,41 @@ const resolvePackageMetadataT = async <T>(
   // If current project is not the root, merge with project-specific metadata
   if (projectPackagePath !== rootPackagePath && existsSync(projectPackagePath)) {
     const projectMetadata = await readPackageMetadataFn(projectPackagePath);
-    return mergePackageMetadataFn(metadata, projectMetadata);
+    return mergePackageMetadataFn(
+      metadata, projectMetadata,
+      workspaceRoot, projectRoot,
+      projectRoot,
+      checkWorkingDirectoryStatus);
   } else {
-    return metadata;
+    return mergePackageMetadataFn(
+      {} as T,
+      metadata,
+      '',  // dummy
+      workspaceRoot,
+      projectRoot,
+      checkWorkingDirectoryStatus);
   }
 };
 
+
+//////////////////////////////////////////////////////////////////////////////////////
+
 /**
- * Read and parse package.json file without flattening
+ * Read and parse package.json file
  * @param packagePath - Path to package.json
- * @returns Promise resolving to raw package object
+ * @returns Promise resolving to package metadata
  */
-export const readRawPackageJson = async (packagePath: string): Promise<any> => {
+const readPackageMetadata = async (packagePath: string): Promise<PackageMetadata> => {
   try {
     const content = await readFile(packagePath, 'utf-8');
-    return JSON.parse(content);
+    const json = JSON5.parse(content);
+    const map: PackageMetadata = {};
+    flattenObject(json, '', map);
+    return map;
   } catch (error) {
     console.error(`Failed to read package.json from ${packagePath}:`, error);
-    throw error;
+    return {};
   }
-};
-
-/**
- * Merge raw package.json objects with inheritance (child overrides parent)
- * Only inherits package metadata fields, not project-specific configurations
- * @param parentPackage - Parent package object
- * @param childPackage - Child package object
- * @returns Merged package object with only metadata fields
- */
-export const mergeRawPackageJson = (parentPackage: any, childPackage: any): any => {
-  // Package metadata fields that should be inherited from parent
-  const inheritableFields = [
-    'version',
-    'description', 
-    'author',
-    'license',
-    'repository',
-    'keywords',
-    'homepage',
-    'bugs'
-  ];
-  
-  // Start with child package (child always keeps its own name)
-  const merged = { ...childPackage };
-  
-  // Inherit specified metadata fields from parent if not already present in child
-  for (const field of inheritableFields) {
-    if (parentPackage[field] && !merged[field]) {
-      merged[field] = parentPackage[field];
-    }
-  }
-  
-  return merged;
 };
 
 /**
@@ -204,15 +247,51 @@ export const mergeRawPackageJson = (parentPackage: any, childPackage: any): any 
  * @param projectRoot - Current project root
  * @returns Promise resolving to resolved package metadata
  */
-export const resolvePackageMetadata = (projectRoot: string): Promise<PackageMetadata> => {
-  return resolvePackageMetadataT<PackageMetadata>(projectRoot, readPackageMetadata, mergePackageMetadata);
+export const resolvePackageMetadata = (projectRoot: string, checkWorkingDirectoryStatus: boolean): Promise<PackageMetadata> => {
+  return resolvePackageMetadataT<PackageMetadata>(
+    projectRoot,
+    checkWorkingDirectoryStatus,
+    readPackageMetadata,
+    (parentMetadata, childMetadata, _parentDir, _childDir, repositoryPath, checkWorkingDirectoryStatus) =>
+      mergePackageMetadata(parentMetadata, childMetadata, repositoryPath, checkWorkingDirectoryStatus));
+};
+
+/**
+ * Read and parse package.json file without flattening
+ * @param packagePath - Path to package.json
+ * @returns Promise resolving to raw package object
+ */
+const readRawPackageJson = async (packagePath: string): Promise<any> => {
+  try {
+    const content = await readFile(packagePath, 'utf-8');
+    return JSON5.parse(content);
+  } catch (error) {
+    console.error(`Failed to read package.json from ${packagePath}:`, error);
+    throw error;
+  }
 };
 
 /**
  * Resolve raw package.json for current project with workspace inheritance
  * @param projectRoot - Current project root
- * @returns Promise resolving to resolved raw package.json object
+ * @param checkWorkingDirectoryStatus - Check working directory status
+ * @param inheritableFields - Package metadata fields that should be inherited from parent
+ * @returns Promise resolving to resolved raw package.json object with source tracking
  */
-export const resolveRawPackageJson = (projectRoot: string): Promise<any> => {
-  return resolvePackageMetadataT<any>(projectRoot, readRawPackageJson, mergeRawPackageJson);
+export const resolveRawPackageJsonObject = async (
+  projectRoot: string,
+  checkWorkingDirectoryStatus: boolean,
+  inheritableFields: Set<string>): Promise<PackageResolutionResult> => {
+  const sourceMap = new Map<string, string>();
+  const packageJson = await resolvePackageMetadataT<any>(
+    projectRoot,
+    checkWorkingDirectoryStatus,
+    readRawPackageJson,
+    (parentMetadata, childMetadata, parentSourceDir, childSourceDir, repositoryPath, checkWorkingDirectoryStatus) =>
+      mergeRawPackageJson(
+        parentMetadata, childMetadata, parentSourceDir, childSourceDir, repositoryPath, checkWorkingDirectoryStatus, inheritableFields, sourceMap));
+  return {
+    packageJson,
+    sourceMap
+  };
 };
