@@ -317,6 +317,38 @@ UIパッケージをビルドすると、バナーには以下が含まれます
 
 `screw-up`パッケージには、プロジェクトのパッケージ化と公開のためのコマンドラインインターフェースが含まれています。
 
+### シンプルな例
+
+```bash
+# ドライランでビルドして公開
+screw-up publish --dry-run
+
+# ベータチャンネルに公開
+screw-up publish --tag beta
+
+# スコープ付きパッケージをパブリックとして公開
+screw-up publish --access public
+
+# カスタムREADMEと限定継承でパック
+screw-up pack --readme ./docs/DIST_README.md --inheritable-fields "version,license"
+
+# パッケージ解決をデバッグ
+screw-up dump --inheritable-fields "version,author"
+
+# カスタムディレクトリにパックしてから公開
+screw-up pack --pack-destination ./release
+screw-up publish ./release/my-package-1.0.0.tgz
+```
+
+任意のコマンドのヘルプについて：
+
+```bash
+screw-up --help
+screw-up pack --help
+screw-up publish --help
+screw-up dump --help
+```
+
 ### packコマンド
 
 プロジェクトのtarアーカイブを作成します：
@@ -342,11 +374,13 @@ packコマンドの機能：
 #### オプション
 
 - `--pack-destination <path>`：アーカイブの出力ディレクトリを指定
+- `--readme <path>`：README.mdを指定したファイルで置換
+- `--inheritable-fields <list>`：親から継承するフィールドのコンマ区切りリスト（デフォルト: version,description,author,license,repository,keywords,homepage,bugs,readme）
 - `--no-wds`：バージョンインクリメントのワーキングディレクトリステータスチェックを無効化
 
 ### publishコマンド
 
-プロジェクトをレジストリサーバーに公開します：
+プロジェクトをレジストリサーバーに公開します:
 
 ```bash
 # 現在のディレクトリを公開（アーカイブを作成して公開）
@@ -364,40 +398,81 @@ screw-up publish --dry-run --tag beta --access public
 
 publishコマンドの機能：
 
-- すべての`npm publish`オプションを透過的にサポート
+- すべての`npm publish`オプションを透過的にサポート。このコマンドは、アーカイブ生成を行った後、実際の発行処理を`npm publish`を呼び出すことで実行します。
 - ディレクトリから公開（自動的にアーカイブを作成）または既存のtarballから公開可能
 - 適切なメタデータ継承でワークスペースパッケージを処理
 - packコマンドと同じパッケージ化ロジックを使用
 
 #### オプション
 
+- `--inheritable-fields <list>`：親から継承するフィールドのコンマ区切りリスト
 - `--no-wds`：バージョンインクリメントのワーキングディレクトリステータスチェックを無効化
 - すべての`npm publish`オプションがサポートされています（例：`--dry-run`、`--tag`、`--access`、`--registry`）
 
-### 例
+### dumpコマンド
+
+計算されたpackage.jsonをJSONとして出力します：
 
 ```bash
-# ドライランでビルドして公開
-screw-up publish --dry-run
+# 現在のディレクトリのpackage.jsonを出力
+screw-up dump
 
-# ベータチャンネルに公開
-screw-up publish --tag beta
+# 特定のディレクトリのpackage.jsonを出力
+screw-up dump ./my-project
 
-# スコープ付きパッケージをパブリックとして公開
-screw-up publish --access public
-
-# カスタムディレクトリにパックしてから公開
-screw-up pack --pack-destination ./release
-screw-up publish ./release/my-package-1.0.0.tgz
+# カスタム継承フィールドで出力
+screw-up dump --inheritable-fields "author,license"
 ```
 
-任意のコマンドのヘルプについて：
+dumpコマンドの機能：
+
+- すべての処理（ワークスペース継承、Gitメタデータなど）後の最終的な計算済み`package.json`を表示
+- デバッグとパッケージメタデータの解決方法の理解に有用
+- 他のツールにパイプできるクリーンなJSONを出力
+
+#### オプション
+
+- `--inheritable-fields <list>`：親から継承するフィールドのコンマ区切りリスト
+- `--no-wds`：バージョンインクリメントのワーキングディレクトリステータスチェックを無効化
+
+### README置換
+
+packコマンドは複数の方法でREADME置換をサポートします：
+
+#### CLIオプション経由
 
 ```bash
-screw-up --help
-screw-up pack --help
-screw-up publish --help
+# README.mdをカスタムファイルで置換
+screw-up pack --readme ./docs/README_package.md
 ```
+
+#### package.jsonフィールド経由
+
+```json
+{
+  "name": "my-package",
+  "readme": "docs/PACKAGE_README.md"
+}
+```
+
+両方が指定された場合、`--readme` CLIオプションが`package.json`フィールドより優先されます。
+
+### ワークスペースフィールド継承
+
+モノレポで親パッケージから継承するメタデータフィールドを制御します：
+
+```bash
+# 特定のフィールドのみ継承
+screw-up pack --inheritable-fields "version,author,license"
+
+# 継承を完全に無効化
+screw-up pack --inheritable-fields ""
+
+# 公開時にカスタムフィールドを使用
+screw-up publish --inheritable-fields "version,description,keywords"
+```
+
+デフォルト継承フィールド：`version`、`description`、`author`、`license`、`repository`、`keywords`、`homepage`、`bugs`、`readme`
 
 ----
 

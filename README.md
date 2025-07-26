@@ -316,6 +316,38 @@ The plugin automatically detects and supports:
 
 The `screw-up` package includes a command-line interface for packaging and publishing your projects.
 
+### Examples
+
+```bash
+# Build and publish with dry run
+screw-up publish --dry-run
+
+# Publish to beta channel
+screw-up publish --tag beta
+
+# Publish scoped package as public
+screw-up publish --access public
+
+# Pack with custom README and limited inheritance
+screw-up pack --readme ./docs/DIST_README.md --inheritable-fields "version,license"
+
+# Debug package resolution
+screw-up dump --inheritable-fields "version,author"
+
+# Pack to custom directory then publish
+screw-up pack --pack-destination ./release
+screw-up publish ./release/my-package-1.0.0.tgz
+```
+
+For help with any command:
+
+```bash
+screw-up --help
+screw-up pack --help
+screw-up publish --help
+screw-up dump --help
+```
+
 ### Pack Command
 
 Create a tar archive of your project:
@@ -341,6 +373,8 @@ The pack command:
 #### Options
 
 - `--pack-destination <path>`: Specify output directory for the archive
+- `--readme <path>`: Replace README.md with specified file
+- `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent (default: version,description,author,license,repository,keywords,homepage,bugs,readme)
 - `--no-wds`: Disable working directory status check for version increment
 
 ### Publish Command
@@ -363,40 +397,81 @@ screw-up publish --dry-run --tag beta --access public
 
 The publish command:
 
-- Supports all `npm publish` options transparently
+- Supports all `npm publish` options transparently. This command creates an archive and then executes the actual publishing by calling `npm publish`.
 - Can publish from directory (automatically creates archive) or existing tarball
 - Handles workspace packages with proper metadata inheritance
 - Uses the same packaging logic as the pack command
 
 #### Options
 
+- `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent
 - `--no-wds`: Disable working directory status check for version increment
 - All `npm publish` options are supported (e.g., `--dry-run`, `--tag`, `--access`, `--registry`)
 
-### Examples
+### Dump Command
+
+Dump computed package.json as JSON:
 
 ```bash
-# Build and publish with dry run
-screw-up publish --dry-run
+# Dump current directory package.json
+screw-up dump
 
-# Publish to beta channel
-screw-up publish --tag beta
+# Dump specific directory package.json
+screw-up dump ./my-project
 
-# Publish scoped package as public
-screw-up publish --access public
-
-# Pack to custom directory then publish
-screw-up pack --pack-destination ./release
-screw-up publish ./release/my-package-1.0.0.tgz
+# Dump with custom inheritable fields
+screw-up dump --inheritable-fields "author,license"
 ```
 
-For help with any command:
+The dump command:
+
+- Shows the final computed `package.json` after all processing (workspace inheritance, Git metadata, etc.)
+- Useful for debugging and understanding how your package metadata will be resolved
+- Outputs clean JSON that can be piped to other tools
+
+#### Options
+
+- `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent
+- `--no-wds`: Disable working directory status check for version increment
+
+### README Replacement
+
+The pack command supports README replacement using multiple methods:
+
+#### Via CLI Option
 
 ```bash
-screw-up --help
-screw-up pack --help
-screw-up publish --help
+# Replace README.md with custom file
+screw-up pack --readme ./docs/README_package.md
 ```
+
+#### Via package.json Field
+
+```json
+{
+  "name": "my-package",
+  "readme": "docs/PACKAGE_README.md"
+}
+```
+
+When both are specified, the `--readme` CLI option takes priority over the `package.json` field.
+
+### Workspace Field Inheritance
+
+Control which metadata fields are inherited from parent packages in monorepos:
+
+```bash
+# Inherit only specific fields
+screw-up pack --inheritable-fields "version,author,license"
+
+# Disable inheritance completely
+screw-up pack --inheritable-fields ""
+
+# Use custom fields for publishing
+screw-up publish --inheritable-fields "version,description,keywords"
+```
+
+Default inheritable fields: `version`, `description`, `author`, `license`, `repository`, `keywords`, `homepage`, `bugs`, `readme`
 
 ----
 
