@@ -59,7 +59,7 @@ Viteプラグイン向けのシンプルなパッケージメタデータ挿入�
 
 ## インストール
 
-`devDependency`にインストールして下さい。Screw-UPは実行時のコードを必要としません。
+`devDependencies`にインストールして下さい。Screw-UPは実行時のコードを必要としません。
 
 ```bash
 npm install --save-dev screw-up
@@ -533,10 +533,197 @@ screw-up publish --inheritable-fields "version,description,keywords"
 
 ----
 
+## 運用の推奨構成
+
+Screw-Upを使用すると、開発ライフサイクルをシンプルに保つことが出来ます。
+以下に、シングルプロジェクトの場合とワークスペースによるモノレポの場合の、代表的な構成方法を示します。
+
+### シングルプロジェクト構成
+
+スタンドアロンプロジェクトでは、Screw-UPを最適に使用するために以下ののような構成例を使用できます:
+
+```
+my-project/
+├── package.json                # versionフィールドなし
+├── README.md                   # 開発用README（GitHub/GitLabなどで表示）
+├── README_pack.md              # 配布用README（オプション）
+├── vite.config.ts              # Screw-UPプラグイン設定
+├── src/
+│   ├── index.ts
+│   └── generated/
+│       └── packageMetadata.ts  # `outputMetadataFile`により自動生成
+└── dist/                       # メタデータバナー付きビルド出力
+```
+
+#### package.json構造
+
+```json
+{
+  "name": "my-awesome-library",
+  "description": "開発者向けの素晴らしいTypeScriptライブラリ",
+  "author": "Jane Developer <jane@example.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/user/my-awesome-library"
+  },
+  "keywords": ["typescript", "library", "awesome"],
+  "homepage": "https://github.com/user/my-awesome-library#readme",
+  "bugs": {
+    "url": "https://github.com/user/my-awesome-library/issues"
+  },
+  "readme": "README_pack.md",
+  "files": ["dist/**/*", "README_pack.md"],
+  "scripts": {
+    "build": "vite build",
+    "test": "npm run build && vitest run",
+    "pack": "npm run build && screw-up pack --pack-destination artifacts/"
+  }
+}
+```
+
+重要なポイント:
+
+- `version`を削除: Screw-UPにGitタグを通じてバージョン管理を任せる
+- メタデータフィールドを含める: `name`、`description`、`author`、`license`など
+- オプションの`readme`フィールド: 配布専用のREADMEファイルを指定
+- `files`を指定: パッケージに含めるファイルを制御
+- パッケージング: `scripts`に`pack`を加え、Screw-Upでパッケージングを実行できるようにする
+
+#### Vite設定
+
+```typescript
+import { defineConfig } from 'vite';
+import screwUp from 'screw-up';
+
+export default defineConfig({
+  plugins: [
+    screwUp({
+      // (必要であれば`packageMetadata.ts`を生成)
+      outputMetadataFile: true
+    })
+  ],
+  // ...
+});
+```
+
+#### 開発環境セットアップ
+
+```bash
+# dev dependencyとしてインストール
+npm install --save-dev screw-up
+
+# 配布用README作成（オプション）
+echo "# 配布パッケージ" > README_pack.md
+```
+
+### ワークスペース構成（モノレポ）
+
+モノレポセットアップでは、共有メタデータとプロジェクト固有メタデータを整理します：
+
+```
+my-monorepo/
+├── package.json          # ルートメタデータ（versionなし）
+├── README.md             # 開発用README（GitHub/GitLabで表示）
+├── README_shared.md      # 共有README
+├── core/
+│   ├── package.json      # プロジェクト固有メタデータ（versionなし）
+│   ├── vite.config.ts
+│   └── src/
+├── ui/
+│   ├── package.json      # coreを"*"で参照（versionなし）
+│   └── src/
+└── cli/
+    ├── package.json      # coreを"*"で参照（versionなし）
+    └── src/
+```
+
+#### ルート package.json
+
+```json
+{
+  "name": "my-monorepo",
+  "description": "複数のパッケージを含むモノレポ",
+  "author": "開発チーム <team@company.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/company/my-monorepo"
+  },
+  "homepage": "https://github.com/company/my-monorepo#readme",
+  "bugs": {
+    "url": "https://github.com/company/my-monorepo/issues"
+  },
+  "readme": "README_shared.md",
+  "workspaces": ["core", "ui", "cli"],
+  "private": true,
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "pack": "npm run pack --workspaces"
+  }
+}
+```
+
+#### サブプロジェクト package.json
+
+```json
+{
+  "name": "@company/ui-components",
+  "description": "再利用可能なUIコンポーネントライブラリ",
+  "keywords": ["ui", "components", "react"],
+  "peerDependencies": {
+    "@company/core": "*",
+    "react": "^18.0.0"
+  },
+  "files": ["dist/**/*"],
+  "scripts": {
+    "build": "vite build",
+    "test": "npm run build && vitest run",
+    "pack": "npm run build && screw-up pack --pack-destination artifacts/"
+  }
+}
+```
+
+重要なポイント:
+
+- ルートパッケージ: 共有メタデータ（`author`、`license`、`repository`など）を定義
+- サブプロジェクト: プロジェクト固有の値（`name`、`description`、`keywords`）でオーバーライド
+- 兄弟参照: peerで参照が必要な場合、ワークスペース兄弟に対して`peerDependencies`で`"*"`を使用
+- バージョンなし: すべてのpackage.jsonファイルから`version`を削除
+- 共有README: ルートレベルで定義し、サブプロジェクトに継承可能
+- `scripts`に`pack`を加え、Screw-Upでパッケージングを実行できるようにする
+
+#### Vite設定
+
+シングルプロジェクト構成と同様。
+
+#### 開発環境セットアップ
+
+それぞれのサブプロジェクトでScrew-Upをインストールします。
+
+#### CLI使用例
+
+```bash
+# 個別サブプロジェクトをパック
+screw-up pack packages/ui-components
+
+# カスタム継承でパック
+screw-up pack packages/cli --inheritable-fields "author,license,repository"
+
+# peerDependencies置き換えなしでパック
+screw-up pack packages/plugin --no-replace-peer-deps
+
+# カスタムプレフィックスで公開
+screw-up publish packages/core --peer-deps-prefix "~"
+```
+
+----
+
 ## 補足
 
 このプロジェクトは [RelaxVersioner](https://github.com/kekyo/RelaxVersioner/) の後継として開発されました。RelaxVersionerは.NETプラットフォーム向けで、NPMサポートオプションを追加しました。しかし、Gitタグとの親和性があまり良くないため、Viteプラグインを使用することを前提として、最も望ましい運用を想定して仕様を検討しました。
 
 ## ライセンス
 
-MIT
+Under MIT
