@@ -67,6 +67,9 @@ npm install --save-dev screw-up
 
 ## Usage
 
+The configuration method is described below.
+If you want to quickly learn about recommended configurations and operation methods, refer to the "Recommended configuration" section.
+
 ### Setup the Vite plugin
 
 Add the plugin to your `vite.config.ts`:
