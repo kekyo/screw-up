@@ -44,6 +44,16 @@ interface TagInfo {
 /////////////////////////////////////////////////////////////////////////////////
 
 /**
+ * Parse and validate a version component
+ * @param value - The string value to parse
+ * @returns The parsed number or undefined if invalid (negative or > 65535)
+ */
+const parseVersionComponent = (value: string): number | undefined => {
+  const num = parseInt(value, 10);
+  return (num < 0 || num > 65535) ? undefined : num;
+};
+
+/**
  * Parse a version tag name
  * @param tagName - The version tag name
  * @returns The parsed version or undefined if the tag name is invalid
@@ -60,19 +70,36 @@ const parseVersion = (tagName: string): Version | undefined => {
     return undefined;
   }
 
+  const major = parseVersionComponent(match[1]);
+  if (major === undefined) {
+    return undefined;
+  }
+
   const version: Version = {
-    major: parseInt(match[1], 10),
+    major,
     original: tagName
   };
 
   if (match[2] !== undefined) {
-    version.minor = parseInt(match[2], 10);
+    const minor = parseVersionComponent(match[2]);
+    if (minor === undefined) {
+      return undefined;
+    }
+    version.minor = minor;
   }
   if (match[3] !== undefined) {
-    version.build = parseInt(match[3], 10);
+    const build = parseVersionComponent(match[3]);
+    if (build === undefined) {
+      return undefined;
+    }
+    version.build = build;
   }
   if (match[4] !== undefined) {
-    version.revision = parseInt(match[4], 10);
+    const revision = parseVersionComponent(match[4]);
+    if (revision === undefined) {
+      return undefined;
+    }
+    version.revision = revision;
   }
 
   return version;

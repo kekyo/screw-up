@@ -63,6 +63,8 @@ Pack Options:
   --readme <path>               Replace README.md with specified file
   --inheritable-fields <list>   Comma-separated list of fields to inherit from parent (default: version,description,author,license,repository,keywords,homepage,bugs,readme)
   --no-wds                      Do not check working directory status to increase version
+  --no-replace-peer-deps        Disable replacing "*" in peerDependencies with actual versions
+  --peer-deps-prefix <prefix>   Version prefix for replaced peerDependencies (default: "^")
 
 Publish Options:
   All npm publish options are supported (e.g., --dry-run, --tag, --access, --registry)
@@ -92,6 +94,8 @@ Options:
   --readme <path>               Replace README.md with specified file
   --inheritable-fields <list>   Comma-separated list of fields to inherit from parent
   --no-wds                      Do not check working directory status to increase version
+  --no-replace-peer-deps        Disable replacing "*" in peerDependencies with actual versions
+  --peer-deps-prefix <prefix>   Version prefix for replaced peerDependencies (default: "^")
   -h, --help                    Show help for pack command
 `);
 };
@@ -133,6 +137,8 @@ const packCommand = async (args: ParsedArgs) => {
   const readmeOption = args.options['readme'] as string;
   const inheritableFieldsOption = args.options['inheritable-fields'] as string;
   const checkWorkingDirectoryStatus = args.options['no-wds'] ? false : true;
+  const replacePeerDepsWildcards = !args.options['no-replace-peer-deps'];
+  const peerDepsVersionPrefix = args.options['peer-deps-prefix'] as string ?? "^";
 
   const targetDir = resolve(directory ?? process.cwd());
   const outputDir = packDestination ? resolve(packDestination) : process.cwd();
@@ -145,7 +151,7 @@ const packCommand = async (args: ParsedArgs) => {
 
   try {
     const metadata = await packAssets(
-      targetDir, outputDir, checkWorkingDirectoryStatus, inheritableFields, readmeReplacementPath);
+      targetDir, outputDir, checkWorkingDirectoryStatus, inheritableFields, readmeReplacementPath, replacePeerDepsWildcards, peerDepsVersionPrefix);
     if (metadata) {
       console.log(`[screw-up/cli]: pack: Archive created successfully: ${outputDir}`);
     } else {
@@ -198,6 +204,8 @@ const publishCommand = async (args: ParsedArgs) => {
   const path = args.positional[0];
   const inheritableFieldsOption = args.options['inheritable-fields'] as string;
   const checkWorkingDirectoryStatus = args.options['no-wds'] ? false : true;
+  const replacePeerDepsWildcards = !args.options['no-replace-peer-deps'];
+  const peerDepsVersionPrefix = args.options['peer-deps-prefix'] as string ?? "^";
 
   // Parse inheritable fields from CLI option or use defaults
   const inheritableFields = parseInheritableFields(inheritableFieldsOption);
@@ -205,7 +213,7 @@ const publishCommand = async (args: ParsedArgs) => {
   // Convert parsed options to npm options
   const npmOptions: string[] = [];
   Object.entries(args.options).forEach(([key, value]) => {
-    if (key === 'help' || key === 'h' || key === 'no-wds' || key === 'inheritable-fields') return; // Skip help, no-wds, and inheritable-fields options
+    if (key === 'help' || key === 'h' || key === 'no-wds' || key === 'inheritable-fields' || key === 'no-replace-peer-deps' || key === 'peer-deps-prefix') return; // Skip screw-up specific options
 
     if (value === true) {
       npmOptions.push(`--${key}`);
@@ -224,7 +232,7 @@ const publishCommand = async (args: ParsedArgs) => {
 
       try {
         const metadata = await packAssets(
-          targetDir, outputDir, checkWorkingDirectoryStatus, inheritableFields, undefined);
+          targetDir, outputDir, checkWorkingDirectoryStatus, inheritableFields, undefined, replacePeerDepsWildcards, peerDepsVersionPrefix);
         if (metadata) {
           const archiveName = `${metadata.name}-${metadata.version}.tgz`;
           const archivePath = join(outputDir, archiveName);
@@ -251,7 +259,7 @@ const publishCommand = async (args: ParsedArgs) => {
 
         try {
           const metadata = await packAssets(
-            targetDir, outputDir, checkWorkingDirectoryStatus, inheritableFields, undefined);
+            targetDir, outputDir, checkWorkingDirectoryStatus, inheritableFields, undefined, replacePeerDepsWildcards, peerDepsVersionPrefix);
           if (metadata) {
             const archiveName = `${metadata.name}-${metadata.version}.tgz`;
             const archivePath = join(outputDir, archiveName);

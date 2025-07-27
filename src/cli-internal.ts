@@ -8,7 +8,7 @@ import { glob } from 'glob';
 import { existsSync } from 'fs';
 import { mkdir, lstat } from 'fs/promises';
 import { createTarPacker, createReadFileItem, createFileItem, storeReaderToFile } from 'tar-vern';
-import { resolveRawPackageJsonObject, PackageResolutionResult } from './internal.js';
+import { resolveRawPackageJsonObject, PackageResolutionResult, findWorkspaceRoot, collectWorkspaceSiblings, replacePeerDependenciesWildcards } from './internal.js';
 
 //////////////////////////////////////////////////////////////////////////////////
 
@@ -77,6 +77,8 @@ const createPackEntryGenerator = async function* (targetDir: string, resolvedPac
  * @param checkWorkingDirectoryStatus - Check working directory status
  * @param inheritableFields - Package metadata fields that should be inherited from parent
  * @param readmeReplacementPath - Optional path to replacement README file
+ * @param replacePeerDepsWildcards - Replace "*" in peerDependencies with actual versions
+ * @param peerDepsVersionPrefix - Version prefix for replaced peerDependencies
  * @returns Package metadata (package.json) or undefined if failed
  */
 export const packAssets = async (
@@ -84,7 +86,9 @@ export const packAssets = async (
   outputDir: string,
   checkWorkingDirectoryStatus: boolean,
   inheritableFields: Set<string>,
-  readmeReplacementPath: string | undefined) : Promise<any> => {
+  readmeReplacementPath: string | undefined,
+  replacePeerDepsWildcards: boolean = true,
+  peerDepsVersionPrefix: string = "^") : Promise<any> => {
   // Check if target directory exists
   if (!existsSync(targetDir)) {
     return undefined;
@@ -102,11 +106,26 @@ export const packAssets = async (
     return undefined;
   }
 
-  const { packageJson: resolvedPackageJson, sourceMap } = result;
+  let { packageJson: resolvedPackageJson, sourceMap } = result;
 
   // Check if package is private
   if (resolvedPackageJson?.private) {
     return undefined;
+  }
+
+  // Replace peerDependencies wildcards if enabled and in workspace
+  if (replacePeerDepsWildcards) {
+    const workspaceRoot = await findWorkspaceRoot(targetDir);
+    if (workspaceRoot) {
+      const siblings = await collectWorkspaceSiblings(workspaceRoot);
+      if (siblings.size > 0) {
+        resolvedPackageJson = replacePeerDependenciesWildcards(
+          resolvedPackageJson,
+          siblings,
+          peerDepsVersionPrefix
+        );
+      }
+    }
   }
 
   // Determine README replacement path

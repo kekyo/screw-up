@@ -6,6 +6,7 @@
 import { existsSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { dirname, join } from 'path';
+import { glob } from 'glob';
 import JSON5 from 'json5';
 import { getGitMetadata } from './analyzer.js';
 import { PackageMetadata } from './types.js';
@@ -16,6 +17,15 @@ import { PackageMetadata } from './types.js';
 export interface PackageResolutionResult {
   packageJson: any;
   sourceMap: Map<string, string>;
+}
+
+/**
+ * Workspace sibling project information
+ */
+export interface WorkspaceSibling {
+  name: string;
+  version: string;
+  path: string;
 }
 
 /**
@@ -74,6 +84,91 @@ export const findWorkspaceRoot = async (startPath: string): Promise<string | und
   }
   
   return undefined;
+};
+
+/**
+ * Collect workspace sibling projects
+ * @param workspaceRoot - Workspace root directory
+ * @returns Promise resolving to map of sibling projects (name -> WorkspaceSibling)
+ */
+export const collectWorkspaceSiblings = async (workspaceRoot: string): Promise<Map<string, WorkspaceSibling>> => {
+  const siblings = new Map<string, WorkspaceSibling>();
+  
+  try {
+    const rootPackageJsonPath = join(workspaceRoot, 'package.json');
+    const content = await readFile(rootPackageJsonPath, 'utf-8');
+    const rootPackageJson = JSON.parse(content);
+    
+    // Get workspace patterns
+    const workspacePatterns = rootPackageJson.workspaces;
+    if (!workspacePatterns || !Array.isArray(workspacePatterns)) {
+      return siblings;
+    }
+    
+    // Find all workspace directories
+    const workspaceDirs = new Set<string>();
+    for (const pattern of workspacePatterns) {
+      const matches = await glob(pattern, { 
+        cwd: workspaceRoot
+      });
+      matches.forEach(match => workspaceDirs.add(match));
+    }
+    
+    // Read package.json from each workspace directory
+    for (const workspaceDir of workspaceDirs) {
+      const packageJsonPath = join(workspaceRoot, workspaceDir, 'package.json');
+      if (existsSync(packageJsonPath)) {
+        try {
+          const packageContent = await readFile(packageJsonPath, 'utf-8');
+          const packageJson = JSON.parse(packageContent);
+          
+          if (packageJson.name && packageJson.version) {
+            siblings.set(packageJson.name, {
+              name: packageJson.name,
+              version: packageJson.version,
+              path: join(workspaceRoot, workspaceDir)
+            });
+          }
+        } catch (error) {
+          console.warn(`Failed to read package.json from ${packageJsonPath}:`, error);
+        }
+      }
+    }
+  } catch (error) {
+    console.warn(`Failed to collect workspace siblings from ${workspaceRoot}:`, error);
+  }
+  
+  return siblings;
+};
+
+/**
+ * Replace "*" wildcards in peerDependencies with actual workspace sibling versions
+ * @param packageJson - Package.json object to modify
+ * @param siblings - Map of workspace sibling projects
+ * @param versionPrefix - Version prefix to add (e.g., "^", "~", "")
+ * @returns Modified package.json object
+ */
+export const replacePeerDependenciesWildcards = (
+  packageJson: any,
+  siblings: Map<string, WorkspaceSibling>,
+  versionPrefix: string
+): any => {
+  // Deep clone the package.json to avoid modifying the original
+  const modifiedPackageJson = JSON.parse(JSON.stringify(packageJson));
+  
+  if (!modifiedPackageJson.peerDependencies || typeof modifiedPackageJson.peerDependencies !== 'object') {
+    return modifiedPackageJson;
+  }
+  
+  // Process each peer dependency
+  for (const [depName, depVersion] of Object.entries(modifiedPackageJson.peerDependencies)) {
+    if (depVersion === '*' && siblings.has(depName)) {
+      const sibling = siblings.get(depName)!;
+      modifiedPackageJson.peerDependencies[depName] = `${versionPrefix}${sibling.version}`;
+    }
+  }
+  
+  return modifiedPackageJson;
 };
 
 //////////////////////////////////////////////////////////////////////////////////////
