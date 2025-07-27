@@ -1873,4 +1873,433 @@ describe('CLI tests', () => {
       expect(packageJson.workspaces).toBeUndefined();
     }, 10000);
   });
+
+  //////////////////////////////////////////////////////////////////////////////////
+
+  describe('peerDependencies replacement', () => {
+    it('should replace "*" in peerDependencies with workspace sibling versions using packAssets', async () => {
+      // Create workspace root
+      const workspaceRoot = join(tempDir, 'workspace-peer-deps');
+      mkdirSync(workspaceRoot);
+
+      const rootPackageJson = {
+        name: 'workspace-root',
+        version: '1.0.0',
+        workspaces: ['packages/*']
+      };
+      writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify(rootPackageJson, null, 2));
+
+      // Create core package (sibling)
+      const coreDir = join(workspaceRoot, 'packages', 'core');
+      mkdirSync(coreDir, { recursive: true });
+      const corePackageJson = {
+        name: '@test/core',
+        version: '2.5.3'
+      };
+      writeFileSync(join(coreDir, 'package.json'), JSON.stringify(corePackageJson, null, 2));
+      writeFileSync(join(coreDir, 'index.js'), 'module.exports = {};');
+
+      // Create cli package with peerDependencies
+      const cliDir = join(workspaceRoot, 'packages', 'cli');
+      mkdirSync(cliDir, { recursive: true });
+      const cliPackageJson = {
+        name: '@test/cli',
+        version: '1.0.0',
+        peerDependencies: {
+          '@test/core': '*',
+          'react': '^18.0.0'  // Non-workspace dependency should remain unchanged
+        }
+      };
+      writeFileSync(join(cliDir, 'package.json'), JSON.stringify(cliPackageJson, null, 2));
+      writeFileSync(join(cliDir, 'cli.js'), 'console.log("cli");');
+
+      // Pack the cli package
+      const outputDir = join(tempDir, 'output');
+      mkdirSync(outputDir, { recursive: true });
+
+      const result = await packAssets(
+        cliDir, outputDir, false, defaultInheritableFields, undefined, true, "^"
+      );
+
+      expect(result).toBeDefined();
+      expect(result.name).toBe('@test/cli');
+
+      // Verify that the packaged file exists
+      const archivePath = join(outputDir, '@test-cli-1.0.0.tgz');
+      expect(existsSync(archivePath)).toBe(true);
+
+      // Extract and verify package.json
+      const extractDir = join(tempDir, 'extracted');
+      mkdirSync(extractDir, { recursive: true });
+      
+      tar.extract({
+        file: archivePath,
+        cwd: extractDir,
+        sync: true
+      });
+
+      const extractedPackageJsonPath = join(extractDir, 'package', 'package.json');
+      expect(existsSync(extractedPackageJsonPath)).toBe(true);
+
+      const extractedPackageJson = JSON.parse(readFileSync(extractedPackageJsonPath, 'utf-8'));
+      
+      // Verify peerDependencies replacement
+      expect(extractedPackageJson.peerDependencies['@test/core']).toBe('^2.5.3');
+      expect(extractedPackageJson.peerDependencies['react']).toBe('^18.0.0'); // Should remain unchanged
+    }, 10000);
+
+    it('should support custom version prefix using packAssets', async () => {
+      // Create workspace root
+      const workspaceRoot = join(tempDir, 'workspace-custom-prefix');
+      mkdirSync(workspaceRoot);
+
+      const rootPackageJson = {
+        name: 'workspace-root',
+        version: '1.0.0',
+        workspaces: ['packages/*']
+      };
+      writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify(rootPackageJson, null, 2));
+
+      // Create core package (sibling)
+      const coreDir = join(workspaceRoot, 'packages', 'core');
+      mkdirSync(coreDir, { recursive: true });
+      const corePackageJson = {
+        name: '@test/core',
+        version: '1.2.3'
+      };
+      writeFileSync(join(coreDir, 'package.json'), JSON.stringify(corePackageJson, null, 2));
+      writeFileSync(join(coreDir, 'index.js'), 'module.exports = {};');
+
+      // Create plugin package with peerDependencies
+      const pluginDir = join(workspaceRoot, 'packages', 'plugin');
+      mkdirSync(pluginDir, { recursive: true });
+      const pluginPackageJson = {
+        name: '@test/plugin',
+        version: '0.5.0',
+        peerDependencies: {
+          '@test/core': '*'
+        }
+      };
+      writeFileSync(join(pluginDir, 'package.json'), JSON.stringify(pluginPackageJson, null, 2));
+      writeFileSync(join(pluginDir, 'plugin.js'), 'console.log("plugin");');
+
+      // Pack the plugin package with tilde prefix
+      const outputDir = join(tempDir, 'output');
+      mkdirSync(outputDir, { recursive: true });
+
+      const result = await packAssets(
+        pluginDir, outputDir, false, defaultInheritableFields, undefined, true, "~"
+      );
+
+      expect(result).toBeDefined();
+
+      // Extract and verify package.json
+      const archivePath = join(outputDir, '@test-plugin-0.5.0.tgz');
+      const extractDir = join(tempDir, 'extracted');
+      mkdirSync(extractDir, { recursive: true });
+      
+      tar.extract({
+        file: archivePath,
+        cwd: extractDir,
+        sync: true
+      });
+
+      const extractedPackageJson = JSON.parse(readFileSync(join(extractDir, 'package', 'package.json'), 'utf-8'));
+      
+      // Verify tilde prefix is used
+      expect(extractedPackageJson.peerDependencies['@test/core']).toBe('~1.2.3');
+    }, 10000);
+
+    it('should skip replacement when feature is disabled using packAssets', async () => {
+      // Create workspace root
+      const workspaceRoot = join(tempDir, 'workspace-disabled');
+      mkdirSync(workspaceRoot);
+
+      const rootPackageJson = {
+        name: 'workspace-root',
+        version: '1.0.0',
+        workspaces: ['packages/*']
+      };
+      writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify(rootPackageJson, null, 2));
+
+      // Create core package (sibling)
+      const coreDir = join(workspaceRoot, 'packages', 'core');
+      mkdirSync(coreDir, { recursive: true });
+      const corePackageJson = {
+        name: '@test/core',
+        version: '3.0.0'
+      };
+      writeFileSync(join(coreDir, 'package.json'), JSON.stringify(corePackageJson, null, 2));
+
+      // Create test package with peerDependencies
+      const testDir = join(workspaceRoot, 'packages', 'test');
+      mkdirSync(testDir, { recursive: true });
+      const testPackageJson = {
+        name: '@test/test',
+        version: '1.0.0',
+        peerDependencies: {
+          '@test/core': '*'
+        }
+      };
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify(testPackageJson, null, 2));
+      writeFileSync(join(testDir, 'test.js'), 'console.log("test");');
+
+      // Pack with feature disabled
+      const outputDir = join(tempDir, 'output');
+      mkdirSync(outputDir, { recursive: true });
+
+      const result = await packAssets(
+        testDir, outputDir, false, defaultInheritableFields, undefined, false, "^"
+      );
+
+      expect(result).toBeDefined();
+
+      // Extract and verify package.json
+      const archivePath = join(outputDir, '@test-test-1.0.0.tgz');
+      const extractDir = join(tempDir, 'extracted');
+      mkdirSync(extractDir, { recursive: true });
+      
+      tar.extract({
+        file: archivePath,
+        cwd: extractDir,
+        sync: true
+      });
+
+      const extractedPackageJson = JSON.parse(readFileSync(join(extractDir, 'package', 'package.json'), 'utf-8'));
+      
+      // Verify "*" remains unchanged
+      expect(extractedPackageJson.peerDependencies['@test/core']).toBe('*');
+    }, 10000);
+
+    it('should replace peerDependencies via CLI with default options', async () => {
+      // Create workspace root
+      const workspaceRoot = join(tempDir, 'workspace-cli-default');
+      mkdirSync(workspaceRoot);
+
+      const rootPackageJson = {
+        name: 'workspace-root',
+        version: '1.0.0',
+        workspaces: ['packages/*']
+      };
+      writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify(rootPackageJson, null, 2));
+
+      // Create core package
+      const coreDir = join(workspaceRoot, 'packages', 'core');
+      mkdirSync(coreDir, { recursive: true });
+      const corePackageJson = {
+        name: '@workspace/core',
+        version: '4.1.2'
+      };
+      writeFileSync(join(coreDir, 'package.json'), JSON.stringify(corePackageJson, null, 2));
+      writeFileSync(join(coreDir, 'index.js'), 'module.exports = {};');
+
+      // Create cli package
+      const cliDir = join(workspaceRoot, 'packages', 'cli');
+      mkdirSync(cliDir, { recursive: true });
+      const cliPackageJson = {
+        name: '@workspace/cli',
+        version: '2.0.0',
+        peerDependencies: {
+          '@workspace/core': '*'
+        },
+        files: ['*.js', '*.json']
+      };
+      writeFileSync(join(cliDir, 'package.json'), JSON.stringify(cliPackageJson, null, 2));
+      writeFileSync(join(cliDir, 'cli.js'), 'console.log("cli");');
+
+      // Run CLI pack command (default behavior should replace)
+      const outputDir = join(tempDir, 'output');
+      const result = await runCLI('node', [CLI_PATH, 'pack', cliDir, '--pack-destination', outputDir]);
+      expectCLISuccess(result);
+
+      // Extract and verify
+      const archivePath = join(outputDir, '@workspace-cli-2.0.0.tgz');
+      expect(existsSync(archivePath)).toBe(true);
+
+      const extractDir = join(tempDir, 'extracted');
+      mkdirSync(extractDir, { recursive: true });
+      
+      tar.extract({
+        file: archivePath,
+        cwd: extractDir,
+        sync: true
+      });
+
+      const extractedPackageJson = JSON.parse(readFileSync(join(extractDir, 'package', 'package.json'), 'utf-8'));
+      
+      // Verify default prefix "^" is used
+      expect(extractedPackageJson.peerDependencies['@workspace/core']).toBe('^4.1.2');
+    }, 15000);
+
+    it('should disable peerDependencies replacement via CLI --no-replace-peer-deps', async () => {
+      // Create workspace root
+      const workspaceRoot = join(tempDir, 'workspace-cli-disabled');
+      mkdirSync(workspaceRoot);
+
+      const rootPackageJson = {
+        name: 'workspace-root',
+        version: '1.0.0',
+        workspaces: ['packages/*']
+      };
+      writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify(rootPackageJson, null, 2));
+
+      // Create core package
+      const coreDir = join(workspaceRoot, 'packages', 'core');
+      mkdirSync(coreDir, { recursive: true });
+      const corePackageJson = {
+        name: '@workspace/core',
+        version: '5.0.0'
+      };
+      writeFileSync(join(coreDir, 'package.json'), JSON.stringify(corePackageJson, null, 2));
+
+      // Create plugin package
+      const pluginDir = join(workspaceRoot, 'packages', 'plugin');
+      mkdirSync(pluginDir, { recursive: true });
+      const pluginPackageJson = {
+        name: '@workspace/plugin',
+        version: '1.0.0',
+        peerDependencies: {
+          '@workspace/core': '*'
+        },
+        files: ['*.js']
+      };
+      writeFileSync(join(pluginDir, 'package.json'), JSON.stringify(pluginPackageJson, null, 2));
+      writeFileSync(join(pluginDir, 'plugin.js'), 'console.log("plugin");');
+
+      // Run CLI pack command with --no-replace-peer-deps
+      const outputDir = join(tempDir, 'output');
+      const result = await runCLI('node', [CLI_PATH, 'pack', pluginDir, '--pack-destination', outputDir, '--no-replace-peer-deps']);
+      expectCLISuccess(result);
+
+      // Extract and verify
+      const archivePath = join(outputDir, '@workspace-plugin-1.0.0.tgz');
+      const extractDir = join(tempDir, 'extracted');
+      mkdirSync(extractDir, { recursive: true });
+      
+      tar.extract({
+        file: archivePath,
+        cwd: extractDir,
+        sync: true
+      });
+
+      const extractedPackageJson = JSON.parse(readFileSync(join(extractDir, 'package', 'package.json'), 'utf-8'));
+      
+      // Verify "*" remains unchanged
+      expect(extractedPackageJson.peerDependencies['@workspace/core']).toBe('*');
+    }, 15000);
+
+    it('should use custom prefix via CLI --peer-deps-prefix', async () => {
+      // Create workspace root
+      const workspaceRoot = join(tempDir, 'workspace-cli-prefix');
+      mkdirSync(workspaceRoot);
+
+      const rootPackageJson = {
+        name: 'workspace-root',
+        version: '1.0.0',
+        workspaces: ['packages/*']
+      };
+      writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify(rootPackageJson, null, 2));
+
+      // Create utils package
+      const utilsDir = join(workspaceRoot, 'packages', 'utils');
+      mkdirSync(utilsDir, { recursive: true });
+      const utilsPackageJson = {
+        name: '@workspace/utils',
+        version: '3.2.1'
+      };
+      writeFileSync(join(utilsDir, 'package.json'), JSON.stringify(utilsPackageJson, null, 2));
+
+      // Create client package
+      const clientDir = join(workspaceRoot, 'packages', 'client');
+      mkdirSync(clientDir, { recursive: true });
+      const clientPackageJson = {
+        name: '@workspace/client',
+        version: '1.5.0',
+        peerDependencies: {
+          '@workspace/utils': '*'
+        },
+        files: ['client.js']
+      };
+      writeFileSync(join(clientDir, 'package.json'), JSON.stringify(clientPackageJson, null, 2));
+      writeFileSync(join(clientDir, 'client.js'), 'console.log("client");');
+
+      // Run CLI pack command with --peer-deps-prefix
+      const outputDir = join(tempDir, 'output');
+      const result = await runCLI('node', [CLI_PATH, 'pack', clientDir, '--pack-destination', outputDir, '--peer-deps-prefix', '>=']);
+      expectCLISuccess(result);
+
+      // Extract and verify
+      const archivePath = join(outputDir, '@workspace-client-1.5.0.tgz');
+      const extractDir = join(tempDir, 'extracted');
+      mkdirSync(extractDir, { recursive: true });
+      
+      tar.extract({
+        file: archivePath,
+        cwd: extractDir,
+        sync: true
+      });
+
+      const extractedPackageJson = JSON.parse(readFileSync(join(extractDir, 'package', 'package.json'), 'utf-8'));
+      
+      // Verify ">=" prefix is used
+      expect(extractedPackageJson.peerDependencies['@workspace/utils']).toBe('>=3.2.1');
+    }, 15000);
+
+    it('should use exact version with empty prefix via CLI', async () => {
+      // Create workspace root
+      const workspaceRoot = join(tempDir, 'workspace-cli-exact');
+      mkdirSync(workspaceRoot);
+
+      const rootPackageJson = {
+        name: 'workspace-root',
+        version: '1.0.0',
+        workspaces: ['packages/*']
+      };
+      writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify(rootPackageJson, null, 2));
+
+      // Create shared package
+      const sharedDir = join(workspaceRoot, 'packages', 'shared');
+      mkdirSync(sharedDir, { recursive: true });
+      const sharedPackageJson = {
+        name: '@workspace/shared',
+        version: '2.1.0'
+      };
+      writeFileSync(join(sharedDir, 'package.json'), JSON.stringify(sharedPackageJson, null, 2));
+
+      // Create app package
+      const appDir = join(workspaceRoot, 'packages', 'app');
+      mkdirSync(appDir, { recursive: true });
+      const appPackageJson = {
+        name: '@workspace/app',
+        version: '1.0.0',
+        peerDependencies: {
+          '@workspace/shared': '*'
+        },
+        files: ['app.js']
+      };
+      writeFileSync(join(appDir, 'package.json'), JSON.stringify(appPackageJson, null, 2));
+      writeFileSync(join(appDir, 'app.js'), 'console.log("app");');
+
+      // Run CLI pack command with empty prefix (exact version)
+      const outputDir = join(tempDir, 'output');
+      const result = await runCLI('node', [CLI_PATH, 'pack', appDir, '--pack-destination', outputDir, '--peer-deps-prefix', '']);
+      expectCLISuccess(result);
+
+      // Extract and verify
+      const archivePath = join(outputDir, '@workspace-app-1.0.0.tgz');
+      const extractDir = join(tempDir, 'extracted');
+      mkdirSync(extractDir, { recursive: true });
+      
+      tar.extract({
+        file: archivePath,
+        cwd: extractDir,
+        sync: true
+      });
+
+      const extractedPackageJson = JSON.parse(readFileSync(join(extractDir, 'package', 'package.json'), 'utf-8'));
+      
+      // Verify exact version (no prefix)
+      expect(extractedPackageJson.peerDependencies['@workspace/shared']).toBe('2.1.0');
+    }, 15000);
+  });
 });

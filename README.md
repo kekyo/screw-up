@@ -331,6 +331,12 @@ screw-up publish --access public
 # Pack with custom README and limited inheritance
 screw-up pack --readme ./docs/DIST_README.md --inheritable-fields "version,license"
 
+# Pack with custom peerDependencies prefix
+screw-up pack --peer-deps-prefix "~"
+
+# Pack without peerDependencies replacement
+screw-up pack --no-replace-peer-deps
+
 # Debug package resolution
 screw-up dump --inheritable-fields "version,author"
 
@@ -376,6 +382,8 @@ The pack command:
 - `--readme <path>`: Replace README.md with specified file
 - `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent (default: version,description,author,license,repository,keywords,homepage,bugs,readme)
 - `--no-wds`: Disable working directory status check for version increment
+- `--no-replace-peer-deps`: Disable replacing "*" in peerDependencies with actual versions
+- `--peer-deps-prefix <prefix>`: Version prefix for replaced peerDependencies (default: "^")
 
 ### Publish Command
 
@@ -406,6 +414,8 @@ The publish command:
 
 - `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent
 - `--no-wds`: Disable working directory status check for version increment
+- `--no-replace-peer-deps`: Disable replacing "*" in peerDependencies with actual versions
+- `--peer-deps-prefix <prefix>`: Version prefix for replaced peerDependencies (default: "^")
 - All `npm publish` options are supported (e.g., `--dry-run`, `--tag`, `--access`, `--registry`)
 
 ### Dump Command
@@ -433,6 +443,53 @@ The dump command:
 
 - `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent
 - `--no-wds`: Disable working directory status check for version increment
+
+### PeerDependencies Replacement
+
+In workspace environments, it's common to reference sibling packages using "*" in `peerDependencies` to avoid version constraints during development. When packaging, Screw-UP automatically replaces these wildcards with actual version numbers:
+
+```json
+{
+  "name": "@workspace/cli",
+  "peerDependencies": {
+    "@workspace/core": "*"
+  }
+}
+```
+
+After packaging, the "*" is replaced with the actual version:
+
+```json
+{
+  "name": "@workspace/cli", 
+  "peerDependencies": {
+    "@workspace/core": "^2.1.0"
+  }
+}
+```
+
+#### Controlling the Feature
+
+```bash
+# Default behavior (uses "^" prefix)
+screw-up pack
+
+# Disable the feature entirely
+screw-up pack --no-replace-peer-deps
+
+# Use different version prefix
+screw-up pack --peer-deps-prefix "~"
+screw-up pack --peer-deps-prefix ">="
+
+# Use exact version (no prefix)
+screw-up pack --peer-deps-prefix ""
+```
+
+This feature:
+- Only works in workspace environments (requires workspace root with `workspaces` field)
+- Only replaces "*" values that match workspace sibling package names
+- Leaves non-workspace dependencies unchanged
+- Is enabled by default for pack and publish commands
 
 ### README Replacement
 

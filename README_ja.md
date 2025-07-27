@@ -305,11 +305,11 @@ UIパッケージをビルドすると、バナーには以下が含まれます
 
 ## サポートされるワークスペースタイプ
 
-プラグインは以下を自動的に検出してサポートします：
+プラグインは以下を自動的に検出してサポートします:
 
-- npm/yarnワークスペース：`package.json`の`workspaces`フィールドで検出
-- pnpmワークスペース：`pnpm-workspace.yaml`ファイルで検出
-- Lerna：`lerna.json`ファイルで検出
+- npm/yarnワークスペース: `package.json`の`workspaces`フィールドで検出
+- pnpmワークスペース: `pnpm-workspace.yaml`ファイルで検出
+- Lerna: `lerna.json`ファイルで検出
 
 ----
 
@@ -332,6 +332,12 @@ screw-up publish --access public
 # カスタムREADMEと限定継承でパック
 screw-up pack --readme ./docs/DIST_README.md --inheritable-fields "version,license"
 
+# カスタムpeerDependenciesプレフィックスでパック
+screw-up pack --peer-deps-prefix "~"
+
+# peerDependencies置き換えなしでパック
+screw-up pack --no-replace-peer-deps
+
 # パッケージ解決をデバッグ
 screw-up dump --inheritable-fields "version,author"
 
@@ -340,7 +346,7 @@ screw-up pack --pack-destination ./release
 screw-up publish ./release/my-package-1.0.0.tgz
 ```
 
-任意のコマンドのヘルプについて：
+任意のコマンドのヘルプについて:
 
 ```bash
 screw-up --help
@@ -351,7 +357,7 @@ screw-up dump --help
 
 ### packコマンド
 
-プロジェクトのtarアーカイブを作成します：
+プロジェクトのtarアーカイブを作成します:
 
 ```bash
 # 現在のディレクトリをパック
@@ -364,7 +370,7 @@ screw-up pack ./my-project
 screw-up pack --pack-destination ./dist
 ```
 
-packコマンドの機能：
+packコマンドの機能:
 
 - メタデータとファイル包含ルールのために`package.json`を自動的に読み取り
 - `package.json`の`files`フィールドを尊重
@@ -373,10 +379,12 @@ packコマンドの機能：
 
 #### オプション
 
-- `--pack-destination <path>`：アーカイブの出力ディレクトリを指定
-- `--readme <path>`：README.mdを指定したファイルで置換
-- `--inheritable-fields <list>`：親から継承するフィールドのコンマ区切りリスト（デフォルト: version,description,author,license,repository,keywords,homepage,bugs,readme）
-- `--no-wds`：バージョンインクリメントのワーキングディレクトリステータスチェックを無効化
+- `--pack-destination <path>`: アーカイブの出力ディレクトリを指定
+- `--readme <path>`: README.mdを指定したファイルで置換
+- `--inheritable-fields <list>`: 親から継承するフィールドのコンマ区切りリスト（デフォルト: version,description,author,license,repository,keywords,homepage,bugs,readme）
+- `--no-wds`: バージョンインクリメントのワーキングディレクトリステータスチェックを無効化
+- `--no-replace-peer-deps`: peerDependenciesの"*"を実際のバージョンに置き換える機能を無効化
+- `--peer-deps-prefix <prefix>`: 置き換えられるpeerDependenciesのバージョンプレフィックス（デフォルト: "^"）
 
 ### publishコマンド
 
@@ -396,7 +404,7 @@ screw-up publish package.tgz
 screw-up publish --dry-run --tag beta --access public
 ```
 
-publishコマンドの機能：
+publishコマンドの機能:
 
 - すべての`npm publish`オプションを透過的にサポート。このコマンドは、アーカイブ生成を行った後、実際の発行処理を`npm publish`を呼び出すことで実行します。
 - ディレクトリから公開（自動的にアーカイブを作成）または既存のtarballから公開可能
@@ -405,13 +413,15 @@ publishコマンドの機能：
 
 #### オプション
 
-- `--inheritable-fields <list>`：親から継承するフィールドのコンマ区切りリスト
-- `--no-wds`：バージョンインクリメントのワーキングディレクトリステータスチェックを無効化
-- すべての`npm publish`オプションがサポートされています（例：`--dry-run`、`--tag`、`--access`、`--registry`）
+- `--inheritable-fields <list>`: 親から継承するフィールドのコンマ区切りリスト
+- `--no-wds`: バージョンインクリメントのワーキングディレクトリステータスチェックを無効化
+- `--no-replace-peer-deps`: peerDependenciesの"*"を実際のバージョンに置き換える機能を無効化
+- `--peer-deps-prefix <prefix>`: 置き換えられるpeerDependenciesのバージョンプレフィックス（デフォルト: "^"）
+- すべての`npm publish`オプションがサポートされています（例: `--dry-run`、`--tag`、`--access`、`--registry`）
 
 ### dumpコマンド
 
-計算されたpackage.jsonをJSONとして出力します：
+計算されたpackage.jsonをJSONとして出力します:
 
 ```bash
 # 現在のディレクトリのpackage.jsonを出力
@@ -424,7 +434,7 @@ screw-up dump ./my-project
 screw-up dump --inheritable-fields "author,license"
 ```
 
-dumpコマンドの機能：
+dumpコマンドの機能:
 
 - すべての処理（ワークスペース継承、Gitメタデータなど）後の最終的な計算済み`package.json`を表示
 - デバッグとパッケージメタデータの解決方法の理解に有用
@@ -432,12 +442,12 @@ dumpコマンドの機能：
 
 #### オプション
 
-- `--inheritable-fields <list>`：親から継承するフィールドのコンマ区切りリスト
-- `--no-wds`：バージョンインクリメントのワーキングディレクトリステータスチェックを無効化
+- `--inheritable-fields <list>`: 親から継承するフィールドのコンマ区切りリスト
+- `--no-wds`: バージョンインクリメントのワーキングディレクトリステータスチェックを無効化
 
 ### README置換
 
-packコマンドは複数の方法でREADME置換をサポートします：
+packコマンドは複数の方法でREADME置換をサポートします:
 
 #### CLIオプション経由
 
@@ -457,9 +467,56 @@ screw-up pack --readme ./docs/README_package.md
 
 両方が指定された場合、`--readme` CLIオプションが`package.json`フィールドより優先されます。
 
+### peerDependencies置き換え
+
+ワークスペース環境では、開発中のバージョン制約を避けるために`peerDependencies`で兄弟パッケージを"*"で参照することが一般的です。パッケージ化時、Screw-UPは自動的にこれらのワイルドカードを実際のバージョン番号に置き換えます：
+
+```json
+{
+  "name": "@workspace/cli",
+  "peerDependencies": {
+    "@workspace/core": "*"
+  }
+}
+```
+
+パッケージ化後、"*"は実際のバージョンに置き換えられます：
+
+```json
+{
+  "name": "@workspace/cli", 
+  "peerDependencies": {
+    "@workspace/core": "^2.1.0"
+  }
+}
+```
+
+#### 機能の制御
+
+```bash
+# デフォルト動作（"^"プレフィックスを使用）
+screw-up pack
+
+# 機能を完全に無効化
+screw-up pack --no-replace-peer-deps
+
+# 異なるバージョンプレフィックスを使用
+screw-up pack --peer-deps-prefix "~"
+screw-up pack --peer-deps-prefix ">="
+
+# 厳密なバージョン（プレフィックスなし）
+screw-up pack --peer-deps-prefix ""
+```
+
+この機能の特徴：
+- ワークスペース環境でのみ動作（`workspaces`フィールドを持つワークスペースルートが必要）
+- ワークスペース兄弟パッケージ名と一致する"*"値のみを置き換え
+- 非ワークスペース依存関係は変更されません
+- packおよびpublishコマンドでデフォルトで有効
+
 ### ワークスペースフィールド継承
 
-モノレポで親パッケージから継承するメタデータフィールドを制御します：
+モノレポで親パッケージから継承するメタデータフィールドを制御します:
 
 ```bash
 # 特定のフィールドのみ継承
