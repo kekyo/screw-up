@@ -69,7 +69,6 @@ const createPackEntryGenerator = async function* (targetDir: string, resolvedPac
   }
 };
 
-
 /**
  * Pack assets into a tar archive
  * @param targetDir - Target directory to pack
