@@ -3,12 +3,70 @@
 // Under MIT.
 // https://github.com/kekyo/screw-up/
 
-import { resolve } from 'path';
+import { join, resolve } from 'path';
 import { glob } from 'glob';
-import { existsSync } from 'fs';
-import { mkdir, lstat } from 'fs/promises';
-import { createTarPacker, createReadFileItem, createFileItem, storeReaderToFile } from 'tar-vern';
+import { createReadStream, existsSync } from 'fs';
+import { mkdir, lstat, mkdtemp, writeFile, copyFile, rm } from 'fs/promises';
+import { createTarPacker, createReadFileItem, createFileItem, storeReaderToFile, extractTo, createTarExtractor, createEntryItemGenerator } from 'tar-vern';
+import { spawn } from 'child_process';
+import { tmpdir } from 'os';
 import { resolveRawPackageJsonObject, PackageResolutionResult, findWorkspaceRoot, collectWorkspaceSiblings, replacePeerDependenciesWildcards } from './internal.js';
+
+// We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
+
+//////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Execute npm pack and return the generated tarball path
+ * @param targetDir - Target directory to pack
+ * @param packDestDir - Directory to store the generated tarball (must exist)
+ * @returns Path to generated tarball
+ */
+const runNpmPack = async (targetDir: string, packDestDir: string): Promise<string> => {
+  return new Promise((res, rej) => {
+    const npmProcess = spawn('npm', ['pack', '--pack-destination', packDestDir], {
+      cwd: targetDir,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    npmProcess.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    npmProcess.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    npmProcess.on('close', (code) => {
+      if (code === 0) {
+        // npm pack outputs the filename on stdout (first line of output)
+        const lines = stdout.trim().split('\n');
+        const filename = lines[0]; // First line contains just the filename
+        if (filename) {
+          const fullPath = join(packDestDir, filename);
+          res(fullPath);
+        } else {
+          rej(new Error('npm pack did not output a filename'));
+        }
+      } else {
+        const errorMessage = `npm pack failed with exit code ${code}`;
+        const fullError = stderr ? `${errorMessage}\nstderr: ${stderr}` : errorMessage;
+        if (stdout) {
+          rej(new Error(`${fullError}\nstdout: ${stdout}`));
+        } else {
+          rej(new Error(fullError));
+        }
+      }
+    });
+
+    npmProcess.on('error', (error) => {
+      rej(new Error(`Failed to spawn npm pack: ${error.message}`));
+    });
+  });
+};
 
 //////////////////////////////////////////////////////////////////////////////////
 
@@ -69,8 +127,13 @@ const createPackEntryGenerator = async function* (targetDir: string, resolvedPac
   }
 };
 
+export interface PackedResult {
+  packageFileName: string;
+  metadata: any;
+}
+
 /**
- * Pack assets into a tar archive
+ * Pack assets using npm pack delegation method
  * @param targetDir - Target directory to pack
  * @param outputDir - Output directory to write the tarball
  * @param checkWorkingDirectoryStatus - Check working directory status
@@ -78,38 +141,56 @@ const createPackEntryGenerator = async function* (targetDir: string, resolvedPac
  * @param readmeReplacementPath - Optional path to replacement README file
  * @param replacePeerDepsWildcards - Replace "*" in peerDependencies with actual versions
  * @param peerDepsVersionPrefix - Version prefix for replaced peerDependencies
+ * @param alwaysOverrideVersionFromGit - Always override version from Git (default: true)
  * @returns Package metadata (package.json) or undefined if failed
  */
 export const packAssets = async (
   targetDir: string,
   outputDir: string,
   checkWorkingDirectoryStatus: boolean,
+  alwaysOverrideVersionFromGit: boolean,
   inheritableFields: Set<string>,
   readmeReplacementPath: string | undefined,
-  replacePeerDepsWildcards: boolean = true,
-  peerDepsVersionPrefix: string = "^") : Promise<any> => {
+  replacePeerDepsWildcards: boolean,
+  peerDepsVersionPrefix: string) : Promise<PackedResult | undefined> => {
   // Check if target directory exists
   if (!existsSync(targetDir)) {
-    return undefined;
+    throw new Error(`Target directory is not found: ${targetDir}`);
+  }
+
+  let readmeReplacementCandidatePath = readmeReplacementPath;
+  if (readmeReplacementCandidatePath && !existsSync(readmeReplacementCandidatePath)) {
+    throw new Error(`README replacement file is not found: ${readmeReplacementCandidatePath}`);
   }
 
   // Resolve package metadata with source tracking
-  let result: PackageResolutionResult;
-  try {
-    result = await resolveRawPackageJsonObject(
-      targetDir, checkWorkingDirectoryStatus,
-      inheritableFields);
-  } catch (error) {
-    // If package.json cannot be read (e.g., file doesn't exist), return undefined
-    // This matches npm pack behavior which requires package.json
-    return undefined;
-  }
+  const result = await resolveRawPackageJsonObject(
+    targetDir,
+    checkWorkingDirectoryStatus,
+    alwaysOverrideVersionFromGit,
+    inheritableFields);
 
-  let { packageJson: resolvedPackageJson, sourceMap } = result;
+  let resolvedPackageJson = result.metadata;
 
   // Check if package is private
   if (resolvedPackageJson?.private) {
     return undefined;
+  }
+
+  // Extract README replacement directive on package.json
+  const packageJsonReadme = resolvedPackageJson.readme;
+  if (packageJsonReadme) {
+    // When does not override by parameter (CLI)
+    if (!readmeReplacementCandidatePath) {
+      const packageJsonReadmeDir = result.sourceMap.get('readme');
+      const packageJsonReadmePath = join(packageJsonReadmeDir, packageJsonReadme);
+      if (!existsSync(packageJsonReadmePath)) {
+        throw new Error(`README replacement file is not found: ${packageJsonReadmePath}`);
+      }
+      readmeReplacementCandidatePath = packageJsonReadmePath;
+    }
+    // Always remove it.
+    delete resolvedPackageJson.readme;
   }
 
   // Replace peerDependencies wildcards if enabled and in workspace
@@ -127,41 +208,53 @@ export const packAssets = async (
     }
   }
 
-  // Determine README replacement path
-  // Priority: CLI option > package.json.readme > none
-  let finalReadmeReplacementPath = readmeReplacementPath;
-  if (!finalReadmeReplacementPath && resolvedPackageJson?.readme) {
-    // Get the correct base directory for readme field
-    const readmeSourceDir = sourceMap.get('readme') ?? targetDir;
-    const packageReadmePath = resolve(readmeSourceDir, resolvedPackageJson.readme);
-    if (existsSync(packageReadmePath)) {
-      finalReadmeReplacementPath = packageReadmePath;
+  // Create temporary directory for npm pack
+  const baseTempDir = await mkdtemp(join(tmpdir(), 'screw-up-npm-pack-'));
+  await mkdir(baseTempDir, { recursive: true });
+
+  try {
+    // Step 1: Execute npm pack to generate initial tarball
+    const npmTarballPath = await runNpmPack(targetDir, baseTempDir);
+
+    // Step 2: Extract the npm-generated tarball into staging directory
+    const stagingDir = join(baseTempDir, 'staging');
+    await mkdir(stagingDir, { recursive: true });
+
+    const stream = createReadStream(npmTarballPath);
+    await extractTo(createTarExtractor(stream, 'gzip'), stagingDir);
+
+    // Step 3: Process extracted files (package.json/README replacement)
+    // Replace package.json with our processed version
+    const packageJsonPath = join(stagingDir, 'package', 'package.json');
+    if (existsSync(packageJsonPath)) {
+      await writeFile(packageJsonPath, JSON.stringify(resolvedPackageJson, null, 2));
     }
-  }
 
-  // Validate README replacement path before creating generator
-  if (finalReadmeReplacementPath && !existsSync(finalReadmeReplacementPath)) {
-    throw new Error(`README replacement file not found: ${finalReadmeReplacementPath}`);
-  }
+    // Replace README.md
+    if (readmeReplacementCandidatePath) {
+      const readmeDestPath = join(stagingDir, 'package', 'README.md');
+      await copyFile(readmeReplacementCandidatePath, readmeDestPath);
+    }
 
-  // Get package name
-  const outputFileName = `${resolvedPackageJson?.name?.replace('/', '-') ?? "package"}-${resolvedPackageJson?.version ?? "0.0.0"}.tgz`;
-
-  // Ensure output directory exists
-  if (!existsSync(outputDir)) {
+    // Step 4: Re-create tarball with modified files
+    const outputFileName = `${resolvedPackageJson?.name?.replace('/', '-') ?? "package"}-${resolvedPackageJson?.version ?? "0.0.0"}.tgz`;
     await mkdir(outputDir, { recursive: true });
+    const outputFile = join(outputDir, outputFileName);
+
+    // Re-packing final tar file from the modified staging directory
+    const itemGenerator = createEntryItemGenerator(stagingDir);
+    const packer = createTarPacker(itemGenerator, 'gzip');
+    await storeReaderToFile(packer, outputFile);
+
+    // PackedResult
+    return {
+      packageFileName: outputFileName,
+      metadata: resolvedPackageJson
+    };
+  } finally {
+    // Clean up temporary directory
+    await rm(baseTempDir, { recursive: true, force: true });
   }
-
-  // Create tar packer with generator and gzip compression
-  const packer = createTarPacker(
-    createPackEntryGenerator(targetDir, resolvedPackageJson, finalReadmeReplacementPath),
-    'gzip');
-
-  // Write compressed tar archive to file
-  const outputFile = resolve(outputDir, outputFileName);
-  await storeReaderToFile(packer, outputFile);
-
-  return resolvedPackageJson;
 };
 
 /**
@@ -174,6 +267,7 @@ export const packAssets = async (
 export const getComputedPackageJsonObject = async (
   targetDir: string,
   checkWorkingDirectoryStatus: boolean,
+  alwaysOverrideVersionFromGit: boolean,
   inheritableFields: Set<string>) : Promise<any> => {
   // Check if target directory exists
   if (!existsSync(targetDir)) {
@@ -182,9 +276,10 @@ export const getComputedPackageJsonObject = async (
 
   // Resolve package metadata
   const result = await resolveRawPackageJsonObject(
-    targetDir, checkWorkingDirectoryStatus,
+    targetDir,
+    checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit,
     inheritableFields);
-  return result.packageJson;
+  return result.metadata;
 };
 
 //////////////////////////////////////////////////////////////////////////////////

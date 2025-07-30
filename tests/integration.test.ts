@@ -593,7 +593,6 @@ describe('workspace functionality tests', () => {
     expect(workspaceRoot).toBe(undefined);
   });
 
-
   it('should merge package metadata correctly', async () => {
     const parentMetadata = {
       name: 'parent',
@@ -607,7 +606,10 @@ describe('workspace functionality tests', () => {
       description: 'Child package'
     };
 
-    const merged = await mergePackageMetadata(parentMetadata, childMetadata, tempDir, true);
+    const sourceMaps = new Map<string, string>();
+    const merged = await mergePackageMetadata(
+      true, true, sourceMaps, parentMetadata, childMetadata, tempDir, tempDir, tempDir);
+
     expect(merged.name).toBe('child'); // Child overrides
     expect(merged.version).toBe('1.0.0'); // Inherited from parent
     expect(merged.author).toBe('Parent Author'); // Inherited from parent
@@ -624,7 +626,7 @@ describe('workspace functionality tests', () => {
     };
     writeFileSync(join(tempDir, 'package.json'), JSON.stringify(packageJson, null, 2));
 
-    const metadata = await resolvePackageMetadata(tempDir, true);
+    const { metadata } = await resolvePackageMetadata(tempDir, true, true);
     expect(metadata.name).toBe('standalone');
     expect(metadata.version).toBe('2.0.0');
     expect(metadata.author).toBe('Standalone Author');
@@ -650,7 +652,7 @@ describe('workspace functionality tests', () => {
     };
     writeFileSync(join(childDir, 'package.json'), JSON.stringify(childPackageJson, null, 2));
 
-    const metadata = await resolvePackageMetadata(childDir, true);
+    const { metadata } = await resolvePackageMetadata(childDir, true, true);
     expect(metadata.name).toBe('child-package'); // From child
     expect(metadata.version).toBe('1.0.0'); // Inherited from root
     expect(metadata.author).toBe('Workspace Author'); // Inherited from root

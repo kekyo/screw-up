@@ -11,11 +11,16 @@ import JSON5 from 'json5';
 import { getGitMetadata } from './analyzer.js';
 import { PackageMetadata } from './types.js';
 
+// We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
+
+//////////////////////////////////////////////////////////////////////////////////
+
 /**
  * Result of package resolution with source tracking
+ * @template T - Type of the package metadata
  */
-export interface PackageResolutionResult {
-  packageJson: any;
+export interface PackageResolutionResult<T> {
+  metadata: T;
   sourceMap: Map<string, string>;
 }
 
@@ -175,17 +180,25 @@ export const replacePeerDependenciesWildcards = (
 
 /**
  * Merge package metadata with inheritance (child overrides parent)
+ * @param checkWorkingDirectoryStatus - Check working directory status to increase version
+ * @param alwaysOverrideVersionFromGit - Always override version from Git
+ * @param sourceMap - Map to track field sources
  * @param parentMetadata - Parent package metadata
  * @param childMetadata - Child package metadata
+ * @param parentSourceDir - Parent package.json directory (for source tracking)
+ * @param childSourceDir - Child package.json directory (for source tracking)
  * @param repositoryPath - Path to Git repository root
- * @param checkWorkingDirectoryStatus - Check working directory status to increase version
- * @returns Merged metadata
+ * @returns Merged package metadata
  */
 export const mergePackageMetadata = async (
+  checkWorkingDirectoryStatus: boolean,
+  alwaysOverrideVersionFromGit: boolean,
+  sourceMap: Map<string, string>,
   parentMetadata: PackageMetadata, 
   childMetadata: PackageMetadata,
-  repositoryPath: string,
-  checkWorkingDirectoryStatus: boolean) => {
+  parentSourceDir: string,
+  childSourceDir: string,
+  repositoryPath: string): Promise<PackageMetadata> => {
   // Start with default git metadata if repositoryPath is provided
   const metadata = await getGitMetadata(repositoryPath, checkWorkingDirectoryStatus);
 
@@ -197,6 +210,7 @@ export const mergePackageMetadata = async (
     const value = parentMetadata[key];
     if (value !== undefined) {
       merged[key] = value;
+      sourceMap.set(key, parentSourceDir);
     }
   }
 
@@ -205,7 +219,13 @@ export const mergePackageMetadata = async (
     const value = childMetadata[key];
     if (value !== undefined) {
       merged[key] = value;
+      sourceMap.set(key, childSourceDir);
     }
+  }
+
+  // Always override version from Git if enabled (new default behavior)
+  if (alwaysOverrideVersionFromGit && metadata.version) {
+    merged.version = metadata.version;
   }
   
   return merged;
@@ -214,28 +234,33 @@ export const mergePackageMetadata = async (
 /**
  * Merge raw package.json objects with inheritance (child overrides parent)
  * Only inherits package metadata fields, not project-specific configurations
+ * @param checkWorkingDirectoryStatus - Check working directory status to increase version
+ * @param alwaysOverrideVersionFromGit - Always override version from Git
+ * @param inheritableFields - Package metadata fields that should be inherited from parent
+ * @param sourceMap - Map to track field sources
  * @param parentMetadata - Parent package object
  * @param childMetadata - Child package object
  * @param parentSourceDir - Parent package.json directory (for source tracking)
  * @param childSourceDir - Child package.json directory (for source tracking)
  * @param repositoryPath - Path to Git repository root
- * @param checkWorkingDirectoryStatus - Check working directory status to increase version
- * @param inheritableFields - Package metadata fields that should be inherited from parent
- * @param sourceMap - Map to track field sources
  * @returns Merged package object with only metadata fields
  */
 const mergeRawPackageJson = async (
+  checkWorkingDirectoryStatus: boolean,
+  alwaysOverrideVersionFromGit: boolean,
+  inheritableFields: Set<string>,
+  sourceMap: Map<string, string>,
   parentMetadata: any,
   childMetadata: any,
   parentSourceDir: string,
   childSourceDir: string,
   repositoryPath: string,
-  checkWorkingDirectoryStatus: boolean,
-  inheritableFields: Set<string>,
-  sourceMap: Map<string, string>) => {
+): Promise<any> => {
+
   // Start with default git metadata if repositoryPath is provided
-  const merged = await getGitMetadata(repositoryPath, checkWorkingDirectoryStatus) as any;
-  
+  const gitMetadata = await getGitMetadata(repositoryPath, checkWorkingDirectoryStatus) as any;
+  const merged = { ...gitMetadata };
+
   // Start with parent metadata
   for (const key in parentMetadata) {
     if (inheritableFields.has(key)) {
@@ -246,7 +271,7 @@ const mergeRawPackageJson = async (
       }
     }
   }
-  
+
   // Override with child metadata
   for (const key in childMetadata) {
     const value = childMetadata[key];
@@ -255,29 +280,32 @@ const mergeRawPackageJson = async (
       sourceMap.set(key, childSourceDir);
     }
   }
- 
+
+  // Always override version from Git if enabled (new default behavior)
+  if (alwaysOverrideVersionFromGit && gitMetadata.version) {
+    merged.version = gitMetadata.version;
+    sourceMap.set('version', repositoryPath); // Mark as Git-sourced
+  }
+
   return merged;
 };
-
 
 //////////////////////////////////////////////////////////////////////////////////////
 
 /**
  * Resolve package metadata for current project with workspace inheritance
  * @param projectRoot - Current project root
- * @param checkWorkingDirectoryStatus - Check working directory status to increase version
  * @param readPackageMetadataFn - Function to read package metadata
  * @param mergePackageMetadataFn - Function to merge package metadata
  * @returns Promise resolving to resolved package metadata
  */
 const resolvePackageMetadataT = async <T>(
   projectRoot: string,
-  checkWorkingDirectoryStatus: boolean,
   readPackageMetadataFn: (path: string) => Promise<T>,
-  mergePackageMetadataFn: (a: T, b: T, aDir: string, bDir: string, repositoryPath: string, checkWorkingDirectoryStatus: boolean) => Promise<T>): Promise<T> => {
-  
+  mergePackageMetadataFn: (a: T, b: T, aDir: string, bDir: string, repositoryPath: string) => Promise<T>): Promise<T> => {
+
   const workspaceRoot = await findWorkspaceRoot(projectRoot);
-  
+
   if (!workspaceRoot) {
     // No workspace, just read local package.json
     const localPackagePath = join(projectRoot, 'package.json');
@@ -287,35 +315,31 @@ const resolvePackageMetadataT = async <T>(
       localMetadata,
       '',  // dummy
       projectRoot,
-      projectRoot,
-      checkWorkingDirectoryStatus);
+      projectRoot);
   }
-  
+
   const projectPackagePath = join(projectRoot, 'package.json');
-  
+
   // Start with root package metadata
   const rootPackagePath = join(workspaceRoot, 'package.json');
   const metadata = await readPackageMetadataFn(rootPackagePath);
-  
+
   // If current project is not the root, merge with project-specific metadata
   if (projectPackagePath !== rootPackagePath && existsSync(projectPackagePath)) {
     const projectMetadata = await readPackageMetadataFn(projectPackagePath);
     return mergePackageMetadataFn(
       metadata, projectMetadata,
       workspaceRoot, projectRoot,
-      projectRoot,
-      checkWorkingDirectoryStatus);
+      projectRoot);
   } else {
     return mergePackageMetadataFn(
       {} as T,
       metadata,
       '',  // dummy
       workspaceRoot,
-      projectRoot,
-      checkWorkingDirectoryStatus);
+      projectRoot);
   }
 };
-
 
 //////////////////////////////////////////////////////////////////////////////////////
 
@@ -340,15 +364,24 @@ const readPackageMetadata = async (packagePath: string): Promise<PackageMetadata
 /**
  * Resolve package metadata for current project with workspace inheritance
  * @param projectRoot - Current project root
+ * @param checkWorkingDirectoryStatus - Check working directory status to increase version
+ * @param alwaysOverrideVersionFromGit - Always override version from Git
  * @returns Promise resolving to resolved package metadata
  */
-export const resolvePackageMetadata = (projectRoot: string, checkWorkingDirectoryStatus: boolean): Promise<PackageMetadata> => {
-  return resolvePackageMetadataT<PackageMetadata>(
+export const resolvePackageMetadata = async (
+  projectRoot: string,
+  checkWorkingDirectoryStatus: boolean,
+  alwaysOverrideVersionFromGit: boolean): Promise<PackageResolutionResult<PackageMetadata>> => {
+  const sourceMap = new Map<string, string>();
+  const metadata = await resolvePackageMetadataT<PackageMetadata>(
     projectRoot,
-    checkWorkingDirectoryStatus,
     readPackageMetadata,
-    (parentMetadata, childMetadata, _parentDir, _childDir, repositoryPath, checkWorkingDirectoryStatus) =>
-      mergePackageMetadata(parentMetadata, childMetadata, repositoryPath, checkWorkingDirectoryStatus));
+    mergePackageMetadata.bind(null, checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit, sourceMap));
+
+  return {
+    metadata,
+    sourceMap
+  };
 };
 
 /**
@@ -370,23 +403,23 @@ const readRawPackageJson = async (packagePath: string): Promise<any> => {
  * Resolve raw package.json for current project with workspace inheritance
  * @param projectRoot - Current project root
  * @param checkWorkingDirectoryStatus - Check working directory status
+ * @param alwaysOverrideVersionFromGit - Always override version from Git
  * @param inheritableFields - Package metadata fields that should be inherited from parent
  * @returns Promise resolving to resolved raw package.json object with source tracking
  */
 export const resolveRawPackageJsonObject = async (
   projectRoot: string,
   checkWorkingDirectoryStatus: boolean,
-  inheritableFields: Set<string>): Promise<PackageResolutionResult> => {
+  alwaysOverrideVersionFromGit: boolean,
+  inheritableFields: Set<string>): Promise<PackageResolutionResult<any>> => {
   const sourceMap = new Map<string, string>();
   const packageJson = await resolvePackageMetadataT<any>(
     projectRoot,
-    checkWorkingDirectoryStatus,
     readRawPackageJson,
-    (parentMetadata, childMetadata, parentSourceDir, childSourceDir, repositoryPath, checkWorkingDirectoryStatus) =>
-      mergeRawPackageJson(
-        parentMetadata, childMetadata, parentSourceDir, childSourceDir, repositoryPath, checkWorkingDirectoryStatus, inheritableFields, sourceMap));
+    mergeRawPackageJson.bind(null, checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit, inheritableFields, sourceMap));
+
   return {
-    packageJson,
+    metadata: packageJson,
     sourceMap
   };
 };
