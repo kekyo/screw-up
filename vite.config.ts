@@ -3,6 +3,7 @@ import { resolve } from 'path';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import dts from 'vite-plugin-dts';
+import { screwUp } from './src/vite-plugin';   // Self-hosted
 
 const packageJson = JSON.parse(
   readFileSync(resolve(fileURLToPath(new URL('.', import.meta.url)), 'package.json'), 'utf8'));
@@ -17,6 +18,9 @@ export default defineConfig({
   plugins: [
     dts({
       insertTypesEntry: true
+    }),
+    screwUp({
+      outputMetadataFile: true
     })
   ],
   build: {

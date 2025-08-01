@@ -9,56 +9,56 @@ import { createConsoleLogger } from '../src/internal.js';
 // Test utilities for creating temporary git repositories
 class GitTestRepository {
   public readonly path: string;
-  private git: any;
+  public readonly git: any;
 
   constructor(path: string) {
     this.path = path;
     this.git = simpleGit(path);
   }
 
-  async init(): Promise<void> {
+  readonly init = async (): Promise<void> => {
     await this.git.init();
     await this.git.addConfig('user.name', 'Test User');
     await this.git.addConfig('user.email', 'test@example.com');
-  }
+  };
 
-  async createFile(filename: string, content: string): Promise<void> {
+  readonly createFile = async (filename: string, content: string): Promise<void> => {
     const fs = await import('fs/promises');
     await fs.writeFile(join(this.path, filename), content);
-  }
+  };
 
-  async commit(message: string, files: string[] = ['.']): Promise<string> {
+  readonly commit = async (message: string, files: string[] = ['.']): Promise<string> => {
     await this.git.add(files);
     const result = await this.git.commit(message);
     return result.commit;
-  }
+  };
 
-  async createTag(tagName: string, commitHash?: string): Promise<void> {
+  readonly createTag = async (tagName: string, commitHash?: string): Promise<void> => {
     if (commitHash) {
       await this.git.tag([tagName, commitHash]);
     } else {
       await this.git.tag([tagName]);
     }
-  }
+  };
 
-  async createBranch(branchName: string, startPoint?: string): Promise<void> {
+  readonly createBranch = async (branchName: string, startPoint?: string): Promise<void> => {
     if (startPoint) {
       await this.git.checkoutBranch(branchName, startPoint);
     } else {
       await this.git.checkoutLocalBranch(branchName);
     }
-  }
+  };
 
-  async checkout(ref: string): Promise<void> {
+  readonly checkout = async (ref: string): Promise<void> => {
     await this.git.checkout(ref);
-  }
+  };
 
-  async getCurrentCommitHash(): Promise<string> {
+  readonly getCurrentCommitHash = async (): Promise<string> => {
     const log = await this.git.log({ maxCount: 1 });
     return log.latest?.hash || '';
-  }
+  };
 
-  async getCommit(hash: string): Promise<any> {
+  readonly getCommit = async (hash: string): Promise<any> => {
     const log = await this.git.show([hash, '--format=%H%n%h%n%ci%n%s%n%P', '-s']);
     const lines = log.trim().split('\n');
     
@@ -71,21 +71,21 @@ class GitTestRepository {
       message: lines[3],
       parents: lines[4] ? lines[4].split(' ').filter((p: string) => p.length > 0) : []
     };
-  }
+  };
 }
 
 // Helper function to create a temporary test repository
-async function createTestRepository(): Promise<GitTestRepository> {
+const createTestRepository = async (): Promise<GitTestRepository> => {
   const tempDir = await mkdtemp(join(tmpdir(), 'git-metadata-test-'));
   const repo = new GitTestRepository(tempDir);
   await repo.init();
   return repo;
-}
+};
 
 // Helper function to cleanup test repository
-async function cleanupTestRepository(repo: GitTestRepository): Promise<void> {
+const cleanupTestRepository = async (repo: GitTestRepository): Promise<void> => {
   await rm(repo.path, { recursive: true, force: true });
-}
+};
 
 describe('git-metadata', () => {
   let testRepo: GitTestRepository;

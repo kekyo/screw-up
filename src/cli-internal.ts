@@ -9,8 +9,7 @@ import { mkdir, lstat, mkdtemp, writeFile, copyFile, rm } from 'fs/promises';
 import { createTarPacker, storeReaderToFile, extractTo, createTarExtractor, createEntryItemGenerator } from 'tar-vern';
 import { spawn } from 'child_process';
 import { tmpdir } from 'os';
-import { resolveRawPackageJsonObject, PackageResolutionResult, findWorkspaceRoot, collectWorkspaceSiblings, replacePeerDependenciesWildcards } from './internal.js';
-import { Logger } from './types.js';
+import { resolveRawPackageJsonObject, PackageResolutionResult, findWorkspaceRoot, collectWorkspaceSiblings, replacePeerDependenciesWildcards, Logger } from './internal.js';
 
 // We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
 
@@ -71,8 +70,8 @@ const runNpmPack = async (targetDir: string, packDestDir: string): Promise<strin
 //////////////////////////////////////////////////////////////////////////////////
 
 export interface PackedResult {
-  packageFileName: string;
-  metadata: any;
+  readonly packageFileName: string;
+  readonly metadata: any;
 }
 
 /**
@@ -232,75 +231,55 @@ export const getComputedPackageJsonObject = async (
 //////////////////////////////////////////////////////////////////////////////////
 
 export interface ParsedArgs {
-  command?: string;
-  positional: string[];
-  options: Record<string, string | boolean>;
+  readonly argv: string[];
+  readonly command?: string;
+  readonly positional: string[];
+  readonly options: Record<string, string | boolean>;
 }
 
-export const parseArgs = (argv: string[]): ParsedArgs => {
-  const args = argv.slice(2); // Remove 'node' and script path
-  const result: ParsedArgs = {
+/**
+ * Parse command line arguments
+ * @param args - Command line arguments
+ * @param argOptionMap - Map of command options to their argument options
+ * @returns Parsed arguments
+ */
+export const parseArgs = (args: string[], argOptionMap: Map<string, Set<string>>): ParsedArgs => {
+  const result: any = {
+    argv: args,
     positional: [],
     options: {}
   };
 
-  if (args.length === 0) {
-    return result;
-  }
-
-  // Don't treat options as command
-  if (args[0].startsWith('-')) {
-    let i = 0;
-    while (i < args.length) {
-      const arg = args[i];
-
-      if (arg.startsWith('--')) {
-        const optionName = arg.slice(2);
-        const nextArg = args[i + 1];
-
-        if (nextArg !== undefined && !nextArg.startsWith('-')) {
-          result.options[optionName] = nextArg;
-          i += 2;
-        } else {
-          result.options[optionName] = true;
-          i += 1;
-        }
-      } else if (arg.startsWith('-')) {
-        const optionName = arg.slice(1);
-        result.options[optionName] = true;
-        i += 1;
-      } else {
-        result.positional.push(arg);
-        i += 1;
-      }
-    }
-    return result;
-  }
-
-  result.command = args[0];
-  let i = 1;
-
-  while (i < args.length) {
+  for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-
     if (arg.startsWith('--')) {
       const optionName = arg.slice(2);
-      const nextArg = args[i + 1];
-
-      if (nextArg !== undefined && !nextArg.startsWith('-')) {
-        result.options[optionName] = nextArg;
-        i += 2;
-      } else {
+      // Found option bedore command
+      if (!result.command) {
+        // Always flag option
         result.options[optionName] = true;
-        i += 1;
+      } else {
+        // Detect an argument option in the command
+        const argOptions = argOptionMap.get(result.command);
+        if (argOptions.has(optionName)) {
+          // Option has an argument
+          i++;
+          result.options[optionName] = args[i];
+        } else {
+          // Option is flag
+          result.options[optionName] = true;
+        }
       }
+    // Sigle hyphen option is always flag
     } else if (arg.startsWith('-')) {
       const optionName = arg.slice(1);
-      result.options[optionName] = true;
-      i += 1;
+      if (optionName.length == 1) {
+        result.options[optionName] = true;
+      }
+    } else if (!result.command) {
+      result.command = arg;
     } else {
       result.positional.push(arg);
-      i += 1;
     }
   }
 

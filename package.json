@@ -29,7 +29,7 @@
     }
   },
   "bin": {
-    "screw-up": "./dist/cli.js"
+    "screw-up": "./dist/main.js"
   },
   "files": [
     "dist",

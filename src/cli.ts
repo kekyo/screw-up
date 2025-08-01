@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 // screw-up - Easy package metadata inserter on Vite plugin
 // Copyright (c) Kouji Matsui (@kekyo@mi.kekyo.net)
 // Under MIT.
@@ -10,17 +8,11 @@ import { existsSync } from 'fs';
 import { mkdtemp, rm, stat } from 'fs/promises';
 import { spawn } from 'child_process';
 import { packAssets, parseArgs, ParsedArgs, getComputedPackageJsonObject } from './cli-internal.js';
-import { createConsoleLogger } from './internal.js';
-import { Logger } from './types.js';
+import { Logger } from './internal.js';
 
 // We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
 
 //////////////////////////////////////////////////////////////////////////////////
-
-declare const __VERSION__: string;
-declare const __AUTHOR__: string;
-declare const __REPOSITORY_URL__: string;
-declare const __LICENSE__: string;
 
 // Package metadata fields that should be inherited from parent
 const defaultInheritableFields = new Set([
@@ -43,51 +35,63 @@ const parseInheritableFields = (inheritableFieldsOption: string | boolean | unde
   if (!inheritableFieldsOption.trim()) {
     return new Set(); // Empty set for empty string (no inheritance)
   }
-  return new Set(inheritableFieldsOption.split(',').map(field => field.trim()).filter(field => field.length > 0));
+  return new Set(inheritableFieldsOption.
+    split(',').
+    map(field => field.trim()).
+    filter(field => field.length > 0));
 };
 
 //////////////////////////////////////////////////////////////////////////////////
 
-const showHelp = (logger: Logger) => {
-  logger.info(`screw-up - Easy package metadata inserter CLI [${__VERSION__}]
-Copyright (c) ${__AUTHOR__}
-Repository: ${__REPOSITORY_URL__}
-License: ${__LICENSE__}
+const showDumpHelp = (logger: Logger) => {
+  logger.info(`Usage: screw-up dump [options] [directory]
 
-Usage: screw-up <command> [options]
+Dump computed package.json as JSON
 
-Commands:
-  pack [directory]              Pack the project into a tar archive
-  publish [directory|package.tgz]  Publish the project
-  dump [directory]              Dump computed package.json as JSON
+Arguments:
+  directory                     Directory to dump package.json from (default: current directory)
 
 Options:
-  -h, --help                    Show help
-
-Pack Options:
-  --pack-destination <path>     Directory to write the tarball
-  --readme <path>               Replace README.md with specified file
-  --inheritable-fields <list>   Comma-separated list of fields to inherit from parent (default: version,description,author,license,repository,keywords,homepage,bugs,readme)
+  --inheritable-fields <list>   Comma-separated list of fields to inherit from parent
   --no-wds                      Do not check working directory status to increase version
   --no-git-version-override     Do not override version from Git (use package.json version)
-  --no-replace-peer-deps        Disable replacing "*" in peerDependencies with actual versions
-  --peer-deps-prefix <prefix>   Version prefix for replaced peerDependencies (default: "^")
-  --verbose                     Print verbose log
-
-Publish Options:
-  All npm publish options are supported (e.g., --dry-run, --tag, --access, --registry)
-
-Examples:
-  screw-up pack                            # Pack current directory
-  screw-up pack ./my-project               # Pack specific directory
-  screw-up pack --pack-destination ./dist  # Pack to specific output directory
-  screw-up pack --readme ./README_pack.md  # Pack with custom README
-  screw-up publish                         # Publish current directory
-  screw-up publish ./my-project            # Publish specific directory
-  screw-up publish package.tgz             # Publish existing tarball
-  screw-up publish --dry-run --tag beta    # Publish with npm options
+  -h, --help                    Show help for dump command
 `);
 };
+
+const dumpCommand = async (args: ParsedArgs, logger: Logger) => {
+  if (args.options.help || args.options.h) {
+    showDumpHelp(logger);
+    return 1;
+  }
+
+  const directory = args.positional[0];
+  const inheritableFieldsOption = args.options['inheritable-fields'] as string;
+  const alwaysOverrideVersionFromGit = !args.options['no-git-version-override'];
+  const checkWorkingDirectoryStatus = args.options['no-wds'] ? false : true;
+
+  // Parse inheritable fields from CLI option or use defaults
+  const inheritableFields = parseInheritableFields(inheritableFieldsOption);
+
+  const targetDir = resolve(directory ?? process.cwd());
+
+  try {
+    const computedPackageJson = await getComputedPackageJsonObject(
+      targetDir, checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit, inheritableFields, logger);
+    if (computedPackageJson) {
+      logger.info(JSON.stringify(computedPackageJson, null, 2));
+    } else {
+      logger.error(`[screw-up:cli]: dump: Unable to read package.json from: ${targetDir}`);
+      return 1;
+    }
+  } catch (error) {
+    logger.error(`[screw-up:cli]: dump: Failed to dump package.json: ${error}`);
+      return 1;
+  }
+  return 0;
+};
+
+//////////////////////////////////////////////////////////////////////////////////
 
 const showPackHelp = (logger: Logger) => {
   logger.info(`Usage: screw-up pack [options] [directory]
@@ -110,36 +114,10 @@ Options:
 `);
 };
 
-const showPublishHelp = (logger: Logger) => {
-  logger.info(`Usage: screw-up publish [options] [directory|package.tgz]
-
-Publish the project
-
-Arguments:
-  directory|package.tgz         Directory to pack and publish, or existing tarball to publish
-
-Options:
-  All npm publish options are supported, including:
-  --dry-run                     Perform a dry run
-  --tag <tag>                   Tag for the published version
-  --access <access>             Access level (public or restricted)
-  --registry <registry>         Registry URL
-  -h, --help                    Show help for publish command
-
-Examples:
-  screw-up publish                       # Publish current directory
-  screw-up publish ./my-project          # Publish specific directory
-  screw-up publish package.tgz           # Publish existing tarball
-  screw-up publish --dry-run --tag beta  # Publish with options
-`);
-};
-
-//////////////////////////////////////////////////////////////////////////////////
-
 const packCommand = async (args: ParsedArgs, logger: Logger) => {
   if (args.options.help || args.options.h) {
     showPackHelp(logger);
-    return;
+    return 1;
   }
 
   const directory = args.positional[0];
@@ -178,72 +156,107 @@ const packCommand = async (args: ParsedArgs, logger: Logger) => {
       }
     } else {
       logger.error(`[screw-up:cli]: pack: Unable to find any files to pack: ${targetDir}`);
-      process.exit(1);
+      return 1;
     }
   } catch (error) {
     logger.error(`[screw-up:cli]: pack: Failed to create archive: ${error}`);
-    process.exit(1);
+    return 1;
   }
+  return 0;
 };
 
 //////////////////////////////////////////////////////////////////////////////////
 
+const showPublishHelp = (logger: Logger) => {
+  logger.info(`Usage: screw-up publish [options] [directory|package.tgz]
+
+Publish the project
+
+Arguments:
+  directory|package.tgz         Directory to pack and publish, or existing tarball to publish
+
+Options:
+  All npm publish options are supported, including:
+  --dry-run                     Perform a dry run
+  --tag <tag>                   Tag for the published version
+  --access <access>             Access level (public or restricted)
+  --registry <registry>         Registry URL
+  -h, --help                    Show help for publish command
+
+Examples:
+  screw-up publish                       # Publish current directory
+  screw-up publish ./my-project          # Publish specific directory
+  screw-up publish package.tgz           # Publish existing tarball
+  screw-up publish --dry-run --tag beta  # Publish with options
+`);
+};
+
+const runNpmPublish = async (
+  tarballPath: string, npmOptions: string[], verbose: boolean, logger: Logger) => {
+  if (verbose) {
+    logger.info(`[screw-up:cli]: publish: Publishing ${tarballPath} to npm...`);
+  }
+  
+  const publishArgs = ['publish', tarballPath, ...npmOptions];
+  
+  // For testing: log the command that would be executed
+  if (process.env.SCREW_UP_TEST_MODE === 'true') {
+    logger.info(`[screw-up:cli]: TEST_MODE: Would execute: npm ${publishArgs.join(' ')}`);
+    logger.info(`[screw-up:cli]: TEST_MODE: Tarball path: ${tarballPath}`);
+    logger.info(`[screw-up:cli]: TEST_MODE: Options: ${npmOptions.join(' ')}`);
+    logger.info(`[screw-up:cli]: publish: Successfully published ${tarballPath}`);
+    return 0;
+  }
+  
+  const npmProcess = spawn('npm', publishArgs, { stdio: 'inherit' });
+  
+  return new Promise<number>((resolve, reject) => {
+    npmProcess.on('close', code => {
+      if (code === 0) {
+        if (verbose) {
+          logger.info(`[screw-up:cli]: publish: Successfully published ${tarballPath}`);
+        }
+        resolve(code);
+      } else {
+        logger.error(`[screw-up:cli]: publish: npm publish failed: ${tarballPath}`);
+        resolve(code);
+      }
+    });
+    npmProcess.on('error', reject);
+  });
+};
+
 const publishCommand = async (args: ParsedArgs, logger: Logger) => {
   if (args.options.help || args.options.h) {
     showPublishHelp(logger);
-    return;
+    return 1;
   }
 
-  const runNpmPublish = async (tarballPath: string, npmOptions: string[]) => {
-    logger.info(`[screw-up:cli]: publish: Publishing ${tarballPath} to npm...`);
-    
-    const publishArgs = ['publish', tarballPath, ...npmOptions];
-    
-    // For testing: log the command that would be executed
-    if (process.env.SCREW_UP_TEST_MODE === 'true') {
-      logger.info(`[screw-up:cli]: TEST_MODE: Would execute: npm ${publishArgs.join(' ')}`);
-      logger.info(`[screw-up:cli]: TEST_MODE: Tarball path: ${tarballPath}`);
-      logger.info(`[screw-up:cli]: TEST_MODE: Options: ${npmOptions.join(' ')}`);
-      logger.info(`[screw-up:cli]: publish: Successfully published ${tarballPath}`);
-      return;
-    }
-    
-    const npmProcess = spawn('npm', publishArgs, { stdio: 'inherit' });
-    
-    return new Promise<void>((resolve, reject) => {
-      npmProcess.on('close', (code) => {
-        if (code === 0) {
-          logger.info(`[screw-up:cli]: publish: Successfully published ${tarballPath}`);
-          resolve();
-        } else {
-          reject(new Error(`npm publish failed with exit code ${code}`));
-        }
-      });
-      npmProcess.on('error', reject);
-    });
-  };
-
   const path = args.positional[0];
+  const readmeOption = args.options['readme'] as string;
   const inheritableFieldsOption = args.options['inheritable-fields'] as string;
   const checkWorkingDirectoryStatus = args.options['no-wds'] ? false : true;
   const alwaysOverrideVersionFromGit = !args.options['no-git-version-override'];
   const replacePeerDepsWildcards = !args.options['no-replace-peer-deps'];
   const peerDepsVersionPrefix = args.options['peer-deps-prefix'] as string ?? "^";
+  const verbose = args.options['verbose'] ? true : false;
 
   // Parse inheritable fields from CLI option or use defaults
   const inheritableFields = parseInheritableFields(inheritableFieldsOption);
+  const readmeReplacementPath = readmeOption ? resolve(readmeOption) : undefined;
 
-  // Convert parsed options to npm options
+  // Aggregate npm options, except screw-up options.
   const npmOptions: string[] = [];
-  Object.entries(args.options).forEach(([key, value]) => {
-    if (key === 'help' || key === 'h' || key === 'no-wds' || key === 'inheritable-fields' || key === 'no-replace-peer-deps' || key === 'peer-deps-prefix') return; // Skip screw-up specific options
-
-    if (value === true) {
-      npmOptions.push(`--${key}`);
+  for (let i = 0; i < args.argv.length; i++) {
+    const arg = args.argv[i];
+    if (arg === '--help' || arg === '--verbose' ||  arg === '-h' ||arg === '--no-wds' ||
+        arg === '--no-git-version-override' || arg === '--no-replace-peer-deps') {
+    } else if (arg === '--readme' || arg === '--inheritable-fields' || arg === '--peer-deps-prefix') {
+      i++;
     } else {
-      npmOptions.push(`--${key}`, value as string);
+      npmOptions.push(arg);
     }
-  });
+  }
 
   try {
     if (!path) {
@@ -251,22 +264,27 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
       const targetDir = process.cwd();
       const outputDir = await mkdtemp('screw-up-publish-');
 
-      logger.info(`[screw-up:cli]: publish: Creating archive of ${targetDir}...`);
+      if (verbose) {
+        logger.info(`[screw-up:cli]: publish: Creating archive of ${targetDir}...`);
+      }
 
       try {
         const result = await packAssets(
           targetDir, outputDir,
           checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit,
           inheritableFields,
-          undefined,
+          readmeReplacementPath,
           replacePeerDepsWildcards, peerDepsVersionPrefix, logger);
         if (result?.metadata) {
+          if (verbose) {
+            logger.info(`[screw-up:cli]: publish: Archive created successfully: ${result.packageFileName}`);
+          }
           const archiveName = `${result.metadata.name}-${result.metadata.version}.tgz`;
           const archivePath = join(outputDir, archiveName);
-          await runNpmPublish(archivePath, npmOptions);
+          return await runNpmPublish(archivePath, npmOptions, verbose, logger);
         } else {
           logger.error(`[screw-up:cli]: publish: Unable to find any files to pack: ${targetDir}`);
-          process.exit(1);
+          return 1;
         }
       } finally {
         await rm(outputDir, { recursive: true, force: true });
@@ -276,127 +294,108 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
       
       if (pathStat.isFile() && (path.endsWith('.tgz') || path.endsWith('.tar.gz'))) {
         // Argument is a tarball file - publish directly
-        await runNpmPublish(resolve(path), npmOptions);
+        return await runNpmPublish(resolve(path), npmOptions, verbose, logger);
       } else if (pathStat.isDirectory()) {
         // Argument is a directory - generate tarball from directory and publish
         const targetDir = resolve(path);
         const outputDir = await mkdtemp('screw-up-publish-');
 
-        logger.info(`[screw-up:cli]: publish: Creating archive of ${targetDir}...`);
+        if (verbose) {
+          logger.info(`[screw-up:cli]: publish: Creating archive of ${targetDir}...`);
+        }
 
         try {
           const result = await packAssets(
             targetDir, outputDir,
             checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit,
             inheritableFields,
-            undefined,
+            readmeReplacementPath,
             replacePeerDepsWildcards, peerDepsVersionPrefix, logger);
           if (result?.metadata) {
+            if (verbose) {
+              logger.info(`[screw-up:cli]: publish: Archive created successfully: ${result.packageFileName}`);
+            }
             const archiveName = `${result.metadata.name}-${result.metadata.version}.tgz`;
             const archivePath = join(outputDir, archiveName);
-            await runNpmPublish(archivePath, npmOptions);
+            return await runNpmPublish(archivePath, npmOptions, verbose, logger);
           } else {
             logger.error(`[screw-up:cli]: publish: Unable to find any files to pack: ${targetDir}`);
-            process.exit(1);
+            return 1;
           }
         } finally {
           await rm(outputDir, { recursive: true, force: true });
         }
       } else {
         logger.error(`[screw-up:cli]: publish: Invalid path - must be a directory or .tgz/.tar.gz file: ${path}`);
-        process.exit(1);
+        return 1;
       }
     } else {
       logger.error(`[screw-up:cli]: publish: Path does not exist: ${path}`);
-      process.exit(1);
+      return 1;
     }
   } catch (error) {
     logger.error(`[screw-up:cli]: publish: Failed to publish: ${error}`);
-    process.exit(1);
+    return 1;
   }
 };
 
-const showDumpHelp = (logger: Logger) => {
-  logger.info(`Usage: screw-up dump [options] [directory]
+//////////////////////////////////////////////////////////////////////////////////
 
-Dump computed package.json as JSON
+const showHelp = async (logger: Logger) => {
+  const { author, license, repository_url, version } = await import('./generated/packageMetadata.js');
+  logger.info(`screw-up - Easy package metadata inserter CLI [${version}]
+Copyright (c) ${author}
+Repository: ${repository_url}
+License: ${license}
 
-Arguments:
-  directory                     Directory to dump package.json from (default: current directory)
+Usage: screw-up <command> [options]
+
+Commands:
+  dump [directory]                 Dump computed package.json as JSON
+  pack [directory]                 Pack the project into a tar archive
+  publish [directory|package.tgz]  Publish the project
 
 Options:
-  --inheritable-fields <list>   Comma-separated list of fields to inherit from parent
-  --no-wds                      Do not check working directory status to increase version
-  --no-git-version-override     Do not override version from Git (use package.json version)
-  -h, --help                    Show help for dump command
+  -h, --help                       Show help
+
+Examples:
+  screw-up dump                            # Dump computed package.json as JSON
+  screw-up pack                            # Pack current directory
+  screw-up pack --pack-destination ./dist  # Pack to specific output directory
+  screw-up publish                         # Publish current directory
+  screw-up publish package.tgz             # Publish existing tarball
 `);
 };
 
-//////////////////////////////////////////////////////////////////////////////////
+const argOptionMap = new Map([
+  ['dump', new Set(['inheritable-fields'])],
+  ['pack', new Set(['pack-destination', 'readme', 'inheritable-fields', 'peer-deps-prefix'])],
+  ['publish', new Set(['inheritable-fields', 'peer-deps-prefix'])],
+]);
 
-const dumpCommand = async (args: ParsedArgs, logger: Logger) => {
-  if (args.options.help || args.options.h) {
-    showDumpHelp(logger);
-    return;
-  }
-
-  const directory = args.positional[0];
-  const inheritableFieldsOption = args.options['inheritable-fields'] as string;
-  const alwaysOverrideVersionFromGit = !args.options['no-git-version-override'];
-  const checkWorkingDirectoryStatus = args.options['no-wds'] ? false : true;
-
-  // Parse inheritable fields from CLI option or use defaults
-  const inheritableFields = parseInheritableFields(inheritableFieldsOption);
-
-  const targetDir = resolve(directory ?? process.cwd());
-
-  try {
-    const computedPackageJson = await getComputedPackageJsonObject(
-      targetDir, checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit, inheritableFields, logger);
-    if (computedPackageJson) {
-      logger.info(JSON.stringify(computedPackageJson, null, 2));
-    } else {
-      logger.error(`[screw-up:cli]: dump: Unable to read package.json from: ${targetDir}`);
-      process.exit(1);
-    }
-  } catch (error) {
-    logger.error(`[screw-up:cli]: dump: Failed to dump package.json: ${error}`);
-    process.exit(1);
-  }
-};
-
-//////////////////////////////////////////////////////////////////////////////////
-
-const main = async () => {
-  const logger = createConsoleLogger();
-  const args = parseArgs(process.argv);
+export const cliMain = async (args: string[], logger: Logger): Promise<number> => {
+  const parsedArgs = parseArgs(args, argOptionMap);
 
   // Handle global help or when no command is provided
-  if (args.options.help || args.options.h || !args.command || 
-      args.command === 'help' || args.command === '--help') {
-    showHelp(logger);
-    return;
+  if (!parsedArgs.command && (parsedArgs.options.help || parsedArgs.options.h)) {
+    await showHelp(logger);
+    return 1;
   }
 
-  switch (args.command) {
-    case 'pack':
-      await packCommand(args, logger);
-      break;
-    case 'publish':
-      await publishCommand(args, logger);
-      break;
+  switch (parsedArgs.command) {
     case 'dump':
-      await dumpCommand(args, logger);
-      break;
+      return await dumpCommand(parsedArgs, logger);
+    case 'pack':
+      return await packCommand(parsedArgs, logger);
+    case 'publish':
+      return await publishCommand(parsedArgs, logger);
     default:
-      logger.error(`Unknown command: ${args.command}`);
+      if (parsedArgs.command) {
+        logger.error(`Unknown command: ${parsedArgs.command}`);
+      } else {
+        logger.error(`Unknown command`);
+      }
       logger.error('Run "screw-up --help" for usage information.');
-      process.exit(1);
+      return 1;
   }
 };
-
-main().catch((error) => {
-  const logger = createConsoleLogger();
-  logger.error(`CLI error: ${error}`);
-  process.exit(1);
-});

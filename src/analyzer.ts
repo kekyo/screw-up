@@ -6,7 +6,8 @@
 import * as git from 'isomorphic-git';
 import * as fs from 'fs';
 import dayjs from 'dayjs';
-import { GitMetadata, Logger } from './types.js';
+import { GitMetadata } from './types.js';
+import { Logger } from './internal.js';
 
 // Ported from: https://github.com/kekyo/RelaxVersioner/blob/master/RelaxVersioner.Core/Analyzer.cs
 
@@ -514,7 +515,8 @@ const lookupVersionLabelRecursive = async (
  * @param logger - Logger instance
  * @returns The metadata object with git metadata
  */
-export const getGitMetadata = async (repositoryPath: string, checkWorkingDirectoryStatus: boolean, logger: Logger) => {
+export const getGitMetadata = async (
+  repositoryPath: string, checkWorkingDirectoryStatus: boolean, logger: Logger) => {
   const metadata: any = {};
 
   // Try to find git root directory from the given path

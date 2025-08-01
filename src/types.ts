@@ -4,32 +4,6 @@
 // https://github.com/kekyo/screw-up/
 
 /**
- * Logger interface
- */
-export interface Logger {
-  /**
-   * Log an debug message
-   * @param msg - The message to log
-   */
-  readonly debug: (msg: string) => void;
-  /**
-   * Log an info message
-   * @param msg - The message to log
-   */
-  readonly info: (msg: string) => void;
-  /**
-   * Log a warning message
-   * @param msg - The message to log
-   */
-  readonly warn: (msg: string) => void;
-  /**
-   * Log an error message
-   * @param msg - The message to log
-   */
-  readonly error: (msg: string) => void;
-}
-
-/**
  * Package metadata (key-value flattenedpairs)
  */
 export type PackageMetadata = Record<string, string>;

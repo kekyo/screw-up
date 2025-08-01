@@ -9,11 +9,37 @@ import { dirname, join } from 'path';
 import { glob } from 'glob';
 import JSON5 from 'json5';
 import { getGitMetadata } from './analyzer.js';
-import { Logger, PackageMetadata } from './types.js';
+import { PackageMetadata } from './types.js';
 
 // We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
 
 //////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Logger interface
+ */
+export interface Logger {
+  /**
+   * Log an debug message
+   * @param msg - The message to log
+   */
+  readonly debug: (msg: string) => void;
+  /**
+   * Log an info message
+   * @param msg - The message to log
+   */
+  readonly info: (msg: string) => void;
+  /**
+   * Log a warning message
+   * @param msg - The message to log
+   */
+  readonly warn: (msg: string) => void;
+  /**
+   * Log an error message
+   * @param msg - The message to log
+   */
+  readonly error: (msg: string) => void;
+}
 
 /**
 * Default console logger implementation
@@ -34,17 +60,17 @@ export const createConsoleLogger = (): Logger => {
  * @template T - Type of the package metadata
  */
 export interface PackageResolutionResult<T> {
-  metadata: T;
-  sourceMap: Map<string, string>;
+  readonly metadata: T;
+  readonly sourceMap: Map<string, string>;
 }
 
 /**
  * Workspace sibling project information
  */
 export interface WorkspaceSibling {
-  name: string;
-  version: string;
-  path: string;
+  readonly name: string;
+  readonly version: string;
+  readonly path: string;
 }
 
 /**
