@@ -72,7 +72,7 @@ export const findWorkspaceRoot = async (startPath: string): Promise<string | und
     if (existsSync(packageJsonPath)) {
       try {
         const content = await readFile(packageJsonPath, 'utf-8');
-        const packageJson = JSON.parse(content);
+        const packageJson = JSON5.parse(content);
         
         // Check for workspace configurations
         if (packageJson.workspaces || 
@@ -102,7 +102,7 @@ export const collectWorkspaceSiblings = async (workspaceRoot: string): Promise<M
   try {
     const rootPackageJsonPath = join(workspaceRoot, 'package.json');
     const content = await readFile(rootPackageJsonPath, 'utf-8');
-    const rootPackageJson = JSON.parse(content);
+    const rootPackageJson = JSON5.parse(content);
     
     // Get workspace patterns
     const workspacePatterns = rootPackageJson.workspaces;
@@ -125,7 +125,7 @@ export const collectWorkspaceSiblings = async (workspaceRoot: string): Promise<M
       if (existsSync(packageJsonPath)) {
         try {
           const packageContent = await readFile(packageJsonPath, 'utf-8');
-          const packageJson = JSON.parse(packageContent);
+          const packageJson = JSON5.parse(packageContent);
           
           if (packageJson.name && packageJson.version) {
             siblings.set(packageJson.name, {
@@ -159,7 +159,7 @@ export const replacePeerDependenciesWildcards = (
   versionPrefix: string
 ): any => {
   // Deep clone the package.json to avoid modifying the original
-  const modifiedPackageJson = JSON.parse(JSON.stringify(packageJson));
+  const modifiedPackageJson = JSON5.parse(JSON.stringify(packageJson));
   
   if (!modifiedPackageJson.peerDependencies || typeof modifiedPackageJson.peerDependencies !== 'object') {
     return modifiedPackageJson;

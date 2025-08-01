@@ -4,10 +4,9 @@
 // https://github.com/kekyo/screw-up/
 
 import { join, resolve } from 'path';
-import { glob } from 'glob';
 import { createReadStream, existsSync } from 'fs';
 import { mkdir, lstat, mkdtemp, writeFile, copyFile, rm } from 'fs/promises';
-import { createTarPacker, createReadFileItem, createFileItem, storeReaderToFile, extractTo, createTarExtractor, createEntryItemGenerator } from 'tar-vern';
+import { createTarPacker, storeReaderToFile, extractTo, createTarExtractor, createEntryItemGenerator } from 'tar-vern';
 import { spawn } from 'child_process';
 import { tmpdir } from 'os';
 import { resolveRawPackageJsonObject, PackageResolutionResult, findWorkspaceRoot, collectWorkspaceSiblings, replacePeerDependenciesWildcards } from './internal.js';
@@ -69,63 +68,6 @@ const runNpmPack = async (targetDir: string, packDestDir: string): Promise<strin
 };
 
 //////////////////////////////////////////////////////////////////////////////////
-
-/**
- * Create pack entry generator that collects and yields entries on-demand
- * @param targetDir - Target directory to pack
- * @param resolvedPackageJson - Resolved package.json object
- * @param readmeReplacementPath - Optional path to replacement README file
- * @returns Pack entry generator
- */
-const createPackEntryGenerator = async function* (targetDir: string, resolvedPackageJson: any, readmeReplacementPath: string | undefined) {
-  // First yield package.json content
-  const packageJsonContent = JSON.stringify(resolvedPackageJson, null, 2);
-  yield await createFileItem('package/package.json', packageJsonContent);
-
-  // Get distribution files in package.json
-  const distributionFileGlobs = resolvedPackageJson?.files as string[] ?? ['**/*'];
-  
-  // Convert directory patterns to recursive patterns (like npm pack does)
-  const packingFilePaths = (await Promise.all(
-    distributionFileGlobs.map(async (pattern) => {
-      const fullPath = resolve(targetDir, pattern);
-      try {
-        if (existsSync(fullPath) && (await lstat(fullPath)).isDirectory()) {
-          return await glob(`${pattern}/**/*`, { cwd: targetDir });
-        }
-        return await glob(pattern, { cwd: targetDir });
-      } catch (error) {
-        // If there's an error accessing the path, treat as glob pattern
-        return await glob(pattern, { cwd: targetDir });
-      }
-    }))).flat();
-
-  // Yield target packing files
-  for (const packingFilePath of packingFilePaths) {
-    // Except package.json (already yielded)
-    if (packingFilePath !== 'package.json') {
-      // Is file regular?
-      const fullPath = resolve(targetDir, packingFilePath);
-      const stat = await lstat(fullPath);
-      if (stat.isFile()) {
-        // Handle README.md replacement
-        if (packingFilePath === 'README.md' && readmeReplacementPath) {
-          // Use replacement file but keep README.md as the archive entry name
-          yield await createReadFileItem('package/README.md', readmeReplacementPath);
-        } else {
-          // Yield regular file
-          yield await createReadFileItem(`package/${packingFilePath}`, fullPath);
-        }
-      }
-    }
-  }
-
-  // Handle case where README.md doesn't exist in files but we have a replacement
-  if (readmeReplacementPath && !packingFilePaths.includes('README.md')) {
-    // Add README.md to the archive using replacement file
-    yield await createReadFileItem('package/README.md', readmeReplacementPath);
-  }
-};
 
 export interface PackedResult {
   packageFileName: string;
