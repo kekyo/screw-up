@@ -6,7 +6,7 @@
 import type { Plugin } from 'vite';
 import { readFile, writeFile, readdir, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
-import { resolvePackageMetadata } from './internal.js';
+import { resolvePackageMetadata, createConsoleLogger } from './internal.js';
 import { ScrewUpOptions, PackageMetadata } from './types.js';
 
 /**
@@ -92,6 +92,7 @@ const generateMetadataFile = (metadata: PackageMetadata, outputKeys: string[]): 
  * @returns Vite plugin
  */
 export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
+  const logger = createConsoleLogger();
   const {
     outputKeys = ['name', 'version', 'description', 'author', 'license', 'repository.url', 'git.commit.hash'],
     assetFilters = ['\\.d\\.ts$'],
@@ -116,7 +117,7 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
       projectRoot = config.root;
       // Resolve package metadata
       const result = await resolvePackageMetadata(
-        projectRoot, checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit);
+        projectRoot, checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit, logger);
       metadata = result.metadata;
       // Generate banner
       banner = generateBanner(metadata, outputKeys);
@@ -134,7 +135,7 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
           // Write metadata source file
           await writeFile(metadataSourcePath, metadataSourceContent);
         } catch (error) {
-          console.warn(`[screw-up]: Failed to write metadata source file: ${metadataSourcePath}:`, error);
+          logger.warn(`[screw-up]: Failed to write metadata source file: ${metadataSourcePath}: ${error}`);
         }
       }
     },

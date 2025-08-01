@@ -10,6 +10,7 @@ import { createTarPacker, storeReaderToFile, extractTo, createTarExtractor, crea
 import { spawn } from 'child_process';
 import { tmpdir } from 'os';
 import { resolveRawPackageJsonObject, PackageResolutionResult, findWorkspaceRoot, collectWorkspaceSiblings, replacePeerDependenciesWildcards } from './internal.js';
+import { Logger } from './types.js';
 
 // We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
 
@@ -94,7 +95,8 @@ export const packAssets = async (
   inheritableFields: Set<string>,
   readmeReplacementPath: string | undefined,
   replacePeerDepsWildcards: boolean,
-  peerDepsVersionPrefix: string) : Promise<PackedResult | undefined> => {
+  peerDepsVersionPrefix: string,
+  logger: Logger) : Promise<PackedResult | undefined> => {
   // Check if target directory exists
   if (!existsSync(targetDir)) {
     throw new Error(`Target directory is not found: ${targetDir}`);
@@ -110,7 +112,8 @@ export const packAssets = async (
     targetDir,
     checkWorkingDirectoryStatus,
     alwaysOverrideVersionFromGit,
-    inheritableFields);
+    inheritableFields,
+    logger);
 
   let resolvedPackageJson = result.metadata;
 
@@ -137,9 +140,9 @@ export const packAssets = async (
 
   // Replace peerDependencies wildcards if enabled and in workspace
   if (replacePeerDepsWildcards) {
-    const workspaceRoot = await findWorkspaceRoot(targetDir);
+    const workspaceRoot = await findWorkspaceRoot(targetDir, logger);
     if (workspaceRoot) {
-      const siblings = await collectWorkspaceSiblings(workspaceRoot);
+      const siblings = await collectWorkspaceSiblings(workspaceRoot, logger);
       if (siblings.size > 0) {
         resolvedPackageJson = replacePeerDependenciesWildcards(
           resolvedPackageJson,
@@ -210,7 +213,8 @@ export const getComputedPackageJsonObject = async (
   targetDir: string,
   checkWorkingDirectoryStatus: boolean,
   alwaysOverrideVersionFromGit: boolean,
-  inheritableFields: Set<string>) : Promise<any> => {
+  inheritableFields: Set<string>,
+  logger: Logger) : Promise<any> => {
   // Check if target directory exists
   if (!existsSync(targetDir)) {
     return undefined;
@@ -220,7 +224,8 @@ export const getComputedPackageJsonObject = async (
   const result = await resolveRawPackageJsonObject(
     targetDir,
     checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit,
-    inheritableFields);
+    inheritableFields,
+    logger);
   return result.metadata;
 };
 

@@ -6,6 +6,7 @@ import { execSync, spawn } from 'child_process';
 import * as tar from 'tar';
 import dayjs from 'dayjs';
 import { packAssets } from '../src/cli-internal.js';
+import { createConsoleLogger } from '../src/internal.js';
 
 const CLI_PATH = join(__dirname, '../dist/cli.js');
 
@@ -112,8 +113,9 @@ describe('CLI tests', () => {
       const outputDir = join(tempDir, 'output');
       mkdirSync(outputDir, { recursive: true });
 
+      const logger = createConsoleLogger();
       const { packageFileName, metadata } = (await packAssets(
-        targetDir, outputDir, true, true, defaultInheritableFields, undefined, true, "^"))!;
+        targetDir, outputDir, true, true, defaultInheritableFields, undefined, true, "^", logger))!;
       expect(metadata).toBeDefined();
       expect(metadata?.name).toBe('test-package');
       expect(metadata?.version).toBe('1.0.0');
@@ -168,7 +170,7 @@ describe('CLI tests', () => {
       mkdirSync(outputDir, { recursive: true });
 
       const workspaceArchived = await packAssets(
-        workspaceRoot, outputDir, true, true, defaultInheritableFields, undefined, true, "^");
+        workspaceRoot, outputDir, true, true, defaultInheritableFields, undefined, true, "^", createConsoleLogger());
       expect(workspaceArchived).toBeUndefined();
 
       // Check workspace archive was not created
@@ -176,7 +178,7 @@ describe('CLI tests', () => {
       expect(existsSync(workspaceArchivePath)).toBe(false);
 
       const { packageFileName, metadata } = (await packAssets(
-        childDir, outputDir, true, true, defaultInheritableFields, undefined, true, "^"))!;
+        childDir, outputDir, true, true, defaultInheritableFields, undefined, true, "^", createConsoleLogger()))!;
       expect(metadata).toBeDefined();
       expect(metadata?.name).toBe('child-package');
       expect(metadata?.version).toBe('2.0.0');
@@ -248,7 +250,7 @@ describe('CLI tests', () => {
       mkdirSync(outputDir, { recursive: true });
 
       const { packageFileName, metadata } = (await packAssets(
-        childDir, outputDir, true, true, defaultInheritableFields, undefined, true, "^"))!;
+        childDir, outputDir, true, true, defaultInheritableFields, undefined, true, "^", createConsoleLogger()))!;
       expect(metadata).toBeDefined();
       expect(metadata?.name).toBe('child-package');
       expect(metadata?.version).toBe('1.0.0');
@@ -294,7 +296,7 @@ describe('CLI tests', () => {
       mkdirSync(outputDir, { recursive: true });
 
       const { packageFileName, metadata } = (await packAssets(
-        testSourceDir, outputDir, true, true, defaultInheritableFields, readmeReplacement, true, "^"))!;
+        testSourceDir, outputDir, true, true, defaultInheritableFields, readmeReplacement, true, "^", createConsoleLogger()))!;
       expect(metadata).toBeDefined();
       expect(metadata?.name).toBe('test-package');
 
@@ -349,7 +351,7 @@ describe('CLI tests', () => {
 
       // No CLI readme option provided - should use package.json readme field
       const { packageFileName, metadata } = (await packAssets(
-        testDir, outputDir, true, true, defaultInheritableFields, undefined, true, "^"))!;
+        testDir, outputDir, true, true, defaultInheritableFields, undefined, true, "^", createConsoleLogger()))!;
       expect(metadata).toBeDefined();
       expect(metadata?.name).toBe('test-package-readme');
 
@@ -407,7 +409,7 @@ describe('CLI tests', () => {
 
       // CLI option should take priority over package.json readme field
       const { packageFileName, metadata } = (await packAssets(
-        testDir, outputDir, true, true, defaultInheritableFields, cliReadme, true, "^"))!;
+        testDir, outputDir, true, true, defaultInheritableFields, cliReadme, true, "^", createConsoleLogger()))!;
       expect(metadata).toBeDefined();
       expect(metadata!.readme).not.toBeDefined();
       expect(metadata!.name).toBe('test-priority');
@@ -459,7 +461,7 @@ describe('CLI tests', () => {
       mkdirSync(outputDir, { recursive: true });
 
       const { packageFileName, metadata } = (await packAssets(
-        testDir, outputDir, true, true, defaultInheritableFields, replacementReadme, true, "^"))!;
+        testDir, outputDir, true, true, defaultInheritableFields, replacementReadme, true, "^", createConsoleLogger()))!;
       expect(metadata).toBeDefined();
       expect(metadata!.name).toBe('test-no-readme-in-files');
       expect(metadata!.readme).not.toBeDefined();
@@ -490,7 +492,7 @@ describe('CLI tests', () => {
       const nonExistentReadme = join(testSourceDir, 'non-existent-readme.md');
 
       await expect(packAssets(
-        testSourceDir, outputDir, true, true, defaultInheritableFields, nonExistentReadme, true, "^"))
+        testSourceDir, outputDir, true, true, defaultInheritableFields, nonExistentReadme, true, "^", createConsoleLogger()))
         .rejects.toThrow('README replacement file is not found:');
     }, 10000);
   });
@@ -1172,7 +1174,7 @@ describe('CLI tests', () => {
       mkdirSync(outputDir, { recursive: true });
       
       const { packageFileName, metadata } = (await packAssets(
-        testSourceDir, outputDir, true, true, defaultInheritableFields, undefined, true, "^"))!;
+        testSourceDir, outputDir, true, true, defaultInheritableFields, undefined, true, "^", createConsoleLogger()))!;
       const tarballPath = join(outputDir, `${metadata.name}-${metadata.version}.tgz`);
       
       // Verify tarball exists
@@ -1277,7 +1279,7 @@ describe('CLI tests', () => {
       mkdirSync(nestedDir, { recursive: true });
       
       const { metadata } = (await packAssets(
-        testSourceDir, nestedDir, true, true, defaultInheritableFields, undefined, true, "^"))!;
+        testSourceDir, nestedDir, true, true, defaultInheritableFields, undefined, true, "^", createConsoleLogger()))!;
       const tarballPath = join(nestedDir, `${metadata.name}-${metadata.version}.tgz`);
       
       const result = runPublishCLI([tarballPath]);
@@ -1573,7 +1575,7 @@ describe('CLI tests', () => {
 
       // Pack child package - should use workspace root's README
       const { packageFileName, metadata } = (await packAssets(
-        childDir, outputDir, true, true, defaultInheritableFields, undefined, true, "^"))!;
+        childDir, outputDir, true, true, defaultInheritableFields, undefined, true, "^", createConsoleLogger()))!;
       expect(metadata).toBeDefined();
       expect(metadata?.name).toBe('child-package');
 
@@ -1637,7 +1639,7 @@ describe('CLI tests', () => {
 
       // Pack child package - should use child's own README, not workspace README
       const { packageFileName, metadata } = (await packAssets(
-        childDir, outputDir, true, true, defaultInheritableFields, undefined, true, "^"))!;
+        childDir, outputDir, true, true, defaultInheritableFields, undefined, true, "^", createConsoleLogger()))!;
       expect(metadata).toBeDefined();
       expect(metadata?.name).toBe('child-package');
 
@@ -1700,7 +1702,7 @@ describe('CLI tests', () => {
 
       // Pack child package with CLI option - should use CLI README, not workspace README
       const { packageFileName, metadata } = (await packAssets(
-        childDir, outputDir, true, true, defaultInheritableFields, cliReadme, true, "^"))!;
+        childDir, outputDir, true, true, defaultInheritableFields, cliReadme, true, "^", createConsoleLogger()))!;
       expect(metadata).toBeDefined();
       expect(metadata?.name).toBe('child-package');
 
@@ -1972,7 +1974,7 @@ describe('CLI tests', () => {
       mkdirSync(outputDir, { recursive: true });
 
       const { packageFileName, metadata } = (await packAssets(
-        cliDir, outputDir, true, true, defaultInheritableFields, undefined, true, "^"
+        cliDir, outputDir, true, true, defaultInheritableFields, undefined, true, "^", createConsoleLogger()
       ))!;
 
       expect(metadata).toBeDefined();
@@ -2042,7 +2044,7 @@ describe('CLI tests', () => {
       mkdirSync(outputDir, { recursive: true });
 
       const result = await packAssets(
-        pluginDir, outputDir, true, true, defaultInheritableFields, undefined, true, "~"
+        pluginDir, outputDir, true, true, defaultInheritableFields, undefined, true, "~", createConsoleLogger()
       );
 
       expect(result).toBeDefined();
@@ -2103,7 +2105,7 @@ describe('CLI tests', () => {
       mkdirSync(outputDir, { recursive: true });
 
       const result = await packAssets(
-        testDir, outputDir, true, true, defaultInheritableFields, undefined, false, "^"
+        testDir, outputDir, true, true, defaultInheritableFields, undefined, false, "^", createConsoleLogger()
       );
 
       expect(result).toBeDefined();

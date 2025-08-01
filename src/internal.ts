@@ -9,9 +9,23 @@ import { dirname, join } from 'path';
 import { glob } from 'glob';
 import JSON5 from 'json5';
 import { getGitMetadata } from './analyzer.js';
-import { PackageMetadata } from './types.js';
+import { Logger, PackageMetadata } from './types.js';
 
 // We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
+
+//////////////////////////////////////////////////////////////////////////////////
+
+/**
+* Default console logger implementation
+*/
+export const createConsoleLogger = (): Logger => {
+  return {
+    debug: (msg: string) => console.debug(msg),
+    info: (msg: string) => console.info(msg),
+    warn: (msg: string) => console.warn(msg),
+    error: (msg: string) => console.error(msg)
+  };
+};
 
 //////////////////////////////////////////////////////////////////////////////////
 
@@ -61,9 +75,10 @@ const flattenObject = (obj: any, prefix: string, map: PackageMetadata) => {
 /**
  * Find workspace root by looking for workspace configuration files
  * @param startPath - Starting directory path
+ * @param logger - Logger instance
  * @returns Promise resolving to workspace root path or undefined if not found
  */
-export const findWorkspaceRoot = async (startPath: string): Promise<string | undefined> => {
+export const findWorkspaceRoot = async (startPath: string, logger: Logger): Promise<string | undefined> => {
   let currentPath = startPath;
   
   while (currentPath !== dirname(currentPath)) {
@@ -81,7 +96,7 @@ export const findWorkspaceRoot = async (startPath: string): Promise<string | und
           return currentPath;
         }
       } catch (error) {
-        console.warn(`Failed to parse package.json at ${packageJsonPath}:`, error);
+        logger.warn(`Failed to parse package.json at ${packageJsonPath}: ${error}`);
       }
     }
     
@@ -94,9 +109,10 @@ export const findWorkspaceRoot = async (startPath: string): Promise<string | und
 /**
  * Collect workspace sibling projects
  * @param workspaceRoot - Workspace root directory
+ * @param logger - Logger instance
  * @returns Promise resolving to map of sibling projects (name -> WorkspaceSibling)
  */
-export const collectWorkspaceSiblings = async (workspaceRoot: string): Promise<Map<string, WorkspaceSibling>> => {
+export const collectWorkspaceSiblings = async (workspaceRoot: string, logger: Logger): Promise<Map<string, WorkspaceSibling>> => {
   const siblings = new Map<string, WorkspaceSibling>();
   
   try {
@@ -135,12 +151,12 @@ export const collectWorkspaceSiblings = async (workspaceRoot: string): Promise<M
             });
           }
         } catch (error) {
-          console.warn(`Failed to read package.json from ${packageJsonPath}:`, error);
+          logger.warn(`Failed to read package.json from ${packageJsonPath}: ${error}`);
         }
       }
     }
   } catch (error) {
-    console.warn(`Failed to collect workspace siblings from ${workspaceRoot}:`, error);
+    logger.warn(`Failed to collect workspace siblings from ${workspaceRoot}: ${error}`);
   }
   
   return siblings;
@@ -194,13 +210,14 @@ export const mergePackageMetadata = async (
   checkWorkingDirectoryStatus: boolean,
   alwaysOverrideVersionFromGit: boolean,
   sourceMap: Map<string, string>,
+  logger: Logger,
   parentMetadata: PackageMetadata, 
   childMetadata: PackageMetadata,
   parentSourceDir: string,
   childSourceDir: string,
   repositoryPath: string): Promise<PackageMetadata> => {
   // Start with default git metadata if repositoryPath is provided
-  const metadata = await getGitMetadata(repositoryPath, checkWorkingDirectoryStatus);
+  const metadata = await getGitMetadata(repositoryPath, checkWorkingDirectoryStatus, logger);
 
   const merged: PackageMetadata = { };
   flattenObject(metadata, '', merged);
@@ -250,15 +267,16 @@ const mergeRawPackageJson = async (
   alwaysOverrideVersionFromGit: boolean,
   inheritableFields: Set<string>,
   sourceMap: Map<string, string>,
+  logger: Logger,
   parentMetadata: any,
   childMetadata: any,
   parentSourceDir: string,
   childSourceDir: string,
-  repositoryPath: string,
+  repositoryPath: string
 ): Promise<any> => {
 
   // Start with default git metadata if repositoryPath is provided
-  const gitMetadata = await getGitMetadata(repositoryPath, checkWorkingDirectoryStatus) as any;
+  const gitMetadata = await getGitMetadata(repositoryPath, checkWorkingDirectoryStatus, logger) as any;
   const merged = { ...gitMetadata };
 
   // Start with parent metadata
@@ -295,16 +313,18 @@ const mergeRawPackageJson = async (
 /**
  * Resolve package metadata for current project with workspace inheritance
  * @param projectRoot - Current project root
+ * @param logger - Logger instance
  * @param readPackageMetadataFn - Function to read package metadata
  * @param mergePackageMetadataFn - Function to merge package metadata
  * @returns Promise resolving to resolved package metadata
  */
 const resolvePackageMetadataT = async <T>(
   projectRoot: string,
+  logger: Logger,
   readPackageMetadataFn: (path: string) => Promise<T>,
   mergePackageMetadataFn: (a: T, b: T, aDir: string, bDir: string, repositoryPath: string) => Promise<T>): Promise<T> => {
 
-  const workspaceRoot = await findWorkspaceRoot(projectRoot);
+  const workspaceRoot = await findWorkspaceRoot(projectRoot, logger);
 
   if (!workspaceRoot) {
     // No workspace, just read local package.json
@@ -345,10 +365,11 @@ const resolvePackageMetadataT = async <T>(
 
 /**
  * Read and parse package.json file
+ * @param logger - Logger instance
  * @param packagePath - Path to package.json
  * @returns Promise resolving to package metadata
  */
-const readPackageMetadata = async (packagePath: string): Promise<PackageMetadata> => {
+const readPackageMetadata = async (logger: Logger, packagePath: string): Promise<PackageMetadata> => {
   try {
     const content = await readFile(packagePath, 'utf-8');
     const json = JSON5.parse(content);
@@ -356,7 +377,7 @@ const readPackageMetadata = async (packagePath: string): Promise<PackageMetadata
     flattenObject(json, '', map);
     return map;
   } catch (error) {
-    console.error(`Failed to read package.json from ${packagePath}:`, error);
+    logger.error(`Failed to read package.json from ${packagePath}: ${error}`);
     return {};
   }
 };
@@ -366,17 +387,20 @@ const readPackageMetadata = async (packagePath: string): Promise<PackageMetadata
  * @param projectRoot - Current project root
  * @param checkWorkingDirectoryStatus - Check working directory status to increase version
  * @param alwaysOverrideVersionFromGit - Always override version from Git
+ * @param logger - Logger instance
  * @returns Promise resolving to resolved package metadata
  */
 export const resolvePackageMetadata = async (
   projectRoot: string,
   checkWorkingDirectoryStatus: boolean,
-  alwaysOverrideVersionFromGit: boolean): Promise<PackageResolutionResult<PackageMetadata>> => {
+  alwaysOverrideVersionFromGit: boolean,
+  logger: Logger): Promise<PackageResolutionResult<PackageMetadata>> => {
   const sourceMap = new Map<string, string>();
   const metadata = await resolvePackageMetadataT<PackageMetadata>(
     projectRoot,
-    readPackageMetadata,
-    mergePackageMetadata.bind(null, checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit, sourceMap));
+    logger,
+    readPackageMetadata.bind(undefined, logger),
+    mergePackageMetadata.bind(undefined, checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit, sourceMap, logger));
 
   return {
     metadata,
@@ -386,15 +410,16 @@ export const resolvePackageMetadata = async (
 
 /**
  * Read and parse package.json file without flattening
+ * @param logger - Logger instance
  * @param packagePath - Path to package.json
  * @returns Promise resolving to raw package object
  */
-const readRawPackageJson = async (packagePath: string): Promise<any> => {
+const readRawPackageJson = async (logger: Logger, packagePath: string): Promise<any> => {
   try {
     const content = await readFile(packagePath, 'utf-8');
     return JSON5.parse(content);
   } catch (error) {
-    console.error(`Failed to read package.json from ${packagePath}:`, error);
+    logger.error(`Failed to read package.json from ${packagePath}: ${error}`);
     throw error;
   }
 };
@@ -405,18 +430,21 @@ const readRawPackageJson = async (packagePath: string): Promise<any> => {
  * @param checkWorkingDirectoryStatus - Check working directory status
  * @param alwaysOverrideVersionFromGit - Always override version from Git
  * @param inheritableFields - Package metadata fields that should be inherited from parent
+ * @param logger - Logger instance
  * @returns Promise resolving to resolved raw package.json object with source tracking
  */
 export const resolveRawPackageJsonObject = async (
   projectRoot: string,
   checkWorkingDirectoryStatus: boolean,
   alwaysOverrideVersionFromGit: boolean,
-  inheritableFields: Set<string>): Promise<PackageResolutionResult<any>> => {
+  inheritableFields: Set<string>,
+  logger: Logger): Promise<PackageResolutionResult<any>> => {
   const sourceMap = new Map<string, string>();
   const packageJson = await resolvePackageMetadataT<any>(
     projectRoot,
-    readRawPackageJson,
-    mergeRawPackageJson.bind(null, checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit, inheritableFields, sourceMap));
+    logger,
+    readRawPackageJson.bind(undefined, logger),
+    mergeRawPackageJson.bind(undefined, checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit, inheritableFields, sourceMap, logger));
 
   return {
     metadata: packageJson,

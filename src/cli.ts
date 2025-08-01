@@ -10,6 +10,8 @@ import { existsSync } from 'fs';
 import { mkdtemp, rm, stat } from 'fs/promises';
 import { spawn } from 'child_process';
 import { packAssets, parseArgs, ParsedArgs, getComputedPackageJsonObject } from './cli-internal.js';
+import { createConsoleLogger } from './internal.js';
+import { Logger } from './types.js';
 
 // We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
 
@@ -46,8 +48,8 @@ const parseInheritableFields = (inheritableFieldsOption: string | boolean | unde
 
 //////////////////////////////////////////////////////////////////////////////////
 
-const showHelp = () => {
-  console.log(`screw-up - Easy package metadata inserter CLI [${__VERSION__}]
+const showHelp = (logger: Logger) => {
+  logger.info(`screw-up - Easy package metadata inserter CLI [${__VERSION__}]
 Copyright (c) ${__AUTHOR__}
 Repository: ${__REPOSITORY_URL__}
 License: ${__LICENSE__}
@@ -86,8 +88,8 @@ Examples:
 `);
 };
 
-const showPackHelp = () => {
-  console.log(`Usage: screw-up pack [options] [directory]
+const showPackHelp = (logger: Logger) => {
+  logger.info(`Usage: screw-up pack [options] [directory]
 
 Pack the project into a tar archive
 
@@ -106,8 +108,8 @@ Options:
 `);
 };
 
-const showPublishHelp = () => {
-  console.log(`Usage: screw-up publish [options] [directory|package.tgz]
+const showPublishHelp = (logger: Logger) => {
+  logger.info(`Usage: screw-up publish [options] [directory|package.tgz]
 
 Publish the project
 
@@ -132,9 +134,9 @@ Examples:
 
 //////////////////////////////////////////////////////////////////////////////////
 
-const packCommand = async (args: ParsedArgs) => {
+const packCommand = async (args: ParsedArgs, logger: Logger) => {
   if (args.options.help || args.options.h) {
-    showPackHelp();
+    showPackHelp(logger);
     return;
   }
 
@@ -154,7 +156,7 @@ const packCommand = async (args: ParsedArgs) => {
   // Parse inheritable fields from CLI option or use defaults
   const inheritableFields = parseInheritableFields(inheritableFieldsOption);
 
-  console.log(`[screw-up/cli]: pack: Creating archive of ${targetDir}...`);
+  logger.info(`[screw-up/cli]: pack: Creating archive of ${targetDir}...`);
 
   try {
     const result = await packAssets(
@@ -162,38 +164,38 @@ const packCommand = async (args: ParsedArgs) => {
       checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit,
       inheritableFields,
       readmeReplacementPath,
-      replacePeerDepsWildcards, peerDepsVersionPrefix);
+      replacePeerDepsWildcards, peerDepsVersionPrefix, logger);
     if (result) {
-      console.log(`[screw-up/cli]: pack: Archive created successfully: ${result.packageFileName}`);
+      logger.info(`[screw-up/cli]: pack: Archive created successfully: ${result.packageFileName}`);
     } else {
-      console.error(`[screw-up/cli]: pack: Unable to find any files to pack: ${targetDir}`);
+      logger.error(`[screw-up/cli]: pack: Unable to find any files to pack: ${targetDir}`);
       process.exit(1);
     }
   } catch (error) {
-    console.error('[screw-up/cli]: pack: Failed to create archive:', error);
+    logger.error(`[screw-up/cli]: pack: Failed to create archive: ${error}`);
     process.exit(1);
   }
 };
 
 //////////////////////////////////////////////////////////////////////////////////
 
-const publishCommand = async (args: ParsedArgs) => {
+const publishCommand = async (args: ParsedArgs, logger: Logger) => {
   if (args.options.help || args.options.h) {
-    showPublishHelp();
+    showPublishHelp(logger);
     return;
   }
 
   const runNpmPublish = async (tarballPath: string, npmOptions: string[]) => {
-    console.log(`[screw-up/cli]: publish: Publishing ${tarballPath} to npm...`);
+    logger.info(`[screw-up/cli]: publish: Publishing ${tarballPath} to npm...`);
     
     const publishArgs = ['publish', tarballPath, ...npmOptions];
     
     // For testing: log the command that would be executed
     if (process.env.SCREW_UP_TEST_MODE === 'true') {
-      console.log(`[screw-up/cli]: TEST_MODE: Would execute: npm ${publishArgs.join(' ')}`);
-      console.log(`[screw-up/cli]: TEST_MODE: Tarball path: ${tarballPath}`);
-      console.log(`[screw-up/cli]: TEST_MODE: Options: ${npmOptions.join(' ')}`);
-      console.log(`[screw-up/cli]: publish: Successfully published ${tarballPath}`);
+      logger.info(`[screw-up/cli]: TEST_MODE: Would execute: npm ${publishArgs.join(' ')}`);
+      logger.info(`[screw-up/cli]: TEST_MODE: Tarball path: ${tarballPath}`);
+      logger.info(`[screw-up/cli]: TEST_MODE: Options: ${npmOptions.join(' ')}`);
+      logger.info(`[screw-up/cli]: publish: Successfully published ${tarballPath}`);
       return;
     }
     
@@ -202,7 +204,7 @@ const publishCommand = async (args: ParsedArgs) => {
     return new Promise<void>((resolve, reject) => {
       npmProcess.on('close', (code) => {
         if (code === 0) {
-          console.log(`[screw-up/cli]: publish: Successfully published ${tarballPath}`);
+          logger.info(`[screw-up/cli]: publish: Successfully published ${tarballPath}`);
           resolve();
         } else {
           reject(new Error(`npm publish failed with exit code ${code}`));
@@ -240,7 +242,7 @@ const publishCommand = async (args: ParsedArgs) => {
       const targetDir = process.cwd();
       const outputDir = await mkdtemp('screw-up-publish-');
 
-      console.log(`[screw-up/cli]: publish: Creating archive of ${targetDir}...`);
+      logger.info(`[screw-up/cli]: publish: Creating archive of ${targetDir}...`);
 
       try {
         const result = await packAssets(
@@ -248,13 +250,13 @@ const publishCommand = async (args: ParsedArgs) => {
           checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit,
           inheritableFields,
           undefined,
-          replacePeerDepsWildcards, peerDepsVersionPrefix);
+          replacePeerDepsWildcards, peerDepsVersionPrefix, logger);
         if (result?.metadata) {
           const archiveName = `${result.metadata.name}-${result.metadata.version}.tgz`;
           const archivePath = join(outputDir, archiveName);
           await runNpmPublish(archivePath, npmOptions);
         } else {
-          console.error(`[screw-up/cli]: publish: Unable to find any files to pack: ${targetDir}`);
+          logger.error(`[screw-up/cli]: publish: Unable to find any files to pack: ${targetDir}`);
           process.exit(1);
         }
       } finally {
@@ -271,7 +273,7 @@ const publishCommand = async (args: ParsedArgs) => {
         const targetDir = resolve(path);
         const outputDir = await mkdtemp('screw-up-publish-');
 
-        console.log(`[screw-up/cli]: publish: Creating archive of ${targetDir}...`);
+        logger.info(`[screw-up/cli]: publish: Creating archive of ${targetDir}...`);
 
         try {
           const result = await packAssets(
@@ -279,34 +281,34 @@ const publishCommand = async (args: ParsedArgs) => {
             checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit,
             inheritableFields,
             undefined,
-            replacePeerDepsWildcards, peerDepsVersionPrefix);
+            replacePeerDepsWildcards, peerDepsVersionPrefix, logger);
           if (result?.metadata) {
             const archiveName = `${result.metadata.name}-${result.metadata.version}.tgz`;
             const archivePath = join(outputDir, archiveName);
             await runNpmPublish(archivePath, npmOptions);
           } else {
-            console.error(`[screw-up/cli]: publish: Unable to find any files to pack: ${targetDir}`);
+            logger.error(`[screw-up/cli]: publish: Unable to find any files to pack: ${targetDir}`);
             process.exit(1);
           }
         } finally {
           await rm(outputDir, { recursive: true, force: true });
         }
       } else {
-        console.error(`[screw-up/cli]: publish: Invalid path - must be a directory or .tgz/.tar.gz file: ${path}`);
+        logger.error(`[screw-up/cli]: publish: Invalid path - must be a directory or .tgz/.tar.gz file: ${path}`);
         process.exit(1);
       }
     } else {
-      console.error(`[screw-up/cli]: publish: Path does not exist: ${path}`);
+      logger.error(`[screw-up/cli]: publish: Path does not exist: ${path}`);
       process.exit(1);
     }
   } catch (error) {
-    console.error('[screw-up/cli]: publish: Failed to publish:', error);
+    logger.error(`[screw-up/cli]: publish: Failed to publish: ${error}`);
     process.exit(1);
   }
 };
 
-const showDumpHelp = () => {
-  console.log(`Usage: screw-up dump [options] [directory]
+const showDumpHelp = (logger: Logger) => {
+  logger.info(`Usage: screw-up dump [options] [directory]
 
 Dump computed package.json as JSON
 
@@ -323,9 +325,9 @@ Options:
 
 //////////////////////////////////////////////////////////////////////////////////
 
-const dumpCommand = async (args: ParsedArgs) => {
+const dumpCommand = async (args: ParsedArgs, logger: Logger) => {
   if (args.options.help || args.options.h) {
-    showDumpHelp();
+    showDumpHelp(logger);
     return;
   }
 
@@ -341,15 +343,15 @@ const dumpCommand = async (args: ParsedArgs) => {
 
   try {
     const computedPackageJson = await getComputedPackageJsonObject(
-      targetDir, checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit, inheritableFields);
+      targetDir, checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit, inheritableFields, logger);
     if (computedPackageJson) {
-      console.log(JSON.stringify(computedPackageJson, null, 2));
+      logger.info(JSON.stringify(computedPackageJson, null, 2));
     } else {
-      console.error(`[screw-up/cli]: dump: Unable to read package.json from: ${targetDir}`);
+      logger.error(`[screw-up/cli]: dump: Unable to read package.json from: ${targetDir}`);
       process.exit(1);
     }
   } catch (error) {
-    console.error('[screw-up/cli]: dump: Failed to dump package.json:', error);
+    logger.error(`[screw-up/cli]: dump: Failed to dump package.json: ${error}`);
     process.exit(1);
   }
 };
@@ -357,33 +359,35 @@ const dumpCommand = async (args: ParsedArgs) => {
 //////////////////////////////////////////////////////////////////////////////////
 
 const main = async () => {
+  const logger = createConsoleLogger();
   const args = parseArgs(process.argv);
 
   // Handle global help or when no command is provided
   if (args.options.help || args.options.h || !args.command || 
       args.command === 'help' || args.command === '--help') {
-    showHelp();
+    showHelp(logger);
     return;
   }
 
   switch (args.command) {
     case 'pack':
-      await packCommand(args);
+      await packCommand(args, logger);
       break;
     case 'publish':
-      await publishCommand(args);
+      await publishCommand(args, logger);
       break;
     case 'dump':
-      await dumpCommand(args);
+      await dumpCommand(args, logger);
       break;
     default:
-      console.error(`Unknown command: ${args.command}`);
-      console.error('Run "screw-up --help" for usage information.');
+      logger.error(`Unknown command: ${args.command}`);
+      logger.error('Run "screw-up --help" for usage information.');
       process.exit(1);
   }
 };
 
 main().catch((error) => {
-  console.error('CLI error:', error);
+  const logger = createConsoleLogger();
+  logger.error(`CLI error: ${error}`);
   process.exit(1);
 });
