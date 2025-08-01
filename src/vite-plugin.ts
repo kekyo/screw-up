@@ -99,6 +99,7 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
     outputMetadataFilePath = 'src/generated/packageMetadata.ts',
     outputMetadataKeys = ['name', 'version', 'description', 'author', 'license', 'repository.url', 'git.commit.hash'],
     checkWorkingDirectoryStatus = true,
+    alwaysOverrideVersionFromGit = true,
     insertMetadataBanner = true} = options;
 
   const assetFiltersRegex = assetFilters.map(filter => new RegExp(filter));
@@ -114,7 +115,9 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
       // Save project root
       projectRoot = config.root;
       // Resolve package metadata
-      metadata = await resolvePackageMetadata(config.root, checkWorkingDirectoryStatus);
+      const result = await resolvePackageMetadata(
+        projectRoot, checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit);
+      metadata = result.metadata;
       // Generate banner
       banner = generateBanner(metadata, outputKeys);
     },

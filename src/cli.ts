@@ -11,6 +11,10 @@ import { mkdtemp, rm, stat } from 'fs/promises';
 import { spawn } from 'child_process';
 import { packAssets, parseArgs, ParsedArgs, getComputedPackageJsonObject } from './cli-internal.js';
 
+// We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
+
+//////////////////////////////////////////////////////////////////////////////////
+
 declare const __VERSION__: string;
 declare const __AUTHOR__: string;
 declare const __REPOSITORY_URL__: string;
@@ -63,6 +67,7 @@ Pack Options:
   --readme <path>               Replace README.md with specified file
   --inheritable-fields <list>   Comma-separated list of fields to inherit from parent (default: version,description,author,license,repository,keywords,homepage,bugs,readme)
   --no-wds                      Do not check working directory status to increase version
+  --no-git-version-override     Do not override version from Git (use package.json version)
   --no-replace-peer-deps        Disable replacing "*" in peerDependencies with actual versions
   --peer-deps-prefix <prefix>   Version prefix for replaced peerDependencies (default: "^")
 
@@ -94,6 +99,7 @@ Options:
   --readme <path>               Replace README.md with specified file
   --inheritable-fields <list>   Comma-separated list of fields to inherit from parent
   --no-wds                      Do not check working directory status to increase version
+  --no-git-version-override     Do not override version from Git (use package.json version)
   --no-replace-peer-deps        Disable replacing "*" in peerDependencies with actual versions
   --peer-deps-prefix <prefix>   Version prefix for replaced peerDependencies (default: "^")
   -h, --help                    Show help for pack command
@@ -137,6 +143,7 @@ const packCommand = async (args: ParsedArgs) => {
   const readmeOption = args.options['readme'] as string;
   const inheritableFieldsOption = args.options['inheritable-fields'] as string;
   const checkWorkingDirectoryStatus = args.options['no-wds'] ? false : true;
+  const alwaysOverrideVersionFromGit = !args.options['no-git-version-override'];
   const replacePeerDepsWildcards = !args.options['no-replace-peer-deps'];
   const peerDepsVersionPrefix = args.options['peer-deps-prefix'] as string ?? "^";
 
@@ -150,10 +157,14 @@ const packCommand = async (args: ParsedArgs) => {
   console.log(`[screw-up/cli]: pack: Creating archive of ${targetDir}...`);
 
   try {
-    const metadata = await packAssets(
-      targetDir, outputDir, checkWorkingDirectoryStatus, inheritableFields, readmeReplacementPath, replacePeerDepsWildcards, peerDepsVersionPrefix);
-    if (metadata) {
-      console.log(`[screw-up/cli]: pack: Archive created successfully: ${outputDir}`);
+    const result = await packAssets(
+      targetDir, outputDir,
+      checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit,
+      inheritableFields,
+      readmeReplacementPath,
+      replacePeerDepsWildcards, peerDepsVersionPrefix);
+    if (result) {
+      console.log(`[screw-up/cli]: pack: Archive created successfully: ${result.packageFileName}`);
     } else {
       console.error(`[screw-up/cli]: pack: Unable to find any files to pack: ${targetDir}`);
       process.exit(1);
@@ -204,6 +215,7 @@ const publishCommand = async (args: ParsedArgs) => {
   const path = args.positional[0];
   const inheritableFieldsOption = args.options['inheritable-fields'] as string;
   const checkWorkingDirectoryStatus = args.options['no-wds'] ? false : true;
+  const alwaysOverrideVersionFromGit = !args.options['no-git-version-override'];
   const replacePeerDepsWildcards = !args.options['no-replace-peer-deps'];
   const peerDepsVersionPrefix = args.options['peer-deps-prefix'] as string ?? "^";
 
@@ -231,10 +243,14 @@ const publishCommand = async (args: ParsedArgs) => {
       console.log(`[screw-up/cli]: publish: Creating archive of ${targetDir}...`);
 
       try {
-        const metadata = await packAssets(
-          targetDir, outputDir, checkWorkingDirectoryStatus, inheritableFields, undefined, replacePeerDepsWildcards, peerDepsVersionPrefix);
-        if (metadata) {
-          const archiveName = `${metadata.name}-${metadata.version}.tgz`;
+        const result = await packAssets(
+          targetDir, outputDir,
+          checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit,
+          inheritableFields,
+          undefined,
+          replacePeerDepsWildcards, peerDepsVersionPrefix);
+        if (result?.metadata) {
+          const archiveName = `${result.metadata.name}-${result.metadata.version}.tgz`;
           const archivePath = join(outputDir, archiveName);
           await runNpmPublish(archivePath, npmOptions);
         } else {
@@ -258,10 +274,14 @@ const publishCommand = async (args: ParsedArgs) => {
         console.log(`[screw-up/cli]: publish: Creating archive of ${targetDir}...`);
 
         try {
-          const metadata = await packAssets(
-            targetDir, outputDir, checkWorkingDirectoryStatus, inheritableFields, undefined, replacePeerDepsWildcards, peerDepsVersionPrefix);
-          if (metadata) {
-            const archiveName = `${metadata.name}-${metadata.version}.tgz`;
+          const result = await packAssets(
+            targetDir, outputDir,
+            checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit,
+            inheritableFields,
+            undefined,
+            replacePeerDepsWildcards, peerDepsVersionPrefix);
+          if (result?.metadata) {
+            const archiveName = `${result.metadata.name}-${result.metadata.version}.tgz`;
             const archivePath = join(outputDir, archiveName);
             await runNpmPublish(archivePath, npmOptions);
           } else {
@@ -296,6 +316,7 @@ Arguments:
 Options:
   --inheritable-fields <list>   Comma-separated list of fields to inherit from parent
   --no-wds                      Do not check working directory status to increase version
+  --no-git-version-override     Do not override version from Git (use package.json version)
   -h, --help                    Show help for dump command
 `);
 };
@@ -310,6 +331,7 @@ const dumpCommand = async (args: ParsedArgs) => {
 
   const directory = args.positional[0];
   const inheritableFieldsOption = args.options['inheritable-fields'] as string;
+  const alwaysOverrideVersionFromGit = !args.options['no-git-version-override'];
   const checkWorkingDirectoryStatus = args.options['no-wds'] ? false : true;
 
   // Parse inheritable fields from CLI option or use defaults
@@ -319,7 +341,7 @@ const dumpCommand = async (args: ParsedArgs) => {
 
   try {
     const computedPackageJson = await getComputedPackageJsonObject(
-      targetDir, checkWorkingDirectoryStatus, inheritableFields);
+      targetDir, checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit, inheritableFields);
     if (computedPackageJson) {
       console.log(JSON.stringify(computedPackageJson, null, 2));
     } else {
