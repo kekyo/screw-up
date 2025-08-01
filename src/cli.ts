@@ -72,6 +72,7 @@ Pack Options:
   --no-git-version-override     Do not override version from Git (use package.json version)
   --no-replace-peer-deps        Disable replacing "*" in peerDependencies with actual versions
   --peer-deps-prefix <prefix>   Version prefix for replaced peerDependencies (default: "^")
+  --verbose                     Print verbose log
 
 Publish Options:
   All npm publish options are supported (e.g., --dry-run, --tag, --access, --registry)
@@ -104,6 +105,7 @@ Options:
   --no-git-version-override     Do not override version from Git (use package.json version)
   --no-replace-peer-deps        Disable replacing "*" in peerDependencies with actual versions
   --peer-deps-prefix <prefix>   Version prefix for replaced peerDependencies (default: "^")
+  --verbose                     Print verbose log
   -h, --help                    Show help for pack command
 `);
 };
@@ -148,6 +150,7 @@ const packCommand = async (args: ParsedArgs, logger: Logger) => {
   const alwaysOverrideVersionFromGit = !args.options['no-git-version-override'];
   const replacePeerDepsWildcards = !args.options['no-replace-peer-deps'];
   const peerDepsVersionPrefix = args.options['peer-deps-prefix'] as string ?? "^";
+  const verbose = args.options['verbose'] ? true : false;
 
   const targetDir = resolve(directory ?? process.cwd());
   const outputDir = packDestination ? resolve(packDestination) : process.cwd();
@@ -156,7 +159,9 @@ const packCommand = async (args: ParsedArgs, logger: Logger) => {
   // Parse inheritable fields from CLI option or use defaults
   const inheritableFields = parseInheritableFields(inheritableFieldsOption);
 
-  logger.info(`[screw-up/cli]: pack: Creating archive of ${targetDir}...`);
+  if (verbose) {
+    logger.info(`[screw-up:cli]: pack: Creating archive of ${targetDir}...`);
+  }
 
   try {
     const result = await packAssets(
@@ -166,13 +171,17 @@ const packCommand = async (args: ParsedArgs, logger: Logger) => {
       readmeReplacementPath,
       replacePeerDepsWildcards, peerDepsVersionPrefix, logger);
     if (result) {
-      logger.info(`[screw-up/cli]: pack: Archive created successfully: ${result.packageFileName}`);
+      if (verbose) {
+        logger.info(`[screw-up:cli]: pack: Archive created successfully: ${result.packageFileName}`);
+      } else {
+        logger.info(result.packageFileName);
+      }
     } else {
-      logger.error(`[screw-up/cli]: pack: Unable to find any files to pack: ${targetDir}`);
+      logger.error(`[screw-up:cli]: pack: Unable to find any files to pack: ${targetDir}`);
       process.exit(1);
     }
   } catch (error) {
-    logger.error(`[screw-up/cli]: pack: Failed to create archive: ${error}`);
+    logger.error(`[screw-up:cli]: pack: Failed to create archive: ${error}`);
     process.exit(1);
   }
 };
@@ -186,16 +195,16 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
   }
 
   const runNpmPublish = async (tarballPath: string, npmOptions: string[]) => {
-    logger.info(`[screw-up/cli]: publish: Publishing ${tarballPath} to npm...`);
+    logger.info(`[screw-up:cli]: publish: Publishing ${tarballPath} to npm...`);
     
     const publishArgs = ['publish', tarballPath, ...npmOptions];
     
     // For testing: log the command that would be executed
     if (process.env.SCREW_UP_TEST_MODE === 'true') {
-      logger.info(`[screw-up/cli]: TEST_MODE: Would execute: npm ${publishArgs.join(' ')}`);
-      logger.info(`[screw-up/cli]: TEST_MODE: Tarball path: ${tarballPath}`);
-      logger.info(`[screw-up/cli]: TEST_MODE: Options: ${npmOptions.join(' ')}`);
-      logger.info(`[screw-up/cli]: publish: Successfully published ${tarballPath}`);
+      logger.info(`[screw-up:cli]: TEST_MODE: Would execute: npm ${publishArgs.join(' ')}`);
+      logger.info(`[screw-up:cli]: TEST_MODE: Tarball path: ${tarballPath}`);
+      logger.info(`[screw-up:cli]: TEST_MODE: Options: ${npmOptions.join(' ')}`);
+      logger.info(`[screw-up:cli]: publish: Successfully published ${tarballPath}`);
       return;
     }
     
@@ -204,7 +213,7 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
     return new Promise<void>((resolve, reject) => {
       npmProcess.on('close', (code) => {
         if (code === 0) {
-          logger.info(`[screw-up/cli]: publish: Successfully published ${tarballPath}`);
+          logger.info(`[screw-up:cli]: publish: Successfully published ${tarballPath}`);
           resolve();
         } else {
           reject(new Error(`npm publish failed with exit code ${code}`));
@@ -242,7 +251,7 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
       const targetDir = process.cwd();
       const outputDir = await mkdtemp('screw-up-publish-');
 
-      logger.info(`[screw-up/cli]: publish: Creating archive of ${targetDir}...`);
+      logger.info(`[screw-up:cli]: publish: Creating archive of ${targetDir}...`);
 
       try {
         const result = await packAssets(
@@ -256,7 +265,7 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
           const archivePath = join(outputDir, archiveName);
           await runNpmPublish(archivePath, npmOptions);
         } else {
-          logger.error(`[screw-up/cli]: publish: Unable to find any files to pack: ${targetDir}`);
+          logger.error(`[screw-up:cli]: publish: Unable to find any files to pack: ${targetDir}`);
           process.exit(1);
         }
       } finally {
@@ -273,7 +282,7 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
         const targetDir = resolve(path);
         const outputDir = await mkdtemp('screw-up-publish-');
 
-        logger.info(`[screw-up/cli]: publish: Creating archive of ${targetDir}...`);
+        logger.info(`[screw-up:cli]: publish: Creating archive of ${targetDir}...`);
 
         try {
           const result = await packAssets(
@@ -287,22 +296,22 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
             const archivePath = join(outputDir, archiveName);
             await runNpmPublish(archivePath, npmOptions);
           } else {
-            logger.error(`[screw-up/cli]: publish: Unable to find any files to pack: ${targetDir}`);
+            logger.error(`[screw-up:cli]: publish: Unable to find any files to pack: ${targetDir}`);
             process.exit(1);
           }
         } finally {
           await rm(outputDir, { recursive: true, force: true });
         }
       } else {
-        logger.error(`[screw-up/cli]: publish: Invalid path - must be a directory or .tgz/.tar.gz file: ${path}`);
+        logger.error(`[screw-up:cli]: publish: Invalid path - must be a directory or .tgz/.tar.gz file: ${path}`);
         process.exit(1);
       }
     } else {
-      logger.error(`[screw-up/cli]: publish: Path does not exist: ${path}`);
+      logger.error(`[screw-up:cli]: publish: Path does not exist: ${path}`);
       process.exit(1);
     }
   } catch (error) {
-    logger.error(`[screw-up/cli]: publish: Failed to publish: ${error}`);
+    logger.error(`[screw-up:cli]: publish: Failed to publish: ${error}`);
     process.exit(1);
   }
 };
@@ -347,11 +356,11 @@ const dumpCommand = async (args: ParsedArgs, logger: Logger) => {
     if (computedPackageJson) {
       logger.info(JSON.stringify(computedPackageJson, null, 2));
     } else {
-      logger.error(`[screw-up/cli]: dump: Unable to read package.json from: ${targetDir}`);
+      logger.error(`[screw-up:cli]: dump: Unable to read package.json from: ${targetDir}`);
       process.exit(1);
     }
   } catch (error) {
-    logger.error(`[screw-up/cli]: dump: Failed to dump package.json: ${error}`);
+    logger.error(`[screw-up:cli]: dump: Failed to dump package.json: ${error}`);
     process.exit(1);
   }
 };
