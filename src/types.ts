@@ -63,4 +63,9 @@ export interface ScrewUpOptions {
    * @default true
    */
   checkWorkingDirectoryStatus?: boolean;
+  /**
+   * Always override version from Git
+   * @default true
+   */
+  alwaysOverrideVersionFromGit?: boolean;
 }

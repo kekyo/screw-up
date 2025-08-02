@@ -3,75 +3,79 @@
 // Under MIT.
 // https://github.com/kekyo/screw-up/
 
-import { resolve } from 'path';
-import { glob } from 'glob';
-import { existsSync } from 'fs';
-import { mkdir, lstat } from 'fs/promises';
-import { createTarPacker, createReadFileItem, createFileItem, storeReaderToFile } from 'tar-vern';
-import { resolveRawPackageJsonObject, PackageResolutionResult, findWorkspaceRoot, collectWorkspaceSiblings, replacePeerDependenciesWildcards } from './internal.js';
+import { join } from 'path';
+import { createReadStream, existsSync } from 'fs';
+import { mkdir, mkdtemp, writeFile, copyFile, rm } from 'fs/promises';
+import { createTarPacker, storeReaderToFile, extractTo, createTarExtractor, createEntryItemGenerator } from 'tar-vern';
+import { spawn } from 'child_process';
+import { tmpdir } from 'os';
+import { resolveRawPackageJsonObject, findWorkspaceRoot, collectWorkspaceSiblings, replacePeerDependenciesWildcards, Logger } from './internal.js';
+
+// We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
 
 //////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Create pack entry generator that collects and yields entries on-demand
+ * Execute npm pack and return the generated tarball path
  * @param targetDir - Target directory to pack
- * @param resolvedPackageJson - Resolved package.json object
- * @param readmeReplacementPath - Optional path to replacement README file
- * @returns Pack entry generator
+ * @param packDestDir - Directory to store the generated tarball (must exist)
+ * @returns Path to generated tarball
  */
-const createPackEntryGenerator = async function* (targetDir: string, resolvedPackageJson: any, readmeReplacementPath: string | undefined) {
-  // First yield package.json content
-  const packageJsonContent = JSON.stringify(resolvedPackageJson, null, 2);
-  yield await createFileItem('package/package.json', packageJsonContent);
+const runNpmPack = async (targetDir: string, packDestDir: string): Promise<string> => {
+  return new Promise((res, rej) => {
+    const npmProcess = spawn('npm', ['pack', '--pack-destination', packDestDir], {
+      cwd: targetDir,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
 
-  // Get distribution files in package.json
-  const distributionFileGlobs = resolvedPackageJson?.files as string[] ?? ['**/*'];
-  
-  // Convert directory patterns to recursive patterns (like npm pack does)
-  const packingFilePaths = (await Promise.all(
-    distributionFileGlobs.map(async (pattern) => {
-      const fullPath = resolve(targetDir, pattern);
-      try {
-        if (existsSync(fullPath) && (await lstat(fullPath)).isDirectory()) {
-          return await glob(`${pattern}/**/*`, { cwd: targetDir });
-        }
-        return await glob(pattern, { cwd: targetDir });
-      } catch (error) {
-        // If there's an error accessing the path, treat as glob pattern
-        return await glob(pattern, { cwd: targetDir });
-      }
-    }))).flat();
+    let stdout = '';
+    let stderr = '';
 
-  // Yield target packing files
-  for (const packingFilePath of packingFilePaths) {
-    // Except package.json (already yielded)
-    if (packingFilePath !== 'package.json') {
-      // Is file regular?
-      const fullPath = resolve(targetDir, packingFilePath);
-      const stat = await lstat(fullPath);
-      if (stat.isFile()) {
-        // Handle README.md replacement
-        if (packingFilePath === 'README.md' && readmeReplacementPath) {
-          // Use replacement file but keep README.md as the archive entry name
-          yield await createReadFileItem('package/README.md', readmeReplacementPath);
+    npmProcess.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    npmProcess.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    npmProcess.on('close', (code) => {
+      if (code === 0) {
+        // npm pack outputs the filename on stdout (first line of output)
+        const lines = stdout.trim().split('\n');
+        const filename = lines[0]; // First line contains just the filename
+        if (filename) {
+          const fullPath = join(packDestDir, filename);
+          res(fullPath);
         } else {
-          // Yield regular file
-          yield await createReadFileItem(`package/${packingFilePath}`, fullPath);
+          rej(new Error('npm pack did not output a filename'));
+        }
+      } else {
+        const errorMessage = `npm pack failed with exit code ${code}`;
+        const fullError = stderr ? `${errorMessage}\nstderr: ${stderr}` : errorMessage;
+        if (stdout) {
+          rej(new Error(`${fullError}\nstdout: ${stdout}`));
+        } else {
+          rej(new Error(fullError));
         }
       }
-    }
-  }
+    });
 
-  // Handle case where README.md doesn't exist in files but we have a replacement
-  if (readmeReplacementPath && !packingFilePaths.includes('README.md')) {
-    // Add README.md to the archive using replacement file
-    yield await createReadFileItem('package/README.md', readmeReplacementPath);
-  }
+    npmProcess.on('error', (error) => {
+      rej(new Error(`Failed to spawn npm pack: ${error.message}`));
+    });
+  });
 };
 
+//////////////////////////////////////////////////////////////////////////////////
+
+export interface PackedResult {
+  readonly packageFileName: string;
+  readonly metadata: any;
+}
 
 /**
- * Pack assets into a tar archive
+ * Pack assets using npm pack delegation method
  * @param targetDir - Target directory to pack
  * @param outputDir - Output directory to write the tarball
  * @param checkWorkingDirectoryStatus - Check working directory status
@@ -79,45 +83,65 @@ const createPackEntryGenerator = async function* (targetDir: string, resolvedPac
  * @param readmeReplacementPath - Optional path to replacement README file
  * @param replacePeerDepsWildcards - Replace "*" in peerDependencies with actual versions
  * @param peerDepsVersionPrefix - Version prefix for replaced peerDependencies
+ * @param alwaysOverrideVersionFromGit - Always override version from Git (default: true)
  * @returns Package metadata (package.json) or undefined if failed
  */
 export const packAssets = async (
   targetDir: string,
   outputDir: string,
   checkWorkingDirectoryStatus: boolean,
+  alwaysOverrideVersionFromGit: boolean,
   inheritableFields: Set<string>,
   readmeReplacementPath: string | undefined,
-  replacePeerDepsWildcards: boolean = true,
-  peerDepsVersionPrefix: string = "^") : Promise<any> => {
+  replacePeerDepsWildcards: boolean,
+  peerDepsVersionPrefix: string,
+  logger: Logger) : Promise<PackedResult | undefined> => {
   // Check if target directory exists
   if (!existsSync(targetDir)) {
-    return undefined;
+    throw new Error(`Target directory is not found: ${targetDir}`);
+  }
+
+  let readmeReplacementCandidatePath = readmeReplacementPath;
+  if (readmeReplacementCandidatePath && !existsSync(readmeReplacementCandidatePath)) {
+    throw new Error(`README replacement file is not found: ${readmeReplacementCandidatePath}`);
   }
 
   // Resolve package metadata with source tracking
-  let result: PackageResolutionResult;
-  try {
-    result = await resolveRawPackageJsonObject(
-      targetDir, checkWorkingDirectoryStatus,
-      inheritableFields);
-  } catch (error) {
-    // If package.json cannot be read (e.g., file doesn't exist), return undefined
-    // This matches npm pack behavior which requires package.json
-    return undefined;
-  }
+  const result = await resolveRawPackageJsonObject(
+    targetDir,
+    checkWorkingDirectoryStatus,
+    alwaysOverrideVersionFromGit,
+    inheritableFields,
+    logger);
 
-  let { packageJson: resolvedPackageJson, sourceMap } = result;
+  let resolvedPackageJson = result.metadata;
 
   // Check if package is private
   if (resolvedPackageJson?.private) {
     return undefined;
   }
 
+  // Extract README replacement directive on package.json
+  const packageJsonReadme = resolvedPackageJson.readme;
+  if (packageJsonReadme) {
+    // When does not override by parameter (CLI)
+    if (!readmeReplacementCandidatePath) {
+      const packageJsonReadmeDir = result.sourceMap.get('readme');
+      const packageJsonReadmePath = join(packageJsonReadmeDir, packageJsonReadme);
+      if (!existsSync(packageJsonReadmePath)) {
+        throw new Error(`README replacement file is not found: ${packageJsonReadmePath}`);
+      }
+      readmeReplacementCandidatePath = packageJsonReadmePath;
+    }
+    // Always remove it.
+    delete resolvedPackageJson.readme;
+  }
+
   // Replace peerDependencies wildcards if enabled and in workspace
   if (replacePeerDepsWildcards) {
-    const workspaceRoot = await findWorkspaceRoot(targetDir);
+    const workspaceRoot = await findWorkspaceRoot(targetDir, logger);
     if (workspaceRoot) {
-      const siblings = await collectWorkspaceSiblings(workspaceRoot);
+      const siblings = await collectWorkspaceSiblings(workspaceRoot, logger);
       if (siblings.size > 0) {
         resolvedPackageJson = replacePeerDependenciesWildcards(
           resolvedPackageJson,
@@ -128,41 +152,53 @@ export const packAssets = async (
     }
   }
 
-  // Determine README replacement path
-  // Priority: CLI option > package.json.readme > none
-  let finalReadmeReplacementPath = readmeReplacementPath;
-  if (!finalReadmeReplacementPath && resolvedPackageJson?.readme) {
-    // Get the correct base directory for readme field
-    const readmeSourceDir = sourceMap.get('readme') ?? targetDir;
-    const packageReadmePath = resolve(readmeSourceDir, resolvedPackageJson.readme);
-    if (existsSync(packageReadmePath)) {
-      finalReadmeReplacementPath = packageReadmePath;
+  // Create temporary directory for npm pack
+  const baseTempDir = await mkdtemp(join(tmpdir(), 'screw-up-npm-pack-'));
+  await mkdir(baseTempDir, { recursive: true });
+
+  try {
+    // Step 1: Execute npm pack to generate initial tarball
+    const npmTarballPath = await runNpmPack(targetDir, baseTempDir);
+
+    // Step 2: Extract the npm-generated tarball into staging directory
+    const stagingDir = join(baseTempDir, 'staging');
+    await mkdir(stagingDir, { recursive: true });
+
+    const stream = createReadStream(npmTarballPath);
+    await extractTo(createTarExtractor(stream, 'gzip'), stagingDir);
+
+    // Step 3: Process extracted files (package.json/README replacement)
+    // Replace package.json with our processed version
+    const packageJsonPath = join(stagingDir, 'package', 'package.json');
+    if (existsSync(packageJsonPath)) {
+      await writeFile(packageJsonPath, JSON.stringify(resolvedPackageJson, null, 2));
     }
-  }
 
-  // Validate README replacement path before creating generator
-  if (finalReadmeReplacementPath && !existsSync(finalReadmeReplacementPath)) {
-    throw new Error(`README replacement file not found: ${finalReadmeReplacementPath}`);
-  }
+    // Replace README.md
+    if (readmeReplacementCandidatePath) {
+      const readmeDestPath = join(stagingDir, 'package', 'README.md');
+      await copyFile(readmeReplacementCandidatePath, readmeDestPath);
+    }
 
-  // Get package name
-  const outputFileName = `${resolvedPackageJson?.name?.replace('/', '-') ?? "package"}-${resolvedPackageJson?.version ?? "0.0.0"}.tgz`;
-
-  // Ensure output directory exists
-  if (!existsSync(outputDir)) {
+    // Step 4: Re-create tarball with modified files
+    const outputFileName = `${resolvedPackageJson?.name?.replace('/', '-') ?? "package"}-${resolvedPackageJson?.version ?? "0.0.0"}.tgz`;
     await mkdir(outputDir, { recursive: true });
+    const outputFile = join(outputDir, outputFileName);
+
+    // Re-packing final tar file from the modified staging directory
+    const itemGenerator = createEntryItemGenerator(stagingDir);
+    const packer = createTarPacker(itemGenerator, 'gzip');
+    await storeReaderToFile(packer, outputFile);
+
+    // PackedResult
+    return {
+      packageFileName: outputFileName,
+      metadata: resolvedPackageJson
+    };
+  } finally {
+    // Clean up temporary directory
+    await rm(baseTempDir, { recursive: true, force: true });
   }
-
-  // Create tar packer with generator and gzip compression
-  const packer = createTarPacker(
-    createPackEntryGenerator(targetDir, resolvedPackageJson, finalReadmeReplacementPath),
-    'gzip');
-
-  // Write compressed tar archive to file
-  const outputFile = resolve(outputDir, outputFileName);
-  await storeReaderToFile(packer, outputFile);
-
-  return resolvedPackageJson;
 };
 
 /**
@@ -175,7 +211,9 @@ export const packAssets = async (
 export const getComputedPackageJsonObject = async (
   targetDir: string,
   checkWorkingDirectoryStatus: boolean,
-  inheritableFields: Set<string>) : Promise<any> => {
+  alwaysOverrideVersionFromGit: boolean,
+  inheritableFields: Set<string>,
+  logger: Logger) : Promise<any> => {
   // Check if target directory exists
   if (!existsSync(targetDir)) {
     return undefined;
@@ -183,83 +221,65 @@ export const getComputedPackageJsonObject = async (
 
   // Resolve package metadata
   const result = await resolveRawPackageJsonObject(
-    targetDir, checkWorkingDirectoryStatus,
-    inheritableFields);
-  return result.packageJson;
+    targetDir,
+    checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit,
+    inheritableFields,
+    logger);
+  return result.metadata;
 };
 
 //////////////////////////////////////////////////////////////////////////////////
 
 export interface ParsedArgs {
-  command?: string;
-  positional: string[];
-  options: Record<string, string | boolean>;
+  readonly argv: string[];
+  readonly command?: string;
+  readonly positional: string[];
+  readonly options: Record<string, string | boolean>;
 }
 
-export const parseArgs = (argv: string[]): ParsedArgs => {
-  const args = argv.slice(2); // Remove 'node' and script path
-  const result: ParsedArgs = {
+/**
+ * Parse command line arguments
+ * @param args - Command line arguments
+ * @param argOptionMap - Map of command options to their argument options
+ * @returns Parsed arguments
+ */
+export const parseArgs = (args: string[], argOptionMap: Map<string, Set<string>>): ParsedArgs => {
+  const result: any = {
+    argv: args,
     positional: [],
     options: {}
   };
 
-  if (args.length === 0) {
-    return result;
-  }
-
-  // Don't treat options as command
-  if (args[0].startsWith('-')) {
-    let i = 0;
-    while (i < args.length) {
-      const arg = args[i];
-
-      if (arg.startsWith('--')) {
-        const optionName = arg.slice(2);
-        const nextArg = args[i + 1];
-
-        if (nextArg !== undefined && !nextArg.startsWith('-')) {
-          result.options[optionName] = nextArg;
-          i += 2;
-        } else {
-          result.options[optionName] = true;
-          i += 1;
-        }
-      } else if (arg.startsWith('-')) {
-        const optionName = arg.slice(1);
-        result.options[optionName] = true;
-        i += 1;
-      } else {
-        result.positional.push(arg);
-        i += 1;
-      }
-    }
-    return result;
-  }
-
-  result.command = args[0];
-  let i = 1;
-
-  while (i < args.length) {
+  for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-
     if (arg.startsWith('--')) {
       const optionName = arg.slice(2);
-      const nextArg = args[i + 1];
-
-      if (nextArg !== undefined && !nextArg.startsWith('-')) {
-        result.options[optionName] = nextArg;
-        i += 2;
-      } else {
+      // Found option bedore command
+      if (!result.command) {
+        // Always flag option
         result.options[optionName] = true;
-        i += 1;
+      } else {
+        // Detect an argument option in the command
+        const argOptions = argOptionMap.get(result.command);
+        if (argOptions.has(optionName)) {
+          // Option has an argument
+          i++;
+          result.options[optionName] = args[i];
+        } else {
+          // Option is flag
+          result.options[optionName] = true;
+        }
       }
+    // Sigle hyphen option is always flag
     } else if (arg.startsWith('-')) {
       const optionName = arg.slice(1);
-      result.options[optionName] = true;
-      i += 1;
+      if (optionName.length == 1) {
+        result.options[optionName] = true;
+      }
+    } else if (!result.command) {
+      result.command = arg;
     } else {
       result.positional.push(arg);
-      i += 1;
     }
   }
 

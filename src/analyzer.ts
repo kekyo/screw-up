@@ -7,6 +7,7 @@ import * as git from 'isomorphic-git';
 import * as fs from 'fs';
 import dayjs from 'dayjs';
 import { GitMetadata } from './types.js';
+import { Logger } from './internal.js';
 
 // Ported from: https://github.com/kekyo/RelaxVersioner/blob/master/RelaxVersioner.Core/Analyzer.cs
 
@@ -511,9 +512,11 @@ const lookupVersionLabelRecursive = async (
  * Get default Git metadata from local repository.
  * @param repositoryPath - Local Git repository directory
  * @param checkWorkingDirectoryStatus - Check working directory status to increase version
+ * @param logger - Logger instance
  * @returns The metadata object with git metadata
  */
-export const getGitMetadata = async (repositoryPath: string, checkWorkingDirectoryStatus: boolean) => {
+export const getGitMetadata = async (
+  repositoryPath: string, checkWorkingDirectoryStatus: boolean, logger: Logger) => {
   const metadata: any = {};
 
   // Try to find git root directory from the given path
@@ -571,7 +574,7 @@ export const getGitMetadata = async (repositoryPath: string, checkWorkingDirecto
     gitMetadata.branches = relatedBranches;
   } catch (error) {
     // If any error occurs, return empty metadata
-    console.warn('Failed to extract git metadata:', error);
+    logger.warn(`Failed to extract git metadata: ${error}`);
   }
 
   return metadata;

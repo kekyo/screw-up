@@ -1,6 +1,8 @@
-# Screw-UP
+# screw-up
 
-Viteプラグイン向けのシンプルなパッケージメタデータ挿入ツール。
+NPM向けの、シンプルなパッケージメタデータ挿入ツール
+
+![screw-up](images/screw-up-120.png)
 
 [![Project Status: WIP – Initial development is in progress, but there has not yet been a stable, usable release suitable for the public.](https://www.repostatus.org/badges/latest/wip.svg)](https://www.repostatus.org/#wip)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -12,9 +14,12 @@ Viteプラグイン向けのシンプルなパッケージメタデータ挿入�
 
 ## これは何ですか？
 
-これは、パッケージメタデータ（名前、バージョン、説明、作者、ライセンスなど）を含むバナーコメントをバンドルされたファイルに自動的に挿入するViteプラグインです。
+バージョンをTypeScriptプロジェクトやNPMパッケージに適用する、シンプルなソリューションを探していますか？
+`screw-up` はあたなが必要とするツールになり得ます。
 
-このプラグインは自動的に`package.json`からメタデータを読み取ります:
+これは、パッケージメタデータ（名前、バージョン、説明、作者、ライセンスなど）を含むバナーコメントをバンドルされたファイルに自動的に挿入するViteプラグインと、NPMパッケージに適用するCLIツールです。
+
+Viteプラグインは、自動的に`package.json`からメタデータを読み取ります:
 
 ```json
 {
@@ -44,6 +49,17 @@ Viteプラグイン向けのシンプルなパッケージメタデータ挿入�
 // Your bundled code here...
 ```
 
+`git.commit.hash:`という行に気がついたかもしれません。そうです、プロジェクトがGitで管理されている場合（管理していますよね？）、そのコミットIDやブランチ・タグの情報を挿入させることもできます。
+そして最も重要なのは、Gitタグにバージョンが適用されている場合、そのバージョンタグを自動的に `package.json` の `version` に反映させることができます。つまり、Gitタグだけを使って、バージョン番号の管理ができます!
+
+`npm pack` ではなく、CLIツール `screw-up` を使ってパッケージを生成すれば、収集されたメタデータをNPMパッケージの `package.json` に自動で適用できます:
+
+```bash
+# `screw-up`コマンドを使ってパッケージを生成
+$ screw-up pack
+my-awesome-library-2.1.0.tgz
+```
+
 ## 主な機能
 
 * 自動メタデータ抽出: `package.json`から自動的にメタデータを読み取ります。
@@ -59,7 +75,7 @@ Viteプラグイン向けのシンプルなパッケージメタデータ挿入�
 
 ## インストール
 
-`devDependencies`にインストールして下さい。Screw-UPは実行時のコードを必要としません。
+`devDependencies`にインストールして下さい。screw-upは実行時のコードを必要としません。
 
 ```bash
 npm install --save-dev screw-up
@@ -86,7 +102,7 @@ export default defineConfig({
 });
 ```
 
-`outputKeys`が指定されていない場合、プラグインは以下のメタデータキーをこの順序で使用します:
+`outputKeys`が指定されていない場合、デフォルトで以下のメタデータキーをこの順序で使用します:
 `name`, `version`, `description`, `author`, `license`, `repository.url`, `git.commit.hash`.
 
 ### カスタム出力キー
@@ -236,7 +252,7 @@ Gitバージョン計算は以下のアルゴリズムに従います:
 4. タグが見つからない場合: デフォルトで`0.0.1`とし、各コミットに対してインクリメント
 
 更に、この計算結果は `package.json` の `version` キーのデフォルト値として適用されます。
-従って、 `package.json` に `version` キーを含めずに、GitタグとScrew-UPを使用してバージョン番号の管理を行うことが出来ます。
+従って、 `package.json` に `version` キーを含めずに、Gitタグとscrew-upを使用してバージョン番号の管理を行うことが出来ます。
 
 Gitメタデータを含む例:
 
@@ -323,14 +339,8 @@ UIパッケージをビルドすると、バナーには以下が含まれます
 ### シンプルな例
 
 ```bash
-# ドライランでビルドして公開
-screw-up publish --dry-run
-
-# ベータチャンネルに公開
-screw-up publish --tag beta
-
-# スコープ付きパッケージをパブリックとして公開
-screw-up publish --access public
+# パッケージ解決をデバッグ
+screw-up dump --inheritable-fields "version,author"
 
 # カスタムREADMEと限定継承でパック
 screw-up pack --readme ./docs/DIST_README.md --inheritable-fields "version,license"
@@ -341,8 +351,14 @@ screw-up pack --peer-deps-prefix "~"
 # peerDependencies置き換えなしでパック
 screw-up pack --no-replace-peer-deps
 
-# パッケージ解決をデバッグ
-screw-up dump --inheritable-fields "version,author"
+# ドライランでビルドして公開
+screw-up publish --dry-run
+
+# ベータチャンネルに公開
+screw-up publish --tag beta
+
+# スコープ付きパッケージをパブリックとして公開
+screw-up publish --access public
 
 # カスタムディレクトリにパックしてから公開
 screw-up pack --pack-destination ./release
@@ -353,9 +369,9 @@ screw-up publish ./release/my-package-1.0.0.tgz
 
 ```bash
 screw-up --help
+screw-up dump --help
 screw-up pack --help
 screw-up publish --help
-screw-up dump --help
 ```
 
 ### packコマンド
@@ -472,7 +488,7 @@ screw-up pack --readme ./docs/README_package.md
 
 ### peerDependencies置き換え
 
-ワークスペース環境では、開発中のバージョン制約を避けるために`peerDependencies`で兄弟パッケージを"*"で参照することが一般的です。パッケージ化時、Screw-UPは自動的にこれらのワイルドカードを実際のバージョン番号に置き換えます：
+ワークスペース環境では、開発中のバージョン制約を避けるために`peerDependencies`で兄弟パッケージを"*"で参照することが一般的です。パッケージ化時、screw-upは自動的にこれらのワイルドカードを実際のバージョン番号に置き換えます：
 
 ```json
 {
@@ -538,19 +554,19 @@ screw-up publish --inheritable-fields "version,description,keywords"
 
 ## 運用の推奨構成
 
-Screw-Upを使用すると、開発ライフサイクルをシンプルに保つことが出来ます。
+screw-upを使用すると、開発ライフサイクルをシンプルに保つことが出来ます。
 以下に、シングルプロジェクトの場合とワークスペースによるモノレポの場合の、代表的な構成方法を示します。
 
 ### シングルプロジェクト構成
 
-スタンドアロンプロジェクトでは、Screw-UPを最適に使用するために以下ののような構成例を使用できます:
+スタンドアロンプロジェクトでは、screw-upを最適に使用するために以下ののような構成例を使用できます:
 
 ```
 my-project/
 ├── package.json                # versionフィールドなし
 ├── README.md                   # 開発用README（GitHub/GitLabなどで表示）
 ├── README_pack.md              # 配布用README（オプション）
-├── vite.config.ts              # Screw-UPプラグイン設定
+├── vite.config.ts              # screw-upプラグイン設定
 ├── src/
 │   ├── index.ts
 │   └── generated/
@@ -587,11 +603,11 @@ my-project/
 
 重要なポイント:
 
-- `version`を削除: Screw-UPにGitタグを通じてバージョン管理を任せる
+- `version`を削除: screw-upにGitタグを通じてバージョン管理を任せる
 - メタデータフィールドを含める: `name`、`description`、`author`、`license`など
 - オプションの`readme`フィールド: 配布専用のREADMEファイルを指定
 - `files`を指定: パッケージに含めるファイルを制御
-- パッケージング: `scripts`に`pack`を加え、Screw-Upでパッケージングを実行できるようにする
+- パッケージング: `scripts`に`pack`を加え、screw-upでパッケージングを実行できるようにする
 
 #### Vite設定
 
@@ -695,7 +711,7 @@ my-monorepo/
 - 兄弟参照: peerで参照が必要な場合、ワークスペース兄弟に対して`peerDependencies`で`"*"`を使用
 - バージョンなし: すべてのpackage.jsonファイルから`version`を削除
 - 共有README: ルートレベルで定義し、サブプロジェクトに継承可能
-- `scripts`に`pack`を加え、Screw-Upでパッケージングを実行できるようにする
+- `scripts`に`pack`を加え、screw-upでパッケージングを実行できるようにする
 
 #### Vite設定
 
@@ -703,7 +719,7 @@ my-monorepo/
 
 #### 開発環境セットアップ
 
-それぞれのサブプロジェクトでScrew-Upをインストールします。
+それぞれのサブプロジェクトでscrew-upをインストールします。
 
 #### CLI使用例
 
@@ -726,6 +742,8 @@ screw-up publish packages/core --peer-deps-prefix "~"
 ## 補足
 
 このプロジェクトは [RelaxVersioner](https://github.com/kekyo/RelaxVersioner/) の後継として開発されました。RelaxVersionerは.NETプラットフォーム向けで、NPMサポートオプションを追加しました。しかし、Gitタグとの親和性があまり良くないため、Viteプラグインを使用することを前提として、最も望ましい運用を想定して仕様を検討しました。
+
+screw-upのGitタグからバージョン番号を計算するアルゴリズムは、完全にRelaxVersionerと同一です。つまり、あなたがASP.NET Coreでサーバーのコードを保守している場合、.NETとのバージョンを完全に統一して扱うことができます。
 
 ## ライセンス
 
