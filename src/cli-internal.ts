@@ -3,13 +3,13 @@
 // Under MIT.
 // https://github.com/kekyo/screw-up/
 
-import { join, resolve } from 'path';
+import { join } from 'path';
 import { createReadStream, existsSync } from 'fs';
-import { mkdir, lstat, mkdtemp, writeFile, copyFile, rm } from 'fs/promises';
+import { mkdir, mkdtemp, writeFile, copyFile, rm } from 'fs/promises';
 import { createTarPacker, storeReaderToFile, extractTo, createTarExtractor, createEntryItemGenerator } from 'tar-vern';
 import { spawn } from 'child_process';
 import { tmpdir } from 'os';
-import { resolveRawPackageJsonObject, PackageResolutionResult, findWorkspaceRoot, collectWorkspaceSiblings, replacePeerDependenciesWildcards, Logger } from './internal.js';
+import { resolveRawPackageJsonObject, findWorkspaceRoot, collectWorkspaceSiblings, replacePeerDependenciesWildcards, Logger } from './internal.js';
 
 // We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
 

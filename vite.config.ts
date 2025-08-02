@@ -19,7 +19,7 @@ export default defineConfig({
         index: resolve(fileURLToPath(new URL('.', import.meta.url)), 'src/index.ts'),
         main: resolve(fileURLToPath(new URL('.', import.meta.url)), 'src/main.ts')
       },
-      name: 'ScrewUp',
+      name: 'screw-up',
       fileName: (format, entryName) => `${entryName}.${format === 'es' ? 'js' : 'cjs'}`,
       formats: ['es', 'cjs']
     },

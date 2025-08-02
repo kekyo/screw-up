@@ -1,4 +1,4 @@
-# Screw-UP
+# screw-up
 
 Simply package metadata inserter for Vite plugins.
 
@@ -539,7 +539,7 @@ Default inheritable fields: `version`, `description`, `author`, `license`, `repo
 
 ## Recommended configuration
 
-Screw-Up allows you to keep your development lifecycle simple.
+screw-up allows you to keep your development lifecycle simple.
 Below are typical configurations for single projects and monorepos using workspaces.
 
 ### Single project configuration
@@ -592,7 +592,7 @@ Key Points:
 - Include metadata fields: `name`, `description`, `author`, `license`, etc.
 - Optional `readme` field: Point to a distribution-specific README file
 - Specify `files`: Control which files are included in the package
-- Add `pack` to `scripts` to enable packaging with Screw-Up.
+- Add `pack` to `scripts` to enable packaging with screw-up.
 
 #### Vite configuration
 
@@ -703,7 +703,7 @@ Same as single project configuration.
 
 #### Development Environment Setup
 
-Install Screw-Up in each sub project.
+Install screw-up in each sub project.
 
 #### CLI usage examples
 

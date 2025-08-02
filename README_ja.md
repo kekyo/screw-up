@@ -1,4 +1,4 @@
-# Screw-UP
+# screw-up
 
 Viteプラグイン向けのシンプルなパッケージメタデータ挿入ツール。
 
@@ -540,7 +540,7 @@ screw-up publish --inheritable-fields "version,description,keywords"
 
 ## 運用の推奨構成
 
-Screw-Upを使用すると、開発ライフサイクルをシンプルに保つことが出来ます。
+screw-upを使用すると、開発ライフサイクルをシンプルに保つことが出来ます。
 以下に、シングルプロジェクトの場合とワークスペースによるモノレポの場合の、代表的な構成方法を示します。
 
 ### シングルプロジェクト構成
@@ -593,7 +593,7 @@ my-project/
 - メタデータフィールドを含める: `name`、`description`、`author`、`license`など
 - オプションの`readme`フィールド: 配布専用のREADMEファイルを指定
 - `files`を指定: パッケージに含めるファイルを制御
-- パッケージング: `scripts`に`pack`を加え、Screw-Upでパッケージングを実行できるようにする
+- パッケージング: `scripts`に`pack`を加え、screw-upでパッケージングを実行できるようにする
 
 #### Vite設定
 
@@ -697,7 +697,7 @@ my-monorepo/
 - 兄弟参照: peerで参照が必要な場合、ワークスペース兄弟に対して`peerDependencies`で`"*"`を使用
 - バージョンなし: すべてのpackage.jsonファイルから`version`を削除
 - 共有README: ルートレベルで定義し、サブプロジェクトに継承可能
-- `scripts`に`pack`を加え、Screw-Upでパッケージングを実行できるようにする
+- `scripts`に`pack`を加え、screw-upでパッケージングを実行できるようにする
 
 #### Vite設定
 
@@ -705,7 +705,7 @@ my-monorepo/
 
 #### 開発環境セットアップ
 
-それぞれのサブプロジェクトでScrew-Upをインストールします。
+それぞれのサブプロジェクトでscrew-upをインストールします。
 
 #### CLI使用例
 

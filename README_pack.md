@@ -1,4 +1,4 @@
-# Screw-UP
+# screw-up
 
 Simply package metadata inserter for Vite plugins.
 
