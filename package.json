@@ -33,13 +33,13 @@
   },
   "files": [
     "dist",
-    "README_pack.md"
+    "images/screw-up-120.png"
   ],
   "scripts": {
     "build": "vite build",
     "test": "npm run build && vitest run",
-    "dump": "npm run build && node dist/cli.js dump",
-    "pack": "npm run build && node dist/cli.js pack --pack-destination artifacts/"
+    "dump": "npm run build && node dist/main.js dump",
+    "pack": "npm run build && node dist/main.js pack --pack-destination artifacts/"
   },
   "peerDependencies": {
     "dayjs": ">=1.11.0",
