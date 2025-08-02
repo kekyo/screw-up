@@ -1,6 +1,6 @@
 # screw-up
 
-Simply package metadata inserter for Vite plugins.
+Simply package metadata inserter for NPM.
 
 ![screw-up](images/screw-up-120.png)
 
@@ -14,9 +14,12 @@ Simply package metadata inserter for Vite plugins.
 
 ## What is this?
 
-This is a Vite plugin that automatically inserts banner comments containing package metadata (name, version, description, author, license, etc.) into your bundled files.
+Looking for a simple solution to apply versions to TypeScript projects and NPM packages?
+`screw-up` could be the tool you need.
 
-This will automatically read metadata from your `package.json`:
+It is a Vite plugin that automatically inserts banner comments containing package metadata (name, version, description, author, license, etc.) into bundled files, and a CLI tool that applies them to NPM packages.
+
+The Vite plugin automatically reads metadata from `package.json`:
 
 ```json
 {
@@ -46,6 +49,17 @@ To insert banner header each bundled source files (`dist/index.js` and etc.):
 // Your bundled code here...
 ```
 
+You may have noticed the line `git.commit.hash:`. That's right, if your project is managed by Git (it is, right?), you can also insert commit IDs, branch information, and tag information.
+Most importantly, if a version is applied to a Git tag, you can automatically reflect that version tag in the `version` field of `package.json`. In other words, you can manage version numbers using only Git tags!
+
+Instead of using `npm pack`, you can use the CLI tool `screw-up` to generate packages, which will automatically apply the collected metadata to the NPM package's `package.json`:
+
+```bash
+# Generate a package using `screw-up` command
+$ screw-up pack
+my-awesome-library-2.1.0.tgz
+```
+
 ## Key Features
 
 * Automatic metadata extraction: Reads metadata from `package.json` automatically.
@@ -61,7 +75,7 @@ To insert banner header each bundled source files (`dist/index.js` and etc.):
 
 ## Installation
 
-Install as a `devDependencies` since Screw-UP does not require any runtime code.
+Install as a `devDependencies` since screw-up does not require any runtime code.
 
 ```bash
 npm install --save-dev screw-up
@@ -237,7 +251,7 @@ The Git version calculation follows below algorithm:
 3. Modified working directory: When uncommitted changes exist, increments the version by one
 4. No tags found: Defaults to `0.0.1` and increments for each commit
 
-Additionally, this calculated version is applied as the default value for the `version` key in `package.json`. Therefore, you can manage version number using Git tags and Screw-UP without including the `version` key in `package.json`.
+Additionally, this calculated version is applied as the default value for the `version` key in `package.json`. Therefore, you can manage version number using Git tags and screw-up without including the `version` key in `package.json`.
 
 Example with Git metadata:
 
@@ -324,14 +338,8 @@ The `screw-up` package includes a command-line interface for packaging and publi
 ### Examples
 
 ```bash
-# Build and publish with dry run
-screw-up publish --dry-run
-
-# Publish to beta channel
-screw-up publish --tag beta
-
-# Publish scoped package as public
-screw-up publish --access public
+# Debug package resolution
+screw-up dump --inheritable-fields "version,author"
 
 # Pack with custom README and limited inheritance
 screw-up pack --readme ./docs/DIST_README.md --inheritable-fields "version,license"
@@ -342,8 +350,14 @@ screw-up pack --peer-deps-prefix "~"
 # Pack without peerDependencies replacement
 screw-up pack --no-replace-peer-deps
 
-# Debug package resolution
-screw-up dump --inheritable-fields "version,author"
+# Build and publish with dry run
+screw-up publish --dry-run
+
+# Publish to beta channel
+screw-up publish --tag beta
+
+# Publish scoped package as public
+screw-up publish --access public
 
 # Pack to custom directory then publish
 screw-up pack --pack-destination ./release
@@ -449,9 +463,31 @@ The dump command:
 - `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent
 - `--no-wds`: Disable working directory status check for version increment
 
-### PeerDependencies Replacement
+### README replacement
 
-In workspace environments, it's common to reference sibling packages using "*" in `peerDependencies` to avoid version constraints during development. When packaging, Screw-UP automatically replaces these wildcards with actual version numbers:
+The pack command supports README replacement using multiple methods:
+
+#### Via CLI option
+
+```bash
+# Replace README.md with custom file
+screw-up pack --readme ./docs/README_package.md
+```
+
+#### Via package.json field
+
+```json
+{
+  "name": "my-package",
+  "readme": "docs/PACKAGE_README.md"
+}
+```
+
+When both are specified, the `--readme` CLI option takes priority over the `package.json` field.
+
+### PeerDependencies replacement
+
+In workspace environments, it's common to reference sibling packages using "*" in `peerDependencies` to avoid version constraints during development. When packaging, screw-up automatically replaces these wildcards with actual version numbers:
 
 ```json
 {
@@ -496,28 +532,6 @@ This feature:
 - Leaves non-workspace dependencies unchanged
 - Is enabled by default for pack and publish commands
 
-### README Replacement
-
-The pack command supports README replacement using multiple methods:
-
-#### Via CLI Option
-
-```bash
-# Replace README.md with custom file
-screw-up pack --readme ./docs/README_package.md
-```
-
-#### Via package.json Field
-
-```json
-{
-  "name": "my-package",
-  "readme": "docs/PACKAGE_README.md"
-}
-```
-
-When both are specified, the `--readme` CLI option takes priority over the `package.json` field.
-
 ### Workspace Field Inheritance
 
 Control which metadata fields are inherited from parent packages in monorepos:
@@ -544,14 +558,14 @@ Below are typical configurations for single projects and monorepos using workspa
 
 ### Single project configuration
 
-For standalone projects, follow these recommendations for optimal Screw-UP usage:
+For standalone projects, follow these recommendations for optimal screw-up usage:
 
 ```
 my-project/
 ├── package.json                 # No version field
 ├── README.md                    # Development README (show in github/gitlab)
 ├── README_pack.md               # Distribution README (optional)
-├── vite.config.ts               # Screw-UP plugin configuration
+├── vite.config.ts               # screw-up plugin configuration
 ├── src/
 │   ├── index.ts
 │   └── generated/
@@ -588,7 +602,7 @@ my-project/
 
 Key Points:
 
-- Remove `version`: Let Screw-UP manage versioning through Git tags
+- Remove `version`: Let screw-up manage versioning through Git tags
 - Include metadata fields: `name`, `description`, `author`, `license`, etc.
 - Optional `readme` field: Point to a distribution-specific README file
 - Specify `files`: Control which files are included in the package
@@ -701,7 +715,7 @@ Key Points:
 
 Same as single project configuration.
 
-#### Development Environment Setup
+#### Development environment setup
 
 Install screw-up in each sub project.
 
@@ -728,6 +742,8 @@ screw-up publish packages/core --peer-deps-prefix "~"
 This project was developed as a successor to [RelaxVersioner](https://github.com/kekyo/RelaxVersioner/).
 While RelaxVersioner was designed for the .NET platform and added NPM support options, it did not integrate well with Git tags.
 Therefore, this project was designed with Vite plugin usage in mind, focusing on the most optimal workflow and specifications.
+
+The algorithm for calculating version numbers from Git tags is identical to RelaxVersioner. This means that if you are maintaining server code with ASP.NET Core, you can treat the .NET version as completely unified.
 
 ## License
 
