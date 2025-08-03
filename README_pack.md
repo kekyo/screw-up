@@ -61,9 +61,7 @@ my-awesome-library-2.1.0.tgz
 
 * Automatic metadata extraction: Reads metadata from `package.json` automatically.
 * Workspace support: Works with monorepos and automatically inherits metadata from parent packages.
-* Flexible output: Specify exactly which keys to include and in what order.
-* Nested object support: Handles nested objects like `author.name`, `repository.url`.
-* Customizable: Choose which metadata fields to include in your banner.
+* Flexible output: Specify exactly which metadata to include and in what order.
 * TypeScript metadata generation: Can automatically generates TypeScript files with metadata constants for use in your source code.
 * Git metadata extraction: Automatically extracts Git commit hash, tags, branches, and version information from local Git repository.
 * Supported pack/publish CLI interface: When publishing using this feature, the package is generated after applying the above processing to `package.json`.
