@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { mkdirSync, writeFileSync, readFileSync, existsSync, readSync } from 'fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, readSync, readdirSync } from 'fs';
 import { join, relative, resolve } from 'path';
 import { tmpdir } from 'os';
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import * as tar from 'tar';
 import dayjs from 'dayjs';
 import { cliMain } from '../src/cli.ts';
@@ -2424,6 +2424,84 @@ describe('CLI tests', () => {
       
       // Verify exact version (no prefix)
       expect(extractedPackageJson.peerDependencies['@workspace/shared']).toBe('2.1.0');
+    }, 15000);
+
+    it('should use Git tag version for workspace siblings in peerDependencies', async () => {
+      // Create workspace root
+      const workspaceRoot = join(tempDir, 'workspace-git-tag');
+      mkdirSync(workspaceRoot);
+
+      // Initialize git repo first
+      execSync('git init', { cwd: workspaceRoot });
+      execSync('git config user.email "test@example.com"', { cwd: workspaceRoot });
+      execSync('git config user.name "Test User"', { cwd: workspaceRoot });
+
+      const rootPackageJson = {
+        name: 'workspace-root',
+        version: '1.0.0',
+        workspaces: ['packages/*']
+      };
+      writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify(rootPackageJson, null, 2));
+
+      // Create core package with low version in package.json
+      const coreDir = join(workspaceRoot, 'packages', 'core');
+      mkdirSync(coreDir, { recursive: true });
+      const corePackageJson = {
+        name: '@git-test/core',
+        version: '0.0.1',  // Low version in package.json
+        main: 'index.js'
+      };
+      writeFileSync(join(coreDir, 'package.json'), JSON.stringify(corePackageJson, null, 2));
+      writeFileSync(join(coreDir, 'index.js'), 'module.exports = {};');
+
+      // Create plugin package with peerDependencies
+      const pluginDir = join(workspaceRoot, 'packages', 'plugin');
+      mkdirSync(pluginDir, { recursive: true });
+      const pluginPackageJson = {
+        name: '@git-test/plugin',
+        version: '0.0.1',
+        peerDependencies: {
+          '@git-test/core': '*'
+        },
+        files: ['plugin.js']
+      };
+      writeFileSync(join(pluginDir, 'package.json'), JSON.stringify(pluginPackageJson, null, 2));
+      writeFileSync(join(pluginDir, 'plugin.js'), 'console.log("plugin");');
+
+      // Commit and add Git tags
+      execSync('git add .', { cwd: workspaceRoot });
+      execSync('git commit -m "Initial commit"', { cwd: workspaceRoot });
+      
+      // Tag with version 3.5.0 (all packages in the workspace will use this version)
+      execSync('git tag 3.5.0', { cwd: workspaceRoot });
+
+      // Run CLI pack command from workspace root
+      const outputDir = join(tempDir, 'output');
+      await execCliMain(['pack', pluginDir, '--pack-destination', outputDir], {});
+
+      // Check what files were created
+      const files = readdirSync(outputDir);
+      
+      // Find the actual created file
+      const createdFile = files.find(f => f.endsWith('.tgz'));
+      expect(createdFile).toBeDefined();
+      
+      // Extract and verify
+      const archivePath = join(outputDir, createdFile!);
+
+      const extractDir = join(tempDir, 'extracted');
+      mkdirSync(extractDir, { recursive: true });
+      
+      tar.extract({
+        file: archivePath,
+        cwd: extractDir,
+        sync: true
+      });
+
+      const extractedPackageJson = JSON.parse(readFileSync(join(extractDir, 'package', 'package.json'), 'utf-8'));
+      
+      // Verify Git tag version is used in peerDependencies (not the 0.0.1 from package.json)
+      expect(extractedPackageJson.peerDependencies['@git-test/core']).toBe('^3.5.0');
     }, 15000);
   });
 });

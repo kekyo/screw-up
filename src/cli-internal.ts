@@ -142,7 +142,13 @@ export const packAssets = async (
   if (replacePeerDepsWildcards) {
     const workspaceRoot = await findWorkspaceRoot(targetDir, logger);
     if (workspaceRoot) {
-      const siblings = await collectWorkspaceSiblings(workspaceRoot, logger);
+      const siblings = await collectWorkspaceSiblings(
+        workspaceRoot,
+        checkWorkingDirectoryStatus,
+        alwaysOverrideVersionFromGit,
+        inheritableFields,
+        logger
+      );
       if (siblings.size > 0) {
         resolvedPackageJson = replacePeerDependenciesWildcards(
           resolvedPackageJson,
