@@ -135,10 +135,19 @@ export const findWorkspaceRoot = async (startPath: string, logger: Logger): Prom
 /**
  * Collect workspace sibling projects
  * @param workspaceRoot - Workspace root directory
+ * @param checkWorkingDirectoryStatus - Check working directory status
+ * @param alwaysOverrideVersionFromGit - Always override version from Git
+ * @param inheritableFields - Package metadata fields that should be inherited from parent
  * @param logger - Logger instance
  * @returns Promise resolving to map of sibling projects (name -> WorkspaceSibling)
  */
-export const collectWorkspaceSiblings = async (workspaceRoot: string, logger: Logger): Promise<Map<string, WorkspaceSibling>> => {
+export const collectWorkspaceSiblings = async (
+  workspaceRoot: string,
+  checkWorkingDirectoryStatus: boolean,
+  alwaysOverrideVersionFromGit: boolean,
+  inheritableFields: Set<string>,
+  logger: Logger
+): Promise<Map<string, WorkspaceSibling>> => {
   const siblings = new Map<string, WorkspaceSibling>();
   
   try {
@@ -166,18 +175,28 @@ export const collectWorkspaceSiblings = async (workspaceRoot: string, logger: Lo
       const packageJsonPath = join(workspaceRoot, workspaceDir, 'package.json');
       if (existsSync(packageJsonPath)) {
         try {
-          const packageContent = await readFile(packageJsonPath, 'utf-8');
-          const packageJson = JSON5.parse(packageContent);
+          const packagePath = join(workspaceRoot, workspaceDir);
+          
+          // Use resolveRawPackageJsonObject to get the resolved version with Git tag consideration
+          const resolvedPackage = await resolveRawPackageJsonObject(
+            packagePath,
+            checkWorkingDirectoryStatus,
+            alwaysOverrideVersionFromGit,
+            inheritableFields,
+            logger
+          );
+          
+          const packageJson = resolvedPackage.metadata;
           
           if (packageJson.name && packageJson.version) {
             siblings.set(packageJson.name, {
               name: packageJson.name,
               version: packageJson.version,
-              path: join(workspaceRoot, workspaceDir)
+              path: packagePath
             });
           }
         } catch (error) {
-          logger.warn(`Failed to read package.json from ${packageJsonPath}: ${error}`);
+          logger.warn(`Failed to resolve package.json from ${packageJsonPath}: ${error}`);
         }
       }
     }
