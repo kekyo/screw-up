@@ -41,14 +41,15 @@ const runNpmPack = async (targetDir: string, packDestDir: string): Promise<strin
 
     npmProcess.on('close', (code) => {
       if (code === 0) {
-        // npm pack outputs the filename on stdout (first line of output)
+        // npm pack outputs the filename on stdout (last line or line ending with .tgz)
         const lines = stdout.trim().split('\n');
-        const filename = lines[0]; // First line contains just the filename
-        if (filename) {
-          const fullPath = join(packDestDir, filename);
+        // Find the line that ends with .tgz (actual filename) or use the last line
+        const filename = lines.find(line => line.trim().endsWith('.tgz')) || lines[lines.length - 1];
+        if (filename && filename.trim().endsWith('.tgz')) {
+          const fullPath = join(packDestDir, filename.trim());
           res(fullPath);
         } else {
-          rej(new Error('npm pack did not output a filename'));
+          rej(new Error('npm pack did not output a valid .tgz filename'));
         }
       } else {
         const errorMessage = `npm pack failed with exit code ${code}`;
