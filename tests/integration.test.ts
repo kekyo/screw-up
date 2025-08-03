@@ -1472,6 +1472,9 @@ describe('git metadata integration tests', () => {
     mkdirSync(srcDir);
     writeFileSync(join(srcDir, 'index.ts'), 'export const app = "test";');
 
+    // Create .gitignore to exclude generated files
+    writeFileSync(join(tempDir, '.gitignore'), 'src/generated/\ndist/\n');
+
     // Initial commit and tag
     await git.add('.');
     const commitResult = await git.commit('Add metadata file test');

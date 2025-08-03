@@ -64,9 +64,7 @@ my-awesome-library-2.1.0.tgz
 
 * 自動メタデータ抽出: `package.json`から自動的にメタデータを読み取ります。
 * ワークスペースサポート: モノレポで動作し、親パッケージからメタデータを自動的に継承します。
-* 柔軟な出力: 含めるキーとその順序を正確に指定できます。
-* ネストされたオブジェクトサポート: `author.name`、`repository.url`などのネストされたオブジェクトを処理します。
-* カスタマイズ可能: バナーに含めるメタデータフィールドを選択できます。
+* 柔軟な出力: 含めるメタデータとその順序を正確に指定できます。
 * TypeScriptメタデータ生成: ソースコードで使用するメタデータ定数を含むTypeScriptファイルを自動生成出来ます。
 * Gitメタデータ抽出: ローカルGitリポジトリからGitコミットハッシュ、タグ、ブランチ、バージョン情報を自動的に抽出します。
 * pack/publish CLIインターフェースをサポート: この機能を使用して公開する際、`package.json`に上記の処理を適用した後にパッケージが生成されます。
@@ -234,13 +232,15 @@ export function getLibraryInfo() {
 
 #### 利用可能なGitメタデータ
 
-- `git.version`: Gitタグとコミット深さに基づいて、自動的に計算されたバージョン
+- `git.version`: Gitタグとコミット深さに基づいて、自動的に計算されたバージョン（後述）
 - `git.commit.hash`: 現在のコミットの完全なコミットハッシュ
 - `git.commit.short`: 短いコミットハッシュ（最初の7文字）
 - `git.commit.date`: ISO形式のコミット日時
 - `git.commit.message`: コミットメッセージ
 - `git.tags`: 現在のコミットを指すすべてのタグの配列
 - `git.branches`: 現在のコミットを含むブランチの配列
+
+デフォルトで、`package.json`の`version`値は、自動的に`git.version`の値でオーバーライドされます。従って、NPMパッケージ生成時においても、Gitタグに基づいたバージョンを適用できます(CLIを使用します)。
 
 #### バージョン計算
 
@@ -250,9 +250,6 @@ Gitバージョン計算は以下のアルゴリズムに従います:
 2. タグなしコミット: 最も遠い祖先タグまでの深さを検出して、最後のバージョンコンポーネントをインクリメント
 3. 変更されたワーキングディレクトリ: 未コミットの変更が存在する場合、バージョンを1つインクリメント
 4. タグが見つからない場合: デフォルトで`0.0.1`とし、各コミットに対してインクリメント
-
-更に、この計算結果は `package.json` の `version` キーのデフォルト値として適用されます。
-従って、 `package.json` に `version` キーを含めずに、Gitタグとscrew-upを使用してバージョン番号の管理を行うことが出来ます。
 
 Gitメタデータを含む例:
 
@@ -268,7 +265,7 @@ screwUp({
 /*!
  * name: my-awesome-library
  * version: 2.1.0
- * git.version: 1.2.4
+ * git.version: 2.1.0
  * git.commit.hash: c94eaf71dcc6522aae593c7daf85bb745112caf0
  * git.commit.short: c94eaf7
  */
@@ -339,8 +336,8 @@ UIパッケージをビルドすると、バナーには以下が含まれます
 ### シンプルな例
 
 ```bash
-# パッケージ解決をデバッグ
-screw-up dump --inheritable-fields "version,author"
+# `package.json`がどのように解決されるのかをダンプ (JSON)
+screw-up dump
 
 # カスタムREADMEと限定継承でパック
 screw-up pack --readme ./docs/DIST_README.md --inheritable-fields "version,license"
@@ -391,10 +388,13 @@ screw-up pack --pack-destination ./dist
 
 packコマンドの機能:
 
-- メタデータとファイル包含ルールのために`package.json`を自動的に読み取り
-- `package.json`の`files`フィールドを尊重
+- メタデータのために`package.json`を自動的に読み取り
 - ワークスペース継承をサポート（親パッケージからメタデータを継承）
 - `{name}-{version}.tgz`形式で圧縮された`.tgz`アーカイブを作成
+
+packコマンドは、内部で`npm pack`を使用して、仮のパッケージファイルを生成します。その後、パッケージファイルに対して`package.json`の置き換えやREADMEの変更などを行います。このように動作するため、`files`キーの取り扱いなども、`npm pack`で想定される仕様に完全に準拠します。
+
+但し、パッキングを成功させるためには、必ず`version`キーを定義する必要があります。screw-up自身は、自動的に`version`キーに指定するバージョンを特定でき、その値を最終的なNPMパッケージファイルに反映します。しかし、`version`キーが存在しないと、最初の`npm pack`実行でエラーが発生します。これを避けるため、「運用の推奨構成」の例では、ダミーの`version`キーを指定しています。
 
 #### オプション
 
@@ -457,14 +457,14 @@ dumpコマンドの機能:
 
 - すべての処理（ワークスペース継承、Gitメタデータなど）後の最終的な計算済み`package.json`を表示
 - デバッグとパッケージメタデータの解決方法の理解に有用
-- 他のツールにパイプできるクリーンなJSONを出力
+- 他のツールにパイプできるクリーンなJSONを出力（`jq`など）
 
 #### オプション
 
 - `--inheritable-fields <list>`: 親から継承するフィールドのコンマ区切りリスト
 - `--no-wds`: バージョンインクリメントのワーキングディレクトリステータスチェックを無効化
 
-### README置換
+### README置換機能
 
 packコマンドは複数の方法でREADME置換をサポートします:
 
@@ -486,9 +486,9 @@ screw-up pack --readme ./docs/README_package.md
 
 両方が指定された場合、`--readme` CLIオプションが`package.json`フィールドより優先されます。
 
-### peerDependencies置き換え
+### peerDependencies置き換え機能
 
-ワークスペース環境では、開発中のバージョン制約を避けるために`peerDependencies`で兄弟パッケージを"*"で参照することが一般的です。パッケージ化時、screw-upは自動的にこれらのワイルドカードを実際のバージョン番号に置き換えます：
+ワークスペース環境では、開発中のバージョン制約を避けるために`peerDependencies`で兄弟パッケージを"*"で参照することが一般的です。パッケージ化時、screw-upは自動的にこれらのワイルドカードを実際のバージョン番号に置き換えます:
 
 ```json
 {
@@ -499,7 +499,7 @@ screw-up pack --readme ./docs/README_package.md
 }
 ```
 
-パッケージ化後、"*"は実際のバージョンに置き換えられます：
+パッケージ化後、"*"は実際のバージョンに置き換えられます:
 
 ```json
 {
@@ -559,18 +559,19 @@ screw-upを使用すると、開発ライフサイクルをシンプルに保つ
 
 ### シングルプロジェクト構成
 
-スタンドアロンプロジェクトでは、screw-upを最適に使用するために以下ののような構成例を使用できます:
+シングルプロジェクトでは、screw-upを最適に使用するために以下のような構成例を使用できます:
 
 ```
 my-project/
-├── package.json                # versionフィールドなし
+├── package.json
 ├── README.md                   # 開発用README（GitHub/GitLabなどで表示）
 ├── README_pack.md              # 配布用README（オプション）
 ├── vite.config.ts              # screw-upプラグイン設定
 ├── src/
 │   ├── index.ts
 │   └── generated/
-│       └── packageMetadata.ts  # `outputMetadataFile`により自動生成
+│       ├── packageMetadata.ts  # `outputMetadataFile`により自動生成
+│       └── .gitignore          # `outputMetadataFile`を除外
 └── dist/                       # メタデータバナー付きビルド出力
 ```
 
@@ -579,6 +580,7 @@ my-project/
 ```json
 {
   "name": "my-awesome-library",
+  "version": "0.0.1",
   "description": "開発者向けの素晴らしいTypeScriptライブラリ",
   "author": "Jane Developer <jane@example.com>",
   "license": "MIT",
@@ -592,7 +594,7 @@ my-project/
     "url": "https://github.com/user/my-awesome-library/issues"
   },
   "readme": "README_pack.md",
-  "files": ["dist/**/*", "README_pack.md"],
+  "files": ["dist/**/*"],
   "scripts": {
     "build": "vite build",
     "test": "npm run build && vitest run",
@@ -603,10 +605,10 @@ my-project/
 
 重要なポイント:
 
-- `version`を削除: screw-upにGitタグを通じてバージョン管理を任せる
+- ダミーの`version`: バージョン指定(上記例では`0.0.1`)は使われず、screw-upにGitタグを通じてバージョン管理を行わせる
 - メタデータフィールドを含める: `name`、`description`、`author`、`license`など
-- オプションの`readme`フィールド: 配布専用のREADMEファイルを指定
 - `files`を指定: パッケージに含めるファイルを制御
+- オプションの`readme`フィールド: 配布専用のREADMEファイルを指定。ここに指定するREADMEファイルは、`files`に含まれていなくても構いません。
 - パッケージング: `scripts`に`pack`を加え、screw-upでパッケージングを実行できるようにする
 
 #### Vite設定
@@ -626,14 +628,13 @@ export default defineConfig({
 });
 ```
 
+`outputMetadataFile`を`true`にすると、`packageMetadata.ts`が生成されるようになります。デフォルトでは、このファイルにGitコミットIDが含まれるため、コミット毎にファイルが更新されます。毎回Gitの差分が発生するため、これを`.gitignore`で除外することをおすすめします。
+
 #### 開発環境セットアップ
 
 ```bash
 # dev dependencyとしてインストール
 npm install --save-dev screw-up
-
-# 配布用README作成（オプション）
-echo "# 配布パッケージ" > README_pack.md
 ```
 
 ### ワークスペース構成（モノレポ）
@@ -662,8 +663,8 @@ my-monorepo/
 ```json
 {
   "name": "my-monorepo",
-  "description": "複数のパッケージを含むモノレポ",
-  "author": "開発チーム <team@company.com>",
+  "description": "Monorepo containing multiple packages",
+  "author": "Development Team <team@company.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -684,12 +685,15 @@ my-monorepo/
 }
 ```
 
+`private` とマークしてパッキングを無視します。パッキングしないので、`version`キーも不要です。
+
 #### サブプロジェクト package.json
 
 ```json
 {
   "name": "@company/ui-components",
-  "description": "再利用可能なUIコンポーネントライブラリ",
+  "version": "0.0.1",
+  "description": "Reusable UI components library",
   "keywords": ["ui", "components", "react"],
   "peerDependencies": {
     "@company/core": "*",
@@ -709,13 +713,13 @@ my-monorepo/
 - ルートパッケージ: 共有メタデータ（`author`、`license`、`repository`など）を定義
 - サブプロジェクト: プロジェクト固有の値（`name`、`description`、`keywords`）でオーバーライド
 - 兄弟参照: peerで参照が必要な場合、ワークスペース兄弟に対して`peerDependencies`で`"*"`を使用
-- バージョンなし: すべてのpackage.jsonファイルから`version`を削除
+- ダミーの`version`: バージョン指定(上記例では`0.0.1`)は使われず、screw-upにGitタグを通じてバージョン管理を行わせる
 - 共有README: ルートレベルで定義し、サブプロジェクトに継承可能
 - `scripts`に`pack`を加え、screw-upでパッケージングを実行できるようにする
 
 #### Vite設定
 
-シングルプロジェクト構成と同様。
+シングルプロジェクト構成と同様です。
 
 #### 開発環境セットアップ
 

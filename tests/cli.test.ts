@@ -1162,6 +1162,62 @@ describe('CLI tests', () => {
       const readmeContent = readFileSync(extractedReadme, 'utf-8');
       expect(readmeContent).toBe('# Replacement README\nAdded even though not in files array.');
     }, 10000);
+
+    it('should handle packages with prepack scripts correctly', async () => {
+      const testDir = join(tempDir, 'prepack-test');
+      mkdirSync(testDir, { recursive: true });
+      
+      // Create package.json with prepack script
+      const packageJsonWithPrepack = {
+        name: 'test-prepack-package',
+        version: '1.0.0',
+        scripts: {
+          prepack: 'echo "Running prepack script"'
+        }
+      };
+      writeFileSync(join(testDir, 'package.json'), JSON.stringify(packageJsonWithPrepack, null, 2));
+      
+      // Create some test files
+      writeFileSync(join(testDir, 'index.js'), 'console.log("Hello from prepack test");');
+      
+      const outputDir = join(tempDir, 'prepack-output');
+      mkdirSync(outputDir, { recursive: true });
+
+      // Run CLI pack command - this should handle prepack script output correctly
+      const result = await execCliMain(["pack", "--verbose", testDir, "--pack-destination", outputDir], {
+        cwd: tempDir,
+      });
+
+      expect(result).toContain('Creating archive of');
+      expect(result).toContain('Archive created successfully');
+
+      // Check if archive was created with correct filename despite prepack script output
+      const archivePath = join(outputDir, 'test-prepack-package-1.0.0.tgz');
+      expect(existsSync(archivePath)).toBe(true);
+
+      // Verify archive contents
+      const files: string[] = [];
+      await tar.list({ 
+        file: archivePath,
+        onentry: (entry: any) => files.push(entry.path)
+      });
+      expect(files).toContain('package/package.json');
+      expect(files).toContain('package/index.js');
+      
+      // Extract and verify package.json content
+      const extractDir = join(tempDir, 'extract-prepack');
+      mkdirSync(extractDir);
+      await tar.extract({
+        file: archivePath,
+        cwd: extractDir
+      });
+      
+      const extractedPackageJson = join(extractDir, 'package/package.json');
+      expect(existsSync(extractedPackageJson)).toBe(true);
+      const packageContent = JSON.parse(readFileSync(extractedPackageJson, 'utf-8'));
+      expect(packageContent.name).toBe('test-prepack-package');
+      expect(packageContent.version).toBe('1.0.0');
+    }, 10000);
   });
 
   //////////////////////////////////////////////////////////////////////////////////

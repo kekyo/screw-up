@@ -64,9 +64,7 @@ my-awesome-library-2.1.0.tgz
 
 * Automatic metadata extraction: Reads metadata from `package.json` automatically.
 * Workspace support: Works with monorepos and automatically inherits metadata from parent packages.
-* Flexible output: Specify exactly which keys to include and in what order.
-* Nested object support: Handles nested objects like `author.name`, `repository.url`.
-* Customizable: Choose which metadata fields to include in your banner.
+* Flexible output: Specify exactly which metadata to include and in what order.
 * TypeScript metadata generation: Can automatically generates TypeScript files with metadata constants for use in your source code.
 * Git metadata extraction: Automatically extracts Git commit hash, tags, branches, and version information from local Git repository.
 * Supported pack/publish CLI interface: When publishing using this feature, the package is generated after applying the above processing to `package.json`.
@@ -234,7 +232,7 @@ The plugin automatically extracts Git metadata from your local Git repository an
 
 #### Available Git Metadata
 
-- `git.version`: Automatically calculated version based on Git tags and commit depth
+- `git.version`: Automatically calculated version based on Git tags and commit depth (see below)
 - `git.commit.hash`: Full commit hash of the current commit
 - `git.commit.short`: Short commit hash (first 7 characters)
 - `git.commit.date`: Commit date in ISO format
@@ -242,7 +240,9 @@ The plugin automatically extracts Git metadata from your local Git repository an
 - `git.tags`: Array of all tags pointing to the current commit
 - `git.branches`: Array of branches containing the current commit
 
-#### Version Calculation
+By default, the `version` value in `package.json` is automatically overridden by the value of `git.version`. Therefore, you can apply versions based on Git tags even when generating NPM packages (using the CLI).
+
+#### Version calculation
 
 The Git version calculation follows below algorithm:
 
@@ -250,8 +250,6 @@ The Git version calculation follows below algorithm:
 2. Untagged commits: Detects depth from the furthest ancestor tag and increments the last version component
 3. Modified working directory: When uncommitted changes exist, increments the version by one
 4. No tags found: Defaults to `0.0.1` and increments for each commit
-
-Additionally, this calculated version is applied as the default value for the `version` key in `package.json`. Therefore, you can manage version number using Git tags and screw-up without including the `version` key in `package.json`.
 
 Example with Git metadata:
 
@@ -267,7 +265,7 @@ Results in:
 /*!
  * name: my-awesome-library
  * version: 2.1.0
- * git.version: 1.2.4
+ * git.version: 2.1.0
  * git.commit.hash: c94eaf71dcc6522aae593c7daf85bb745112caf0
  * git.commit.short: c94eaf7
  */
@@ -338,8 +336,8 @@ The `screw-up` package includes a command-line interface for packaging and publi
 ### Examples
 
 ```bash
-# Debug package resolution
-screw-up dump --inheritable-fields "version,author"
+# Dump how `package.json` is resolved (JSON)
+screw-up dump
 
 # Pack with custom README and limited inheritance
 screw-up pack --readme ./docs/DIST_README.md --inheritable-fields "version,license"
@@ -390,10 +388,13 @@ screw-up pack --pack-destination ./dist
 
 The pack command:
 
-- Automatically reads `package.json` for metadata and file inclusion rules
-- Respects the `files` field in your `package.json`
+- Automatically reads `package.json` for metadata
 - Supports workspace inheritance (inherits metadata from parent packages)
 - Creates a compressed `.tgz` archive with format: `{name}-{version}.tgz`
+
+The pack command uses `npm pack` internally to generate a temporary package file. It then performs operations such as replacing `package.json` and modifying README on the package file. Because it operates in this way, the handling of the `files` key and other aspects are fully compliant with the specifications assumed by `npm pack`.
+
+However, to successfully pack the files, you must define the `version` key. screw-up itself can automatically determine the version to specify in the `version` key and reflect that value in the final NPM package file. When the `version` key does not exist, an error will occur during the first `npm pack` execution. To avoid this, the "Recommended configuration" section example specifies a DUMMY `version` key.
 
 #### Options
 
@@ -456,14 +457,14 @@ The dump command:
 
 - Shows the final computed `package.json` after all processing (workspace inheritance, Git metadata, etc.)
 - Useful for debugging and understanding how your package metadata will be resolved
-- Outputs clean JSON that can be piped to other tools
+- Outputs clean JSON that can be piped to other tools (ex: `jq`)
 
 #### Options
 
 - `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent
 - `--no-wds`: Disable working directory status check for version increment
 
-### README replacement
+### README replacement feature
 
 The pack command supports README replacement using multiple methods:
 
@@ -485,7 +486,7 @@ screw-up pack --readme ./docs/README_package.md
 
 When both are specified, the `--readme` CLI option takes priority over the `package.json` field.
 
-### PeerDependencies replacement
+### PeerDependencies replacement feature
 
 In workspace environments, it's common to reference sibling packages using "*" in `peerDependencies` to avoid version constraints during development. When packaging, screw-up automatically replaces these wildcards with actual version numbers:
 
@@ -509,7 +510,7 @@ After packaging, the "*" is replaced with the actual version:
 }
 ```
 
-#### Controlling the Feature
+#### Controlling the feature
 
 ```bash
 # Default behavior (uses "^" prefix)
@@ -558,7 +559,7 @@ Below are typical configurations for single projects and monorepos using workspa
 
 ### Single project configuration
 
-For standalone projects, follow these recommendations for optimal screw-up usage:
+For single projects, follow these recommendations for optimal screw-up usage:
 
 ```
 my-project/
@@ -569,7 +570,8 @@ my-project/
 ├── src/
 │   ├── index.ts
 │   └── generated/
-│       └── packageMetadata.ts   # Auto-generated by `outputMetadataFile`
+│       ├── packageMetadata.ts   # Auto-generated by `outputMetadataFile`
+│       └── .gitignore           # Ignored `outputMetadataFile` file
 └── dist/                        # Build output with metadata banners
 ```
 
@@ -591,7 +593,7 @@ my-project/
     "url": "https://github.com/user/my-awesome-library/issues"
   },
   "readme": "README_pack.md",
-  "files": ["dist/**/*", "README_pack.md"],
+  "files": ["dist/**/*"],
   "scripts": {
     "build": "vite build",
     "test": "npm run build && vitest run",
@@ -602,11 +604,11 @@ my-project/
 
 Key Points:
 
-- Remove `version`: Let screw-up manage versioning through Git tags
+- DUMMY `version`: Version specification (`0.0.1` in the above example) is NOT used, and version management is performed through Git tags by screw-up
 - Include metadata fields: `name`, `description`, `author`, `license`, etc.
-- Optional `readme` field: Point to a distribution-specific README file
 - Specify `files`: Control which files are included in the package
-- Add `pack` to `scripts` to enable packaging with screw-up.
+- Optional `readme` field: Point to a distribution-specific README file. The README file specified here does not need to be included in `files`.
+- Add `pack` to `scripts` to enable packaging with screw-up
 
 #### Vite configuration
 
@@ -625,14 +627,13 @@ export default defineConfig({
 });
 ```
 
+Setting `outputMetadataFile` to `true` will generate `packageMetadata.ts`. By default, this file contains Git commit IDs, so it will be updated with each commit. Since this will cause Git to generate differences each time, we recommend excluding it with `.gitignore`.
+
 #### Development setup
 
 ```bash
 # Install as dev dependency
 npm install --save-dev screw-up
-
-# Create distribution README (optional)
-echo "# Distribution Package" > README_pack.md
 ```
 
 ### Workspace configuration (Monorepo)
@@ -683,11 +684,14 @@ my-monorepo/
 }
 ```
 
+Marked as `private` to ignore packing. Since there is no packing, the `version` key is also unnecessary.
+
 #### Sub-project package.json
 
 ```json
 {
   "name": "@company/ui-components",
+  "version": "0.0.1",
   "description": "Reusable UI components library",
   "keywords": ["ui", "components", "react"],
   "peerDependencies": {
@@ -708,7 +712,7 @@ Key Points:
 - Root package: Define shared metadata (`author`, `license`, `repository`, etc.)
 - Sub-projects: Override with project-specific values (`name`, `description`, `keywords`)
 - Sibling references: Use `"*"` in `peerDependencies` for workspace siblings when you need to refer on peer
-- No versions: Remove `version` from all package.json files
+- DUMMY `version`: Version specification (`0.0.1` in the above example) is NOT used, and version management is performed through Git tags by screw-up
 - Shared README: Can be defined at root level and inherited by sub-projects
 
 #### Vite configuration

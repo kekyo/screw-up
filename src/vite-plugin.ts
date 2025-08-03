@@ -108,36 +108,46 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
   let metadata: any;
   let projectRoot: string;
 
+  // Generate and write metadata TypeScript file
+  const generateMetadataSourceFile = async () => {
+    // Resolve package metadata
+    const result = await resolvePackageMetadata(
+      projectRoot, checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit, logger);
+    metadata = result.metadata;
+    // Regenerate banner with updated metadata
+    banner = generateBanner(metadata, outputKeys);
+    if (outputMetadataFile) {
+      const metadataSourceContent = generateMetadataFile(metadata, outputMetadataKeys);
+      const metadataSourcePath = join(projectRoot, outputMetadataFilePath);
+      
+      try {
+        // Ensure directory exists
+        await mkdir(dirname(metadataSourcePath), { recursive: true });
+        // Write metadata source file
+        await writeFile(metadataSourcePath, metadataSourceContent);
+      } catch (error) {
+        logger.warn(`[screw-up]: Failed to write metadata source file: ${metadataSourcePath}: ${error}`);
+      }
+    }
+  };
+
   return {
     name: 'screw-up',
     apply: 'build',
+    // Ensure screw-up runs before other plugins (especially vite-plugin-dts)
+    enforce: 'pre',
     // Configuration resolved phase
     configResolved: async config => {
       // Save project root
       projectRoot = config.root;
-      // Resolve package metadata
-      const result = await resolvePackageMetadata(
-        projectRoot, checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit, logger);
-      metadata = result.metadata;
-      // Generate banner
-      banner = generateBanner(metadata, outputKeys);
+      // Generate metadata TypeScript file early to ensure it's available during TypeScript compilation
+      await generateMetadataSourceFile();
     },
     // Build start phase
     buildStart: async () => {
-      // Generate metadata TypeScript file
-      if (outputMetadataFile) {
-        const metadataSourceContent = generateMetadataFile(metadata, outputMetadataKeys);
-        const metadataSourcePath = join(projectRoot, outputMetadataFilePath);
-        
-        try {
-          // Ensure directory exists
-          await mkdir(dirname(metadataSourcePath), { recursive: true });
-          // Write metadata source file
-          await writeFile(metadataSourcePath, metadataSourceContent);
-        } catch (error) {
-          logger.warn(`[screw-up]: Failed to write metadata source file: ${metadataSourcePath}: ${error}`);
-        }
-      }
+      // Re-resolve package metadata to capture any changes since configResolved
+      // Update metadata TypeScript file with latest data
+      await generateMetadataSourceFile();
     },
     // Generate bundle phase
     generateBundle: (_options, bundle) => {
