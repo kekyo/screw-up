@@ -257,7 +257,9 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
   const npmOptions: string[] = [];
   for (let i = 0; i < args.argv.length; i++) {
     const arg = args.argv[i];
-    if (arg === '--help' || arg === '--verbose' ||  arg === '-h' ||arg === '--no-wds' ||
+    if (arg === 'publish') {
+      // Skip the command itself
+    } else if (arg === '--help' || arg === '--verbose' ||  arg === '-h' ||arg === '--no-wds' ||
         arg === '--no-git-version-override' || arg === '--no-replace-peer-deps') {
     } else if (arg === '--readme' || arg === '--inheritable-fields' || arg === '--peer-deps-prefix') {
       i++;
