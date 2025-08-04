@@ -3,8 +3,8 @@ import { mkdtemp, rm, mkdir } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { simpleGit } from 'simple-git';
-import { getGitMetadata } from '../src/analyzer.js';
-import { createConsoleLogger } from '../src/internal.js';
+import { getFetchGitMetadata } from '../src/analyzer';
+import { createConsoleLogger } from '../src/internal';
 
 // Test utilities for creating temporary git repositories
 class GitTestRepository {
@@ -109,7 +109,8 @@ describe('git-metadata', () => {
 
       // Test: Extract git metadata
       const logger = createConsoleLogger();
-      const metadata = await getGitMetadata(testRepo.path, true, logger);
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
 
       // Verify: Should find the tag immediately
       expect(metadata.git.version).toBe('1.2.3');
@@ -129,7 +130,8 @@ describe('git-metadata', () => {
 
       // Test: Extract git metadata
       const logger = createConsoleLogger();
-      const metadata = await getGitMetadata(testRepo.path, true, logger);
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
 
       // Verify: Should find parent tag and increment it
       expect(metadata.git.version).toBe('1.0.1'); // Should increment build version
@@ -153,7 +155,8 @@ describe('git-metadata', () => {
 
       // Test: Extract git metadata
       const logger = createConsoleLogger();
-      const metadata = await getGitMetadata(testRepo.path, true, logger);
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
 
       // Verify: Should find grandparent tag and increment it appropriately
       expect(metadata.git.version).toBe('2.1.2'); // Should increment build version for each commit
@@ -172,7 +175,8 @@ describe('git-metadata', () => {
 
       // Test: Extract git metadata
       const logger = createConsoleLogger();
-      const metadata = await getGitMetadata(testRepo.path, true, logger);
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
 
       // Verify: Should pick the highest version
       expect(metadata.git.version).toBe('1.2.0');
@@ -192,7 +196,8 @@ describe('git-metadata', () => {
 
       // Test: Extract git metadata
       const logger = createConsoleLogger();
-      const metadata = await getGitMetadata(testRepo.path, true, logger);
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
 
       // Verify: Should only consider version tags
       expect(metadata.git.version).toBe('1.5.2');
@@ -217,7 +222,8 @@ describe('git-metadata', () => {
 
       // Test: Extract git metadata
       const logger = createConsoleLogger();
-      const metadata = await getGitMetadata(testRepo.path, true, logger);
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
 
       // Verify: Should pick the higher version from either branch
       expect(metadata.git.version).toBe('1.0.1'); // Should increment from v1.0.0 (higher than v0.9.0)
@@ -233,7 +239,8 @@ describe('git-metadata', () => {
 
       // Test: Extract git metadata
       const logger = createConsoleLogger();
-      const metadata = await getGitMetadata(testRepo.path, true, logger);
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
 
       // Verify: Should use default version and increment for second commit
       expect(metadata.git.version).toBe('0.0.2');
@@ -253,7 +260,8 @@ describe('git-metadata', () => {
 
       // Test: Extract git metadata
       const logger = createConsoleLogger();
-      const metadata = await getGitMetadata(testRepo.path, true, logger);
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
 
       // Verify: Should increment revision (last component)
       expect(metadata.git.version).toBe('1.2.3.5');
@@ -282,7 +290,8 @@ describe('git-metadata', () => {
           await tempRepo.commit('Add file');
 
           const logger = createConsoleLogger();
-          const metadata = await getGitMetadata(tempRepo.path, true, logger);
+          const getGitMetadata = getFetchGitMetadata(tempRepo.path, true, logger);
+          const metadata = await getGitMetadata();
           expect(metadata.git.version).toBe(testCase.expected);
         } finally {
           await cleanupTestRepository(tempRepo);
@@ -319,7 +328,8 @@ describe('git-metadata', () => {
 
       // Test: Extract git metadata
       const logger = createConsoleLogger();
-      const metadata = await getGitMetadata(testRepo.path, true, logger);
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
 
       // Verify: Should pick the higher version from feature branch and increment
       // One increment for feature commit after tag, one for merge commit
@@ -345,7 +355,8 @@ describe('git-metadata', () => {
 
       // Test: Extract git metadata
       const logger = createConsoleLogger();
-      const metadata = await getGitMetadata(testRepo.path, true, logger);
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
 
       // Verify: Should use default version and increment appropriately
       // Increments: initial->main commit->feature commit->merge commit = 4 total commits from default
@@ -393,7 +404,8 @@ describe('git-metadata', () => {
 
       // Test: Extract git metadata
       const logger = createConsoleLogger();
-      const metadata = await getGitMetadata(testRepo.path, true, logger);
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
 
       // Verify: Should find highest version (v2.0.0) and increment appropriately
       // feature commit after v2.0.0 + merge to dev + merge to main = 3 increments
@@ -422,7 +434,8 @@ describe('git-metadata', () => {
 
       // Test: Extract git metadata
       const logger = createConsoleLogger();
-      const metadata = await getGitMetadata(testRepo.path, true, logger);
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
 
       // Verify: Should pick higher version (main v1.5.0) and increment
       expect(metadata.git.version).toBe('1.5.1');
@@ -446,7 +459,8 @@ describe('git-metadata', () => {
 
       // Test: Extract git metadata
       const logger = createConsoleLogger();
-      const metadata = await getGitMetadata(testRepo.path, true, logger);
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
 
       // Verify: Should pick higher version and increment last component
       expect(metadata.git.version).toBe('1.2.3.5');
@@ -483,7 +497,8 @@ describe('git-metadata', () => {
 
       // Test: Extract git metadata
       const logger = createConsoleLogger();
-      const metadata = await getGitMetadata(testRepo.path, true, logger);
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
 
       // Verify: Should pick highest version (v2.0.0) and increment
       // feature commit after v2.0.0 + merge commit = 2 increments
@@ -513,7 +528,8 @@ describe('git-metadata', () => {
 
       // Test: Extract git metadata
       const logger = createConsoleLogger();
-      const metadata = await getGitMetadata(testRepo.path, true, logger);
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
 
       // Verify: Should use main branch version and increment
       // feature commit 1 + feature commit 2 + merge commit = 3 increments from v1.1.0
@@ -562,7 +578,8 @@ describe('git-metadata', () => {
 
       // Test: Extract git metadata
       const logger = createConsoleLogger();
-      const metadata = await getGitMetadata(testRepo.path, true, logger);
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
 
       // Verify: Should find highest version and increment
       // merge feature to dev2 + merge dev2 to dev1 + merge dev1 to main = 3 merges from v2.0.0
@@ -579,7 +596,8 @@ describe('git-metadata', () => {
 
       // Test: Extract git metadata
       const logger = createConsoleLogger();
-      const metadata = await getGitMetadata(testRepo.path, true, logger);
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
 
       // Verify: All expected metadata fields are present
       expect(metadata.git.version).toBe('1.0.0');
@@ -601,7 +619,8 @@ describe('git-metadata', () => {
 
       // Test: Extract git metadata
       const logger = createConsoleLogger();
-      const metadata = await getGitMetadata(testRepo.path, checkWorkingDirectoryStatus, logger);
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, checkWorkingDirectoryStatus, logger);
+      const metadata = await getGitMetadata();
 
       // Verify: Should detect modifications
       expect(metadata.git.version).toBe(checkWorkingDirectoryStatus ? '0.0.2' : '0.0.1');
@@ -625,7 +644,8 @@ describe('git-metadata', () => {
       
       // Test: Extract git metadata with working directory check
       const logger = createConsoleLogger();
-      const metadata = await getGitMetadata(testRepo.path, true, logger);
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
 
       // Verify: Should not increment version because all files are ignored
       expect(metadata.git.version).toBe('1.0.1'); // Only increment for .gitignore commit
@@ -647,7 +667,8 @@ describe('git-metadata', () => {
       
       // Test: Extract git metadata with working directory check
       const logger = createConsoleLogger();
-      const metadata = await getGitMetadata(testRepo.path, true, logger);
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
 
       // Verify: Should not increment version because all files are ignored
       expect(metadata.git.version).toBe('1.0.1'); // .gitignore commit
@@ -669,7 +690,8 @@ describe('git-metadata', () => {
       
       // Test: Extract git metadata with working directory check
       const logger = createConsoleLogger();
-      const metadata = await getGitMetadata(testRepo.path, true, logger);
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
 
       // Verify: Should increment version because important.txt is not ignored
       expect(metadata.git.version).toBe('1.0.2'); // .gitignore commit + untracked file
@@ -692,7 +714,8 @@ describe('git-metadata', () => {
       
       // Test: Extract git metadata with working directory check
       const logger = createConsoleLogger();
-      const metadata = await getGitMetadata(testRepo.path, true, logger);
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
 
       // Verify: Should increment version because code.js is not ignored
       expect(metadata.git.version).toBe('1.0.2'); // src/.gitignore commit + untracked file
@@ -747,7 +770,8 @@ Thumbs.db
       
       // Test: Extract git metadata with working directory check
       const logger = createConsoleLogger();
-      const metadata = await getGitMetadata(testRepo.path, true, logger);
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
 
       // Verify: Should increment version because important.log and regular.js are not ignored
       expect(metadata.git.version).toBe('1.0.2'); // .gitignore commit + untracked files
@@ -782,7 +806,8 @@ Thumbs.db
       
       // Test: Extract git metadata with working directory check
       const logger = createConsoleLogger();
-      const metadata = await getGitMetadata(testRepo.path, true, logger);
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
 
       // Verify: Should increment version for non-ignored files
       // config.txt, src/important.tmp, src/code.js, src/utils/helper.js are not ignored
@@ -804,7 +829,8 @@ Thumbs.db
       
       // Test: Extract git metadata without working directory check
       const logger = createConsoleLogger();
-      const metadata = await getGitMetadata(testRepo.path, false, logger);
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, false, logger);
+      const metadata = await getGitMetadata();
 
       // Verify: Should not check working directory status at all
       expect(metadata.git.version).toBe('1.0.1'); // Only .gitignore commit, no working dir check

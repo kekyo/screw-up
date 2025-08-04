@@ -5,8 +5,8 @@ import { tmpdir } from 'os';
 import { build } from 'vite';
 import dayjs from 'dayjs';
 import { simpleGit } from 'simple-git';
-import { findWorkspaceRoot, mergePackageMetadata, resolvePackageMetadata, createConsoleLogger } from '../src/internal.js';
-import { screwUp, generateBanner } from '../src/vite-plugin.js';
+import { findWorkspaceRoot, mergePackageMetadata, resolvePackageMetadata, createConsoleLogger } from '../src/internal';
+import { screwUp, generateBanner } from '../src/vite-plugin';
 
 describe('screwUp plugin integration tests', () => {
   const tempBaseDir = join(tmpdir(), 'screw-up', 'integration-test', dayjs().format('YYYYMMDD_HHmmssSSS'));
@@ -612,8 +612,10 @@ describe('workspace functionality tests', () => {
 
     const sourceMaps = new Map<string, string>();
     const logger = createConsoleLogger();
+
     const merged = await mergePackageMetadata(
-      true, true, sourceMaps, logger, parentMetadata, childMetadata, tempDir, tempDir, tempDir);
+      () => Promise.resolve({}),
+      true, sourceMaps, parentMetadata, childMetadata, tempDir, tempDir, tempDir);
 
     expect(merged.name).toBe('child'); // Child overrides
     expect(merged.version).toBe('1.0.0'); // Inherited from parent
@@ -632,7 +634,7 @@ describe('workspace functionality tests', () => {
     writeFileSync(join(tempDir, 'package.json'), JSON.stringify(packageJson, null, 2));
 
     const logger = createConsoleLogger();
-    const { metadata } = await resolvePackageMetadata(tempDir, true, true, logger);
+    const { metadata } = await resolvePackageMetadata(tempDir, () => Promise.resolve({}), true, logger);
     expect(metadata.name).toBe('standalone');
     expect(metadata.version).toBe('2.0.0');
     expect(metadata.author).toBe('Standalone Author');
@@ -659,7 +661,7 @@ describe('workspace functionality tests', () => {
     writeFileSync(join(childDir, 'package.json'), JSON.stringify(childPackageJson, null, 2));
 
     const logger = createConsoleLogger();
-    const { metadata } = await resolvePackageMetadata(childDir, true, true, logger);
+    const { metadata } = await resolvePackageMetadata(childDir, () => Promise.resolve({}), true, logger);
     expect(metadata.name).toBe('child-package'); // From child
     expect(metadata.version).toBe('1.0.0'); // Inherited from root
     expect(metadata.author).toBe('Workspace Author'); // Inherited from root

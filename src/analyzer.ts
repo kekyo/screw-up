@@ -515,7 +515,7 @@ const lookupVersionLabelRecursive = async (
  * @param logger - Logger instance
  * @returns The metadata object with git metadata
  */
-export const getGitMetadata = async (
+const getGitMetadata = async (
   repositoryPath: string, checkWorkingDirectoryStatus: boolean, logger: Logger) => {
   const metadata: any = {};
 
@@ -579,3 +579,24 @@ export const getGitMetadata = async (
 
   return metadata;
 };
+
+//////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Get cached Git metadata fetcher function
+ * @param targetDir - Target directory to resolve Git metadata
+ * @param checkWorkingDirectoryStatus - Check working directory status
+ * @param logger - Logger
+ * @returns Git metadata fetcher function
+ */
+export const getFetchGitMetadata = (
+  targetDir: string, checkWorkingDirectoryStatus: boolean, logger: Logger) => {
+  let cachedMetadata: any;
+  return async () => {
+    if (!cachedMetadata) {
+      cachedMetadata = await getGitMetadata(
+        targetDir, checkWorkingDirectoryStatus, logger);
+    }
+    return cachedMetadata;
+  };
+}

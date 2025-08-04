@@ -6,8 +6,8 @@ import { spawn, execSync } from 'child_process';
 import * as tar from 'tar';
 import dayjs from 'dayjs';
 import { cliMain } from '../src/cli.ts';
-import { packAssets } from '../src/cli-internal.js';
-import { createConsoleLogger } from '../src/internal.js';
+import { packAssets } from '../src/cli-internal';
+import { createConsoleLogger } from '../src/internal';
 
 const CLI_PATH = join(__dirname, '../dist/main.js');
 
@@ -1302,7 +1302,7 @@ describe('CLI tests', () => {
       expect(result.code).toBe(0);
       expect(result.info).toContain('TEST_MODE: Would execute: npm publish');
       // Scoped package names should have '/' replaced with '-' in filename  
-      expect(result.info).toContain('@scope/special-package-2.1.0.tgz');
+      expect(result.info).toContain('@scope-special-package-2.1.0.tgz');
       expect(result.info).toContain('Successfully published');
     }, 10000);
 

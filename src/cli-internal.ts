@@ -9,7 +9,8 @@ import { mkdir, mkdtemp, writeFile, copyFile, rm } from 'fs/promises';
 import { createTarPacker, storeReaderToFile, extractTo, createTarExtractor, createEntryItemGenerator } from 'tar-vern';
 import { spawn } from 'child_process';
 import { tmpdir } from 'os';
-import { resolveRawPackageJsonObject, findWorkspaceRoot, collectWorkspaceSiblings, replacePeerDependenciesWildcards, Logger } from './internal.js';
+import { resolveRawPackageJsonObject, findWorkspaceRoot, collectWorkspaceSiblings, replacePeerDependenciesWildcards, Logger } from './internal';
+import { getFetchGitMetadata } from './analyzer';
 
 // We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
 
@@ -70,6 +71,9 @@ const runNpmPack = async (targetDir: string, packDestDir: string): Promise<strin
 
 //////////////////////////////////////////////////////////////////////////////////
 
+/**
+ * Packed result
+ */
 export interface PackedResult {
   readonly packageFileName: string;
   readonly metadata: any;
@@ -107,10 +111,14 @@ export const packAssets = async (
     throw new Error(`README replacement file is not found: ${readmeReplacementCandidatePath}`);
   }
 
+  // Get Git metadata fetcher function
+  const fetchGitMetadata = getFetchGitMetadata(
+    targetDir, checkWorkingDirectoryStatus, logger);
+
   // Resolve package metadata with source tracking
   const result = await resolveRawPackageJsonObject(
     targetDir,
-    checkWorkingDirectoryStatus,
+    fetchGitMetadata,
     alwaysOverrideVersionFromGit,
     inheritableFields,
     logger);
@@ -144,7 +152,7 @@ export const packAssets = async (
     if (workspaceRoot) {
       const siblings = await collectWorkspaceSiblings(
         workspaceRoot,
-        checkWorkingDirectoryStatus,
+        fetchGitMetadata,
         alwaysOverrideVersionFromGit,
         inheritableFields,
         logger
@@ -211,13 +219,13 @@ export const packAssets = async (
 /**
  * Get computed package.json object
  * @param targetDir - Target directory to resolve package metadata
- * @param checkWorkingDirectoryStatus - Check working directory status
+ * @param fetchGitMetadata - Git metadata fetcher
  * @param inheritableFields - Package metadata fields that should be inherited from parent
  * @returns Computed package.json object or undefined if failed
  */
 export const getComputedPackageJsonObject = async (
   targetDir: string,
-  checkWorkingDirectoryStatus: boolean,
+  fetchGitMetadata: () => Promise<any>,
   alwaysOverrideVersionFromGit: boolean,
   inheritableFields: Set<string>,
   logger: Logger) : Promise<any> => {
@@ -229,7 +237,7 @@ export const getComputedPackageJsonObject = async (
   // Resolve package metadata
   const result = await resolveRawPackageJsonObject(
     targetDir,
-    checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit,
+    fetchGitMetadata, alwaysOverrideVersionFromGit,
     inheritableFields,
     logger);
   return result.metadata;

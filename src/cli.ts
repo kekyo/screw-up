@@ -7,8 +7,10 @@ import { join, resolve } from 'path';
 import { existsSync } from 'fs';
 import { mkdtemp, rm, stat } from 'fs/promises';
 import { spawn } from 'child_process';
-import { packAssets, parseArgs, ParsedArgs, getComputedPackageJsonObject } from './cli-internal.js';
-import { Logger } from './internal.js';
+import { tmpdir } from 'os';
+import { packAssets, parseArgs, ParsedArgs, getComputedPackageJsonObject } from './cli-internal';
+import { getFetchGitMetadata } from './analyzer';
+import { Logger } from './internal';
 
 // We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
 
@@ -76,8 +78,14 @@ const dumpCommand = async (args: ParsedArgs, logger: Logger) => {
   const targetDir = resolve(directory ?? process.cwd());
 
   try {
+    // Get Git metadata fetcher function
+    const fetchGitMetadata = getFetchGitMetadata(
+      targetDir, checkWorkingDirectoryStatus, logger);
+
+    // Resolve package metadata
     const computedPackageJson = await getComputedPackageJsonObject(
-      targetDir, checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit, inheritableFields, logger);
+      targetDir, fetchGitMetadata, alwaysOverrideVersionFromGit, inheritableFields, logger);
+
     if (computedPackageJson) {
       logger.info(JSON.stringify(computedPackageJson, null, 2));
     } else {
@@ -249,7 +257,9 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
   const npmOptions: string[] = [];
   for (let i = 0; i < args.argv.length; i++) {
     const arg = args.argv[i];
-    if (arg === '--help' || arg === '--verbose' ||  arg === '-h' ||arg === '--no-wds' ||
+    if (arg === 'publish') {
+      // Skip the command itself
+    } else if (arg === '--help' || arg === '--verbose' ||  arg === '-h' ||arg === '--no-wds' ||
         arg === '--no-git-version-override' || arg === '--no-replace-peer-deps') {
     } else if (arg === '--readme' || arg === '--inheritable-fields' || arg === '--peer-deps-prefix') {
       i++;
@@ -262,7 +272,7 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
     if (!path) {
       // No argument provided - generate tarball from current directory and publish
       const targetDir = process.cwd();
-      const outputDir = await mkdtemp('screw-up-publish-');
+      const outputDir = await mkdtemp(join(tmpdir(), 'screw-up-publish-'));
 
       if (verbose) {
         logger.info(`[screw-up:cli]: publish: Creating archive of ${targetDir}...`);
@@ -279,8 +289,7 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
           if (verbose) {
             logger.info(`[screw-up:cli]: publish: Archive created successfully: ${result.packageFileName}`);
           }
-          const archiveName = `${result.metadata.name}-${result.metadata.version}.tgz`;
-          const archivePath = join(outputDir, archiveName);
+          const archivePath = join(outputDir, result.packageFileName);
           return await runNpmPublish(archivePath, npmOptions, verbose, logger);
         } else {
           logger.error(`[screw-up:cli]: publish: Unable to find any files to pack: ${targetDir}`);
@@ -298,7 +307,7 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
       } else if (pathStat.isDirectory()) {
         // Argument is a directory - generate tarball from directory and publish
         const targetDir = resolve(path);
-        const outputDir = await mkdtemp('screw-up-publish-');
+        const outputDir = await mkdtemp(join(tmpdir(), 'screw-up-publish-'));
 
         if (verbose) {
           logger.info(`[screw-up:cli]: publish: Creating archive of ${targetDir}...`);
@@ -315,8 +324,7 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
             if (verbose) {
               logger.info(`[screw-up:cli]: publish: Archive created successfully: ${result.packageFileName}`);
             }
-            const archiveName = `${result.metadata.name}-${result.metadata.version}.tgz`;
-            const archivePath = join(outputDir, archiveName);
+            const archivePath = join(outputDir, result.packageFileName);
             return await runNpmPublish(archivePath, npmOptions, verbose, logger);
           } else {
             logger.error(`[screw-up:cli]: publish: Unable to find any files to pack: ${targetDir}`);
