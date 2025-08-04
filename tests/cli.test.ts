@@ -1302,7 +1302,7 @@ describe('CLI tests', () => {
       expect(result.code).toBe(0);
       expect(result.info).toContain('TEST_MODE: Would execute: npm publish');
       // Scoped package names should have '/' replaced with '-' in filename  
-      expect(result.info).toContain('@scope/special-package-2.1.0.tgz');
+      expect(result.info).toContain('@scope-special-package-2.1.0.tgz');
       expect(result.info).toContain('Successfully published');
     }, 10000);
 

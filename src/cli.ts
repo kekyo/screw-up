@@ -7,6 +7,7 @@ import { join, resolve } from 'path';
 import { existsSync } from 'fs';
 import { mkdtemp, rm, stat } from 'fs/promises';
 import { spawn } from 'child_process';
+import { tmpdir } from 'os';
 import { packAssets, parseArgs, ParsedArgs, getComputedPackageJsonObject } from './cli-internal';
 import { getFetchGitMetadata } from './analyzer';
 import { Logger } from './internal';
@@ -269,7 +270,7 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
     if (!path) {
       // No argument provided - generate tarball from current directory and publish
       const targetDir = process.cwd();
-      const outputDir = await mkdtemp('screw-up-publish-');
+      const outputDir = await mkdtemp(join(tmpdir(), 'screw-up-publish-'));
 
       if (verbose) {
         logger.info(`[screw-up:cli]: publish: Creating archive of ${targetDir}...`);
@@ -286,8 +287,7 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
           if (verbose) {
             logger.info(`[screw-up:cli]: publish: Archive created successfully: ${result.packageFileName}`);
           }
-          const archiveName = `${result.metadata.name}-${result.metadata.version}.tgz`;
-          const archivePath = join(outputDir, archiveName);
+          const archivePath = join(outputDir, result.packageFileName);
           return await runNpmPublish(archivePath, npmOptions, verbose, logger);
         } else {
           logger.error(`[screw-up:cli]: publish: Unable to find any files to pack: ${targetDir}`);
@@ -305,7 +305,7 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
       } else if (pathStat.isDirectory()) {
         // Argument is a directory - generate tarball from directory and publish
         const targetDir = resolve(path);
-        const outputDir = await mkdtemp('screw-up-publish-');
+        const outputDir = await mkdtemp(join(tmpdir(), 'screw-up-publish-'));
 
         if (verbose) {
           logger.info(`[screw-up:cli]: publish: Creating archive of ${targetDir}...`);
@@ -322,8 +322,7 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
             if (verbose) {
               logger.info(`[screw-up:cli]: publish: Archive created successfully: ${result.packageFileName}`);
             }
-            const archiveName = `${result.metadata.name}-${result.metadata.version}.tgz`;
-            const archivePath = join(outputDir, archiveName);
+            const archivePath = join(outputDir, result.packageFileName);
             return await runNpmPublish(archivePath, npmOptions, verbose, logger);
           } else {
             logger.error(`[screw-up:cli]: publish: Unable to find any files to pack: ${targetDir}`);
