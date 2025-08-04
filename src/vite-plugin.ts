@@ -6,8 +6,9 @@
 import type { Plugin } from 'vite';
 import { readFile, writeFile, readdir, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
-import { resolvePackageMetadata, createConsoleLogger } from './internal.js';
-import { ScrewUpOptions, PackageMetadata } from './types.js';
+import { resolvePackageMetadata, createConsoleLogger } from './internal';
+import { ScrewUpOptions, PackageMetadata } from './types';
+import { getFetchGitMetadata } from './analyzer';
 
 /**
  * Generate banner string from package.json metadata
@@ -92,7 +93,6 @@ const generateMetadataFile = (metadata: PackageMetadata, outputKeys: string[]): 
  * @returns Vite plugin
  */
 export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
-  const logger = createConsoleLogger();
   const {
     outputKeys = ['name', 'version', 'description', 'author', 'license', 'repository.url', 'git.commit.hash'],
     assetFilters = ['\\.d\\.ts$'],
@@ -104,22 +104,25 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
     insertMetadataBanner = true} = options;
 
   const assetFiltersRegex = assetFilters.map(filter => new RegExp(filter));
+
+  let logger = createConsoleLogger();
   let banner: string;
   let metadata: any;
   let projectRoot: string;
+  let fetchGitMetadata = () => Promise.resolve<any>({});
 
   // Generate and write metadata TypeScript file
   const generateMetadataSourceFile = async () => {
     // Resolve package metadata
     const result = await resolvePackageMetadata(
-      projectRoot, checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit, logger);
+      projectRoot, fetchGitMetadata, alwaysOverrideVersionFromGit, logger);
     metadata = result.metadata;
     // Regenerate banner with updated metadata
     banner = generateBanner(metadata, outputKeys);
     if (outputMetadataFile) {
       const metadataSourceContent = generateMetadataFile(metadata, outputMetadataKeys);
       const metadataSourcePath = join(projectRoot, outputMetadataFilePath);
-      
+
       try {
         // Ensure directory exists
         await mkdir(dirname(metadataSourcePath), { recursive: true });
@@ -134,12 +137,23 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
   return {
     name: 'screw-up',
     apply: 'build',
-    // Ensure screw-up runs before other plugins (especially vite-plugin-dts)
+    // Ensure screw-up runs before other plugins
+    // (especially vite-plugin-dts, avoid packageMetadata.ts is not found)
     enforce: 'pre',
     // Configuration resolved phase
     configResolved: async config => {
       // Save project root
       projectRoot = config.root;
+      const _logger = {
+        debug: config?.logger?.info ?? config?.customLogger?.info ?? logger.debug,
+        info: config?.logger?.info ?? config?.customLogger?.info ?? logger.info,
+        warn: config?.logger?.warn ?? config?.customLogger?.warn ?? logger.warn,
+        error: config?.logger?.error ?? config?.customLogger?.error ?? logger.error,
+      };
+      logger = _logger;
+      // Get Git metadata fetcher function
+      fetchGitMetadata = getFetchGitMetadata(
+        projectRoot, checkWorkingDirectoryStatus, logger);
       // Generate metadata TypeScript file early to ensure it's available during TypeScript compilation
       await generateMetadataSourceFile();
     },

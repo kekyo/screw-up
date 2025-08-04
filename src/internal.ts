@@ -8,8 +8,7 @@ import { readFile } from 'fs/promises';
 import { dirname, join } from 'path';
 import { glob } from 'glob';
 import JSON5 from 'json5';
-import { getGitMetadata } from './analyzer.js';
-import { PackageMetadata } from './types.js';
+import { PackageMetadata } from './types';
 
 // We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
 
@@ -135,7 +134,7 @@ export const findWorkspaceRoot = async (startPath: string, logger: Logger): Prom
 /**
  * Collect workspace sibling projects
  * @param workspaceRoot - Workspace root directory
- * @param checkWorkingDirectoryStatus - Check working directory status
+ * @param fetchGitMetadata - Git metadata fetcher
  * @param alwaysOverrideVersionFromGit - Always override version from Git
  * @param inheritableFields - Package metadata fields that should be inherited from parent
  * @param logger - Logger instance
@@ -143,7 +142,7 @@ export const findWorkspaceRoot = async (startPath: string, logger: Logger): Prom
  */
 export const collectWorkspaceSiblings = async (
   workspaceRoot: string,
-  checkWorkingDirectoryStatus: boolean,
+  fetchGitMetadata: () => Promise<any>,
   alwaysOverrideVersionFromGit: boolean,
   inheritableFields: Set<string>,
   logger: Logger
@@ -169,7 +168,7 @@ export const collectWorkspaceSiblings = async (
       });
       matches.forEach(match => workspaceDirs.add(match));
     }
-    
+
     // Read package.json from each workspace directory
     for (const workspaceDir of workspaceDirs) {
       const packageJsonPath = join(workspaceRoot, workspaceDir, 'package.json');
@@ -180,7 +179,7 @@ export const collectWorkspaceSiblings = async (
           // Use resolveRawPackageJsonObject to get the resolved version with Git tag consideration
           const resolvedPackage = await resolveRawPackageJsonObject(
             packagePath,
-            checkWorkingDirectoryStatus,
+            fetchGitMetadata,
             alwaysOverrideVersionFromGit,
             inheritableFields,
             logger
@@ -241,28 +240,26 @@ export const replacePeerDependenciesWildcards = (
 
 /**
  * Merge package metadata with inheritance (child overrides parent)
- * @param checkWorkingDirectoryStatus - Check working directory status to increase version
+ * @param fetchGitMetadata - Git metadata fetcher
  * @param alwaysOverrideVersionFromGit - Always override version from Git
  * @param sourceMap - Map to track field sources
  * @param parentMetadata - Parent package metadata
  * @param childMetadata - Child package metadata
  * @param parentSourceDir - Parent package.json directory (for source tracking)
  * @param childSourceDir - Child package.json directory (for source tracking)
- * @param repositoryPath - Path to Git repository root
  * @returns Merged package metadata
  */
 export const mergePackageMetadata = async (
-  checkWorkingDirectoryStatus: boolean,
+  fetchGitMetadata: () => Promise<any>,
   alwaysOverrideVersionFromGit: boolean,
   sourceMap: Map<string, string>,
-  logger: Logger,
   parentMetadata: PackageMetadata, 
   childMetadata: PackageMetadata,
   parentSourceDir: string,
   childSourceDir: string,
-  repositoryPath: string): Promise<PackageMetadata> => {
-  // Start with default git metadata if repositoryPath is provided
-  const metadata = await getGitMetadata(repositoryPath, checkWorkingDirectoryStatus, logger);
+  _repositoryPath: string): Promise<PackageMetadata> => {
+  // Fetch git metadata
+  const metadata = await fetchGitMetadata();
 
   const merged: PackageMetadata = { };
   flattenObject(metadata, '', merged);
@@ -296,7 +293,7 @@ export const mergePackageMetadata = async (
 /**
  * Merge raw package.json objects with inheritance (child overrides parent)
  * Only inherits package metadata fields, not project-specific configurations
- * @param checkWorkingDirectoryStatus - Check working directory status to increase version
+ * @param fetchGitMetadata - Git metadata fetcher
  * @param alwaysOverrideVersionFromGit - Always override version from Git
  * @param inheritableFields - Package metadata fields that should be inherited from parent
  * @param sourceMap - Map to track field sources
@@ -308,11 +305,10 @@ export const mergePackageMetadata = async (
  * @returns Merged package object with only metadata fields
  */
 const mergeRawPackageJson = async (
-  checkWorkingDirectoryStatus: boolean,
+  fetchGitMetadata: () => Promise<any>,
   alwaysOverrideVersionFromGit: boolean,
   inheritableFields: Set<string>,
   sourceMap: Map<string, string>,
-  logger: Logger,
   parentMetadata: any,
   childMetadata: any,
   parentSourceDir: string,
@@ -320,8 +316,8 @@ const mergeRawPackageJson = async (
   repositoryPath: string
 ): Promise<any> => {
 
-  // Start with default git metadata if repositoryPath is provided
-  const gitMetadata = await getGitMetadata(repositoryPath, checkWorkingDirectoryStatus, logger) as any;
+  // Fetch git metadata
+  const gitMetadata = await fetchGitMetadata();
   const merged = { ...gitMetadata };
 
   // Start with parent metadata
@@ -430,14 +426,14 @@ const readPackageMetadata = async (logger: Logger, packagePath: string): Promise
 /**
  * Resolve package metadata for current project with workspace inheritance
  * @param projectRoot - Current project root
- * @param checkWorkingDirectoryStatus - Check working directory status to increase version
+ * @param fetchGitMetadata - Git metadata fetcher
  * @param alwaysOverrideVersionFromGit - Always override version from Git
  * @param logger - Logger instance
  * @returns Promise resolving to resolved package metadata
  */
 export const resolvePackageMetadata = async (
   projectRoot: string,
-  checkWorkingDirectoryStatus: boolean,
+  fetchGitMetadata: () => Promise<any>,
   alwaysOverrideVersionFromGit: boolean,
   logger: Logger): Promise<PackageResolutionResult<PackageMetadata>> => {
   const sourceMap = new Map<string, string>();
@@ -445,7 +441,7 @@ export const resolvePackageMetadata = async (
     projectRoot,
     logger,
     readPackageMetadata.bind(undefined, logger),
-    mergePackageMetadata.bind(undefined, checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit, sourceMap, logger));
+    mergePackageMetadata.bind(undefined, fetchGitMetadata, alwaysOverrideVersionFromGit, sourceMap));
 
   return {
     metadata,
@@ -472,7 +468,7 @@ const readRawPackageJson = async (logger: Logger, packagePath: string): Promise<
 /**
  * Resolve raw package.json for current project with workspace inheritance
  * @param projectRoot - Current project root
- * @param checkWorkingDirectoryStatus - Check working directory status
+ * @param fetchGitMetadata - Git metadata fetcher
  * @param alwaysOverrideVersionFromGit - Always override version from Git
  * @param inheritableFields - Package metadata fields that should be inherited from parent
  * @param logger - Logger instance
@@ -480,7 +476,7 @@ const readRawPackageJson = async (logger: Logger, packagePath: string): Promise<
  */
 export const resolveRawPackageJsonObject = async (
   projectRoot: string,
-  checkWorkingDirectoryStatus: boolean,
+  fetchGitMetadata: () => Promise<any>,
   alwaysOverrideVersionFromGit: boolean,
   inheritableFields: Set<string>,
   logger: Logger): Promise<PackageResolutionResult<any>> => {
@@ -489,7 +485,7 @@ export const resolveRawPackageJsonObject = async (
     projectRoot,
     logger,
     readRawPackageJson.bind(undefined, logger),
-    mergeRawPackageJson.bind(undefined, checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit, inheritableFields, sourceMap, logger));
+    mergeRawPackageJson.bind(undefined, fetchGitMetadata, alwaysOverrideVersionFromGit, inheritableFields, sourceMap));
 
   return {
     metadata: packageJson,

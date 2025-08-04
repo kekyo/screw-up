@@ -7,8 +7,9 @@ import { join, resolve } from 'path';
 import { existsSync } from 'fs';
 import { mkdtemp, rm, stat } from 'fs/promises';
 import { spawn } from 'child_process';
-import { packAssets, parseArgs, ParsedArgs, getComputedPackageJsonObject } from './cli-internal.js';
-import { Logger } from './internal.js';
+import { packAssets, parseArgs, ParsedArgs, getComputedPackageJsonObject } from './cli-internal';
+import { getFetchGitMetadata } from './analyzer';
+import { Logger } from './internal';
 
 // We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
 
@@ -76,8 +77,14 @@ const dumpCommand = async (args: ParsedArgs, logger: Logger) => {
   const targetDir = resolve(directory ?? process.cwd());
 
   try {
+    // Get Git metadata fetcher function
+    const fetchGitMetadata = getFetchGitMetadata(
+      targetDir, checkWorkingDirectoryStatus, logger);
+
+    // Resolve package metadata
     const computedPackageJson = await getComputedPackageJsonObject(
-      targetDir, checkWorkingDirectoryStatus, alwaysOverrideVersionFromGit, inheritableFields, logger);
+      targetDir, fetchGitMetadata, alwaysOverrideVersionFromGit, inheritableFields, logger);
+
     if (computedPackageJson) {
       logger.info(JSON.stringify(computedPackageJson, null, 2));
     } else {

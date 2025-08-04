@@ -6,8 +6,8 @@ import { spawn, execSync } from 'child_process';
 import * as tar from 'tar';
 import dayjs from 'dayjs';
 import { cliMain } from '../src/cli.ts';
-import { packAssets } from '../src/cli-internal.js';
-import { createConsoleLogger } from '../src/internal.js';
+import { packAssets } from '../src/cli-internal';
+import { createConsoleLogger } from '../src/internal';
 
 const CLI_PATH = join(__dirname, '../dist/main.js');
 

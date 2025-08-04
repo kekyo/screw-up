@@ -5,8 +5,8 @@
 // Under MIT.
 // https://github.com/kekyo/screw-up/
 
-import { cliMain } from './cli.js';
-import { createConsoleLogger } from './internal.js';
+import { cliMain } from './cli';
+import { createConsoleLogger } from './internal';
 
 // We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
 
