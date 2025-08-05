@@ -1227,6 +1227,8 @@ describe('git metadata integration tests', () => {
     await git.init();
     await git.addConfig('user.name', 'Test User');
     await git.addConfig('user.email', 'test@example.com');
+    // Set default branch to 'main' for consistent testing
+    await git.checkoutLocalBranch('main');
 
     // Create package.json without version
     const packageJson = {
@@ -1287,6 +1289,8 @@ describe('git metadata integration tests', () => {
     await git.init();
     await git.addConfig('user.name', 'Test User');
     await git.addConfig('user.email', 'test@example.com');
+    // Set default branch to 'main' for consistent testing
+    await git.checkoutLocalBranch('main');
 
     // Create package.json WITHOUT version field
     const packageJson = {
@@ -1340,6 +1344,8 @@ describe('git metadata integration tests', () => {
     await git.init();
     await git.addConfig('user.name', 'Test User');  
     await git.addConfig('user.email', 'test@example.com');
+    // Set default branch to 'main' for consistent testing
+    await git.checkoutLocalBranch('main');
 
     // Create package.json
     const packageJson = {
@@ -1398,6 +1404,8 @@ describe('git metadata integration tests', () => {
     await git.init();
     await git.addConfig('user.name', 'Test User');
     await git.addConfig('user.email', 'test@example.com');
+    // Set default branch to 'main' for consistent testing
+    await git.checkoutLocalBranch('main');
 
     // Create package.json
     const packageJson = {
@@ -1460,6 +1468,8 @@ describe('git metadata integration tests', () => {
     await git.init();
     await git.addConfig('user.name', 'Test User');
     await git.addConfig('user.email', 'test@example.com');
+    // Set default branch to 'main' for consistent testing
+    await git.checkoutLocalBranch('main');
 
     // Create package.json
     const packageJson = {
@@ -1520,6 +1530,8 @@ describe('git metadata integration tests', () => {
     await git.init();
     await git.addConfig('user.name', 'Test User');
     await git.addConfig('user.email', 'test@example.com');
+    // Set default branch to 'main' for consistent testing
+    await git.checkoutLocalBranch('main');
 
     // Create package.json
     const packageJson = {

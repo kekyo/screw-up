@@ -5,6 +5,7 @@ import dts from 'vite-plugin-dts';
 import { screwUp } from './src/vite-plugin';   // Self-hosted
 
 export default defineConfig({
+  logLevel: "info",
   plugins: [
     dts({
       insertTypesEntry: true

@@ -20,6 +20,8 @@ class GitTestRepository {
     await this.git.init();
     await this.git.addConfig('user.name', 'Test User');
     await this.git.addConfig('user.email', 'test@example.com');
+    // Set default branch to 'main' for consistent testing
+    await this.git.checkoutLocalBranch('main');
   };
 
   readonly createFile = async (filename: string, content: string): Promise<void> => {
