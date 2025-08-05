@@ -4,7 +4,7 @@
 // https://github.com/kekyo/screw-up/
 
 import * as git from 'isomorphic-git';
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import dayjs from 'dayjs';
 import { GitMetadata } from './types.js';
 import { Logger } from './internal.js';
@@ -193,20 +193,6 @@ const formatVersion = (version: Version): string => {
 };
 
 /////////////////////////////////////////////////////////////////////////////////
-
-/**
- * Check if a directory is a Git repository
- * @param repositoryPath - Local Git repository directory
- * @returns True if the directory is a Git repository, false otherwise
- */
-const isGitRepository = async (repositoryPath: string): Promise<boolean> => {
-  try {
-    await git.statusMatrix({ fs, dir: repositoryPath });
-    return true;
-  } catch {
-    return false;
-  }
-};
 
 /**
  * Get a commit by hash
