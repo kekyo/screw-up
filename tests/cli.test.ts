@@ -9,8 +9,6 @@ import { cliMain } from '../src/cli.ts';
 import { packAssets } from '../src/cli-internal';
 import { createConsoleLogger } from '../src/internal';
 
-const CLI_PATH = join(__dirname, '../dist/main.js');
-
 // Default inheritable fields (copied from main.ts)
 const defaultInheritableFields = new Set([
   'version',
