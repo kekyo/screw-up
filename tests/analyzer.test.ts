@@ -43,6 +43,14 @@ class GitTestRepository {
     }
   };
 
+  readonly createAnnotatedTag = async (tagName: string, message: string, commitHash?: string): Promise<void> => {
+    if (commitHash) {
+      await this.git.tag(['-a', tagName, '-m', message, commitHash]);
+    } else {
+      await this.git.tag(['-a', tagName, '-m', message]);
+    }
+  };
+
   readonly createBranch = async (branchName: string, startPoint?: string): Promise<void> => {
     if (startPoint) {
       await this.git.checkoutBranch(branchName, startPoint);
@@ -120,6 +128,23 @@ describe('git-metadata', () => {
       expect(metadata.git.commit.hash).toBe(commitHash);
     });
 
+    it('should find annotated tag immediately on current commit', async () => {
+      // Setup: Create a commit with an annotated tag
+      await testRepo.createFile('README.md', '# Test Project');
+      const commitHash = await testRepo.commit('Initial commit');
+      await testRepo.createAnnotatedTag('v1.2.3', 'Release version 1.2.3');
+
+      // Test: Extract git metadata
+      const logger = createConsoleLogger();
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
+
+      // Verify: Should find the annotated tag immediately
+      expect(metadata.git.version).toBe('1.2.3');
+      expect(metadata.git.tags).toEqual(['v1.2.3']);
+      expect(metadata.git.commit.hash).toBe(commitHash);
+    });
+
     it('should find tag in parent commit (depth 1)', async () => {
       // Setup: Create initial commit with tag
       await testRepo.createFile('README.md', '# Test Project');
@@ -138,6 +163,27 @@ describe('git-metadata', () => {
       // Verify: Should find parent tag and increment it
       expect(metadata.git.version).toBe('1.0.1'); // Should increment build version
       expect(metadata.git.tags).toEqual([]); // No tag on current commit
+      expect(metadata.git.commit.hash).toBe(currentCommit);
+    });
+
+    it('should find annotated tag in parent commit', async () => {
+      // Setup: Create initial commit with annotated tag
+      await testRepo.createFile('README.md', '# Test Project');
+      const taggedCommit = await testRepo.commit('Initial commit');
+      await testRepo.createAnnotatedTag('v1.0.0', 'Initial release');
+
+      // Create another commit without tag
+      await testRepo.createFile('file.txt', 'content');
+      const currentCommit = await testRepo.commit('Add file');
+
+      // Test: Extract git metadata
+      const logger = createConsoleLogger();
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
+
+      // Verify: Should find parent annotated tag and increment it
+      expect(metadata.git.version).toBe('1.0.1');
+      expect(metadata.git.tags).toEqual([]);
       expect(metadata.git.commit.hash).toBe(currentCommit);
     });
 
@@ -183,6 +229,26 @@ describe('git-metadata', () => {
       // Verify: Should pick the highest version
       expect(metadata.git.version).toBe('1.2.0');
       expect(metadata.git.tags).toEqual(['v1.0.0', 'v1.1.5', 'v1.2.0']);
+    });
+
+    it('should handle mixed annotated and lightweight tags on same commit', async () => {
+      // Setup: Create commit with both tag types
+      await testRepo.createFile('README.md', '# Test Project');
+      const commitHash = await testRepo.commit('Initial commit');
+      
+      // Add both lightweight and annotated tags
+      await testRepo.createTag('v1.0.0');  // lightweight
+      await testRepo.createAnnotatedTag('v1.2.0', 'Annotated release');  // annotated
+      await testRepo.createTag('v1.1.0');  // lightweight
+
+      // Test: Extract git metadata
+      const logger = createConsoleLogger();
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
+
+      // Verify: Should pick the highest version regardless of tag type
+      expect(metadata.git.version).toBe('1.2.0');
+      expect(metadata.git.tags).toEqual(['v1.0.0', 'v1.1.0', 'v1.2.0']);
     });
 
     it('should ignore non-version tags', async () => {
