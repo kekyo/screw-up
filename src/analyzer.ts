@@ -252,7 +252,17 @@ const getRelatedTags = async (repositoryPath: string, commitHash: string): Promi
     for (const tagName of tags) {
       try {
         const tagOid = await git.resolveRef({ fs, dir: repositoryPath, ref: `refs/tags/${tagName}` });
-        if (tagOid === commitHash) {
+        // For annotated tags, get the actual commit ID
+        let targetCommitOid = tagOid;
+        try {
+          const tagObject = await git.readTag({ fs, dir: repositoryPath, oid: tagOid });
+          if (tagObject && tagObject.tag.object) {
+            targetCommitOid = tagObject.tag.object;
+          }
+        } catch {
+          // For lightweight tags, use as-is
+        }
+        if (targetCommitOid === commitHash) {
           const version = parseVersion(tagName);
           if (version && isValidVersion(version)) {
             tagInfos.push({
@@ -294,7 +304,17 @@ const getRelatedTagsForVersioning = async (repositoryPath: string, commitHash: s
     for (const tagName of tags) {
       try {
         const tagOid = await git.resolveRef({ fs, dir: repositoryPath, ref: `refs/tags/${tagName}` });
-        if (tagOid === commitHash) {
+        // For annotated tags, get the actual commit ID
+        let targetCommitOid = tagOid;
+        try {
+          const tagObject = await git.readTag({ fs, dir: repositoryPath, oid: tagOid });
+          if (tagObject && tagObject.tag.object) {
+            targetCommitOid = tagObject.tag.object;
+          }
+        } catch {
+          // For lightweight tags, use as-is
+        }
+        if (targetCommitOid === commitHash) {
           const version = parseVersion(tagName);
           if (version && isValidVersion(version)) {
             tagInfos.push({
