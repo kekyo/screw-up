@@ -200,6 +200,24 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
     return false;
   };
 
+  // Generate dummy metadata TypeScript file with empty string values
+  const generateDummyMetadataFile = async () => {
+    if (outputMetadataFile) {
+      const metadataSourcePath = join(projectRoot, outputMetadataFilePath);
+      // Only generate if file doesn't exist (don't overwrite existing files)
+      if (!existsSync(metadataSourcePath)) {
+        // Create dummy metadata with empty strings for all keys
+        const dummyMetadata: any = {};
+        outputMetadataKeys.forEach(key => {
+          dummyMetadata[key] = '[Require first build]';
+        });
+        const dummyContent = generateMetadataFile(dummyMetadata, outputMetadataKeys);
+        return await writeFileIfChanged(metadataSourcePath, dummyContent, 'dummy metadata source file');
+      }
+    }
+    return false;
+  };
+
   return {
     name: 'screw-up',
     // Ensure screw-up runs before other plugins
@@ -212,6 +230,11 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
       // Generate type definition file early since it doesn't require actual metadata values
       if (projectRoot && await generateMetadataTypeDefinitionFile()) {
         logger.info(`applyToEnvironment: Metadata type definition file is generated: ${resolvedOutputMetadataFileTypePath}`);
+      }
+      
+      // Generate dummy metadata source file to prevent import errors on initial build
+      if (projectRoot && await generateDummyMetadataFile()) {
+        logger.info(`applyToEnvironment: Dummy metadata source file is generated: ${outputMetadataFilePath}`);
       }
       
       return true;

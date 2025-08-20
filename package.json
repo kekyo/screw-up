@@ -36,10 +36,11 @@
     "images/screw-up-120.png"
   ],
   "scripts": {
-    "build": "vite build",
+    "build": "npm run check-bootstrap; vite build",
     "test": "npm run build && vitest run",
     "dump": "npm run build && node dist/main.js dump",
-    "pack": "npm run build && node dist/main.js pack --pack-destination artifacts/"
+    "pack": "npm run build && node dist/main.js pack --pack-destination artifacts/",
+    "check-bootstrap": "[ ! -f src/generated/packageMetadata.ts ] && cp src/generated/packageMetadata-bootstrap src/generated/packageMetadata.ts"
   },
   "peerDependencies": {
     "dayjs": ">=1.11.0",
