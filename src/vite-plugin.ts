@@ -136,7 +136,6 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
 
   return {
     name: 'screw-up',
-    apply: 'build',
     // Ensure screw-up runs before other plugins
     // (especially vite-plugin-dts, avoid packageMetadata.ts is not found)
     enforce: 'pre',
