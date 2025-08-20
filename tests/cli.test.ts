@@ -507,6 +507,11 @@ describe('CLI tests', () => {
       warn: msg => err.push(msg),
       error: msg => err.push(msg)
     };
+
+    // Hook console.info to capture help messages
+    const originalConsoleInfo = console.info;
+    console.info = (msg: string) => info.push(msg);
+
     const oldwd = process.cwd();
     const oldenv = process.env;
     try {
@@ -528,6 +533,8 @@ describe('CLI tests', () => {
       }
       return { info: info.join('\n'), err: err.join('\n'), code: 0 };
     } finally {
+      // Restore console.info
+      console.info = originalConsoleInfo;
       process.env = oldenv;
       process.chdir(oldwd);
     }

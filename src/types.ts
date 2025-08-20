@@ -59,6 +59,11 @@ export interface ScrewUpOptions {
    */
   outputMetadataKeys?: string[];
   /**
+   * Output path for TypeScript metadata type definition file
+   * @default outputMetadataFilePath with .d.ts extension
+   */
+  outputMetadataFileTypePath?: string;
+  /**
    * Check working directory status to increase version
    * @default true
    */
