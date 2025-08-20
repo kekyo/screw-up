@@ -542,12 +542,20 @@ describe('CLI tests', () => {
 
   const execCliMain = async (args: string[], options: any) => {
     let logs: string[] = [];
+    let consoleOutput: string[] = [];
     const logger = {
       debug: msg => logs.push(msg),
       info: msg => logs.push(msg),
       warn: msg => logs.push(msg),
       error: msg => logs.push(msg)
     };
+    
+    // Hook console.info for dump command
+    const originalConsoleInfo = console.info;
+    console.info = (msg) => {
+      consoleOutput.push(msg);
+    };
+    
     const oldwd = process.cwd();
     const oldenv = process.env;
     try {
@@ -569,8 +577,14 @@ describe('CLI tests', () => {
         error.status = code;
         throw error;
       }
+      
+      // For dump command, return console output instead of logs
+      if (args.length > 0 && args[0] === 'dump') {
+        return consoleOutput.join('\n');
+      }
       return logs.join('\n');
     } finally {
+      console.info = originalConsoleInfo;
       process.env = oldenv;
       process.chdir(oldwd);
     }
