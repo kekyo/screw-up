@@ -5,12 +5,13 @@
 
 import type { Plugin } from 'vite';
 import { readFile, writeFile, readdir, mkdir } from 'fs/promises';
+import { existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { createAsyncLock } from 'async-primitives';
 import { resolvePackageMetadata, createConsoleLogger } from './internal';
 import { ScrewUpOptions, PackageMetadata } from './types';
 import { getFetchGitMetadata } from './analyzer';
-import { name, version } from './generated/packageMetadata';
+import { git_commit_hash, name, version } from './generated/packageMetadata';
 
 /**
  * Generate banner string from package.json metadata
@@ -107,7 +108,8 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
 
   const assetFiltersRegex = assetFilters.map(filter => new RegExp(filter));
 
-  let logger = createConsoleLogger(`${name}:${version}`);
+  const loggerPrefix = `${name}-vite`;
+  let logger = createConsoleLogger(loggerPrefix);
   let banner: string;
   let metadata: any;
   let projectRoot: string;
@@ -126,12 +128,28 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
       const metadataSourcePath = join(projectRoot, outputMetadataFilePath);
 
       try {
-        // Ensure directory exists
-        await mkdir(dirname(metadataSourcePath), { recursive: true });
-        // Write metadata source file
-        await writeFile(metadataSourcePath, metadataSourceContent);
+        // Check if file exists and compare content
+        let shouldWrite = !existsSync(metadataSourcePath);
+        if (!shouldWrite) {
+          try {
+            const existingContent = await readFile(metadataSourcePath, 'utf-8');
+            shouldWrite = existingContent !== metadataSourceContent;
+          } catch {
+            // File doesn't exist or couldn't read, we should write it
+            shouldWrite = true;
+          }
+        }
 
-        return true;
+        if (shouldWrite) {
+          // Ensure directory exists
+          await mkdir(dirname(metadataSourcePath), { recursive: true });
+          // Write metadata source file only if content has changed
+          await writeFile(metadataSourcePath, metadataSourceContent);
+          return true;
+        } else {
+          // File content is the same, no need to write
+          return false;
+        }
       } catch (error) {
         logger.warn(`Failed to write metadata source file: ${metadataSourcePath}: ${error}`);
       }
@@ -146,6 +164,11 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
     // Ensure screw-up runs before other plugins
     // (especially vite-plugin-dts, avoid packageMetadata.ts is not found)
     enforce: 'pre',
+    // Plugin starting
+    applyToEnvironment: () => {
+      logger.info(`Version ${version}-${git_commit_hash}`);
+      return true;
+    },
     // Configuration resolved phase
     configResolved: async config => {
       // Avoid race conditions.
@@ -156,9 +179,9 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
         // Save project root
         projectRoot = config.root;
         if (config?.logger) {
-          logger = createConsoleLogger(name, config.logger);
+          logger = createConsoleLogger(loggerPrefix, config.logger);
         } else if (config?.customLogger) {
-          logger = createConsoleLogger(name, config.customLogger);
+          logger = createConsoleLogger(loggerPrefix, config.customLogger);
         }
         // Get Git metadata fetcher function
         fetchGitMetadata = getFetchGitMetadata(
@@ -173,11 +196,20 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
       }
     },
     // Server hook
-    configureServer: async () => {
+    configureServer: async (server) => {
       // Avoid race conditions.
       const l = await generateMetadataSourceLocker.lock();
       try {
         logger.debug(`configureServer: Started.`);
+        
+        // Exclude generated metadata file from watcher to prevent infinite loop
+        if (outputMetadataFile && server.watcher) {
+          const metadataSourcePath = join(projectRoot, outputMetadataFilePath);
+          // Use unwatch to exclude the file from being watched
+          server.watcher.unwatch(metadataSourcePath);
+          logger.debug(`configureServer: Excluded from watcher: ${outputMetadataFilePath}`);
+        }
+        
         if (await generateMetadataSourceFile()) {
           logger.info(`configureServer: Metadata source file is generated: ${outputMetadataFilePath}`);
         }
@@ -220,7 +252,7 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
           }
         }
         if (count >= 1) {
-          logger.info(`generateBundle: Banner header inserted: ${count} file(s)`);
+          logger.debug(`generateBundle: Banner header inserted: ${count} file(s)`);
         }
       }
     },
@@ -254,7 +286,7 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
           }
         }
         if (count >= 1) {
-          logger.info(`writeBundle: Banner header inserted: ${count} file(s)`);
+          logger.debug(`writeBundle: Banner header inserted: ${count} file(s)`);
         }
       } catch (error) {
         // Skip files that can't be read/written

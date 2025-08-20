@@ -13,7 +13,8 @@ import { name, version } from './generated/packageMetadata';
 
 //////////////////////////////////////////////////////////////////////////////////
 
-const logger = createConsoleLogger(`${name}:${version}`);
+const loggerPrefix = `${name}-cli`;
+const logger = createConsoleLogger(loggerPrefix);
 
 cliMain(
   process.argv.slice(2),  // Remove 'node' and script path
