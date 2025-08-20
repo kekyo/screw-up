@@ -6,9 +6,11 @@
 import type { Plugin } from 'vite';
 import { readFile, writeFile, readdir, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
+import { createAsyncLock } from 'async-primitives';
 import { resolvePackageMetadata, createConsoleLogger } from './internal';
 import { ScrewUpOptions, PackageMetadata } from './types';
 import { getFetchGitMetadata } from './analyzer';
+import { name, version } from './generated/packageMetadata';
 
 /**
  * Generate banner string from package.json metadata
@@ -105,7 +107,7 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
 
   const assetFiltersRegex = assetFilters.map(filter => new RegExp(filter));
 
-  let logger = createConsoleLogger();
+  let logger = createConsoleLogger(`${name}:${version}`);
   let banner: string;
   let metadata: any;
   let projectRoot: string;
@@ -128,11 +130,16 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
         await mkdir(dirname(metadataSourcePath), { recursive: true });
         // Write metadata source file
         await writeFile(metadataSourcePath, metadataSourceContent);
+
+        return true;
       } catch (error) {
-        logger.warn(`[screw-up]: Failed to write metadata source file: ${metadataSourcePath}: ${error}`);
+        logger.warn(`Failed to write metadata source file: ${metadataSourcePath}: ${error}`);
       }
     }
+    return false;
   };
+
+  const generateMetadataSourceLocker = createAsyncLock();
 
   return {
     name: 'screw-up',
@@ -141,40 +148,79 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
     enforce: 'pre',
     // Configuration resolved phase
     configResolved: async config => {
-      // Save project root
-      projectRoot = config.root;
-      const _logger = {
-        debug: config?.logger?.info ?? config?.customLogger?.info ?? logger.debug,
-        info: config?.logger?.info ?? config?.customLogger?.info ?? logger.info,
-        warn: config?.logger?.warn ?? config?.customLogger?.warn ?? logger.warn,
-        error: config?.logger?.error ?? config?.customLogger?.error ?? logger.error,
-      };
-      logger = _logger;
-      // Get Git metadata fetcher function
-      fetchGitMetadata = getFetchGitMetadata(
-        projectRoot, checkWorkingDirectoryStatus, logger);
-      // Generate metadata TypeScript file early to ensure it's available during TypeScript compilation
-      await generateMetadataSourceFile();
+      // Avoid race conditions.
+      const l = await generateMetadataSourceLocker.lock();
+      try {
+        logger.debug(`configResolved: Started.`);
+
+        // Save project root
+        projectRoot = config.root;
+        if (config?.logger) {
+          logger = createConsoleLogger(name, config.logger);
+        } else if (config?.customLogger) {
+          logger = createConsoleLogger(name, config.customLogger);
+        }
+        // Get Git metadata fetcher function
+        fetchGitMetadata = getFetchGitMetadata(
+          projectRoot, checkWorkingDirectoryStatus, logger);
+        // Generate metadata TypeScript file early to ensure it's available during TypeScript compilation
+        if (await generateMetadataSourceFile()) {
+          logger.info(`configResolved: Metadata source file is generated: ${outputMetadataFilePath}`);
+        }
+      } finally {
+        logger.debug(`configResolved: Exited.`);
+        l.release();
+      }
+    },
+    // Server hook
+    configureServer: async () => {
+      // Avoid race conditions.
+      const l = await generateMetadataSourceLocker.lock();
+      try {
+        logger.debug(`configureServer: Started.`);
+        if (await generateMetadataSourceFile()) {
+          logger.info(`configureServer: Metadata source file is generated: ${outputMetadataFilePath}`);
+        }
+      } finally {
+        logger.debug(`configureServer: Exited.`);
+        l.release();
+      }
     },
     // Build start phase
     buildStart: async () => {
-      // Re-resolve package metadata to capture any changes since configResolved
-      // Update metadata TypeScript file with latest data
-      await generateMetadataSourceFile();
+      // Avoid race conditions.
+      const l = await generateMetadataSourceLocker.lock();
+      try {
+        logger.debug(`buildStart: Started.`);
+        // Re-resolve package metadata to capture any changes since configResolved
+        // Update metadata TypeScript file with latest data
+        if (await generateMetadataSourceFile()) {
+          logger.info(`buildStart: Metadata source file is generated: ${outputMetadataFilePath}`);
+        }
+      } finally {
+        logger.debug(`buildStart: Exited.`);
+        l.release();
+      }
     },
     // Generate bundle phase
     generateBundle: (_options, bundle) => {
       // Add banner to each output file if enabled
       if (insertMetadataBanner) {
+        let count = 0;
         for (const fileName in bundle) {
           const chunk = bundle[fileName];
           if (chunk.type === 'chunk') {
             chunk.code = insertBannerHeader(chunk.code, banner);
+            count++;
           } else if (chunk.type === 'asset' && assetFiltersRegex.some(filter => filter.test(fileName))) {
             if (typeof chunk.source === 'string') {
               chunk.source = insertBannerHeader(chunk.source, banner + '\n');  // insert more blank line
+              count++;
             }
           }
+        }
+        if (count >= 1) {
+          logger.info(`generateBundle: Banner header inserted: ${count} file(s)`);
         }
       }
     },
@@ -188,6 +234,7 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
         const files = await readdir(options.dir, { recursive: true });
 
         // Iterate over all files
+        let count = 0;
         for (const file of files) {
           const filePath = join(options.dir, file);
 
@@ -199,11 +246,15 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
               // Append banner to the asset file if it doesn't already contain it
               if (!content.includes(banner)) {
                 await writeFile(filePath, insertBannerHeader(content, banner + '\n'));
+                count++;
               }
             } catch (error) {
               // Skip files that can't be read/written
             }
           }
+        }
+        if (count >= 1) {
+          logger.info(`writeBundle: Banner header inserted: ${count} file(s)`);
         }
       } catch (error) {
         // Skip files that can't be read/written

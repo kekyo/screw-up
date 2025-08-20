@@ -7,12 +7,13 @@
 
 import { cliMain } from './cli';
 import { createConsoleLogger } from './internal';
+import { name, version } from './generated/packageMetadata';
 
 // We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
 
 //////////////////////////////////////////////////////////////////////////////////
 
-const logger = createConsoleLogger();
+const logger = createConsoleLogger(`${name}:${version}`);
 
 cliMain(
   process.argv.slice(2),  // Remove 'node' and script path
