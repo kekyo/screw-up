@@ -1,0 +1,10 @@
+// This is bootstrap file
+// Do not edit manually
+
+export const name = "screw-up";
+export const version = "0.0.1";
+export const description = "Simply package metadata inserter on Vite plugin";
+export const author = "Kouji Matsui (@kekyo@mi.kekyo.net)";
+export const license = "MIT";
+export const repository_url = "https://github.com/kekyo/screw-up.git";
+export const git_commit_hash = "";

@@ -36,10 +36,11 @@
     "images/screw-up-120.png"
   ],
   "scripts": {
-    "build": "vite build",
+    "build": "npm run check-bootstrap; vite build",
     "test": "npm run build && vitest run",
     "dump": "npm run build && node dist/main.js dump",
-    "pack": "npm run build && node dist/main.js pack --pack-destination artifacts/"
+    "pack": "npm run build && node dist/main.js pack --pack-destination artifacts/",
+    "check-bootstrap": "[ ! -f src/generated/packageMetadata.ts ] && cp src/generated/packageMetadata-bootstrap src/generated/packageMetadata.ts"
   },
   "peerDependencies": {
     "dayjs": ">=1.11.0",
@@ -47,7 +48,8 @@
     "isomorphic-git": ">=1.30.0",
     "json5": ">=2.2.0",
     "tar-vern": ">=1.1.0",
-    "vite": ">=5.0.0"
+    "vite": ">=5.0.0",
+    "async-primitives": ">=0.6.1"
   },
   "devDependencies": {
     "@types/node": ">=20.0.0",

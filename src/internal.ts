@@ -41,15 +41,30 @@ export interface Logger {
 }
 
 /**
-* Default console logger implementation
-*/
-export const createConsoleLogger = (): Logger => {
-  return {
-    debug: (msg: string) => console.debug(msg),
-    info: (msg: string) => console.info(msg),
-    warn: (msg: string) => console.warn(msg),
-    error: (msg: string) => console.error(msg)
-  };
+ * Default console logger implementation
+ * @param prefix - Log prefix
+ * @param driver - Console logging driver instance
+ */
+export const createConsoleLogger = (prefix?: string, driver?: any): Logger => {
+  const d = driver?.debug ?? (() => { });
+  const i = driver?.info ?? globalThis.console.info;
+  const w = driver?.warn ?? globalThis.console.warn;
+  const e = driver?.error ?? globalThis.console.error;
+  if (prefix) {
+    return {
+      debug: (msg: string) => d(`[${prefix}]: ${msg}`),
+      info: (msg: string) => i(`[${prefix}]: ${msg}`),
+      warn: (msg: string) => w(`[${prefix}]: ${msg}`),
+      error: (msg: string) => e(`[${prefix}]: ${msg}`)
+    };
+  } else {
+    return {
+      debug: (msg: string) => d(`${msg}`),
+      info: (msg: string) => i(`${msg}`),
+      warn: (msg: string) => w(`${msg}`),
+      error: (msg: string) => e(`${msg}`)
+    };
+  }
 };
 
 //////////////////////////////////////////////////////////////////////////////////
