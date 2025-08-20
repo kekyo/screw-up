@@ -77,24 +77,33 @@ const dumpCommand = async (args: ParsedArgs, logger: Logger) => {
 
   const targetDir = resolve(directory ?? process.cwd());
 
+  // The dump command needs clean output, so ignore debug/info/warn outputs.
+  const _logger: Logger = {
+    debug: msg => {},
+    info: msg => {},
+    warn: msg => {},
+    error: logger.error,
+  };
+
   try {
     // Get Git metadata fetcher function
     const fetchGitMetadata = getFetchGitMetadata(
-      targetDir, checkWorkingDirectoryStatus, logger);
+      targetDir, checkWorkingDirectoryStatus, _logger);
 
     // Resolve package metadata
     const computedPackageJson = await getComputedPackageJsonObject(
-      targetDir, fetchGitMetadata, alwaysOverrideVersionFromGit, inheritableFields, logger);
+      targetDir, fetchGitMetadata, alwaysOverrideVersionFromGit, inheritableFields, _logger);
 
     if (computedPackageJson) {
-      logger.info(JSON.stringify(computedPackageJson, null, 2));
+      // Output console directly
+      console.info(JSON.stringify(computedPackageJson, null, 2));
     } else {
-      logger.error(`dump: Unable to read package.json from: ${targetDir}`);
+      _logger.error(`dump: Unable to read package.json from: ${targetDir}`);
       return 1;
     }
   } catch (error) {
-    logger.error(`dump: Failed to dump package.json: ${error}`);
-      return 1;
+    _logger.error(`dump: Failed to dump package.json: ${error}`);
+    return 1;
   }
   return 0;
 };
