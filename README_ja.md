@@ -8,7 +8,7 @@ NPM向けの、シンプルなパッケージメタデータ挿入ツール
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![npm version](https://img.shields.io/npm/v/screw-up.svg)](https://www.npmjs.com/package/screw-up)
 
-----
+---
 
 [In English](./README.md)
 
@@ -62,14 +62,14 @@ my-awesome-library-2.1.0.tgz
 
 ## 主な機能
 
-* 自動メタデータ抽出: `package.json`から自動的にメタデータを読み取ります。
-* ワークスペースサポート: モノレポで動作し、親パッケージからメタデータを自動的に継承します。
-* 柔軟な出力: 含めるメタデータとその順序を正確に指定できます。
-* TypeScriptメタデータ生成: ソースコードで使用するメタデータ定数を含むTypeScriptファイルを自動生成出来ます。
-* Gitメタデータ抽出: ローカルGitリポジトリからGitコミットハッシュ、タグ、ブランチ、バージョン情報を自動的に抽出します。
-* pack/publish CLIインターフェースをサポート: この機能を使用して公開する際、`package.json`に上記の処理を適用した後にパッケージが生成されます。
+- 自動メタデータ抽出: `package.json`から自動的にメタデータを読み取ります。
+- ワークスペースサポート: モノレポで動作し、親パッケージからメタデータを自動的に継承します。
+- 柔軟な出力: 含めるメタデータとその順序を正確に指定できます。
+- TypeScriptメタデータ生成: ソースコードで使用するメタデータ定数を含むTypeScriptファイルを自動生成出来ます。
+- Gitメタデータ抽出: ローカルGitリポジトリからGitコミットハッシュ、タグ、ブランチ、バージョン情報を自動的に抽出します。
+- pack/publish CLIインターフェースをサポート: この機能を使用して公開する際、`package.json`に上記の処理を適用した後にパッケージが生成されます。
 
-----
+---
 
 ## インストール
 
@@ -89,12 +89,12 @@ npm install --save-dev screw-up
 `vite.config.ts`にプラグインを追加します:
 
 ```typescript
-import { defineConfig } from 'vite';
-import screwUp from 'screw-up';
+import { defineConfig } from "vite";
+import screwUp from "screw-up";
 
 export default defineConfig({
   plugins: [
-    screwUp()  // デフォルトの出力キーを使用
+    screwUp(), // デフォルトの出力キーを使用
   ],
   // ...
 });
@@ -108,14 +108,14 @@ export default defineConfig({
 含めるメタデータフィールドとその順序を指定できます:
 
 ```typescript
-import { defineConfig } from 'vite';
-import screwUp from 'screw-up';
+import { defineConfig } from "vite";
+import screwUp from "screw-up";
 
 export default defineConfig({
   plugins: [
     screwUp({
-      outputKeys: ['name', 'version', 'license']  // これらのフィールドのみを含める
-    })
+      outputKeys: ["name", "version", "license"], // これらのフィールドのみを含める
+    }),
   ],
   // ...
 });
@@ -139,11 +139,13 @@ export default defineConfig({
 ```json
 {
   "name": "my-package",
-  "author": {   // ネストしたメタデータ
+  "author": {
+    // ネストしたメタデータ
     "name": "Jane Developer",
     "email": "jane@example.com"
   },
-  "repository": {   // ネストしたメタデータ
+  "repository": {
+    // ネストしたメタデータ
     "type": "git",
     "url": "https://github.com/user/my-package"
   }
@@ -154,8 +156,8 @@ export default defineConfig({
 
 ```typescript
 screwUp({
-  outputKeys: ['name', 'author.name', 'author.email', 'repository.url']
-})
+  outputKeys: ["name", "author.name", "author.email", "repository.url"],
+});
 ```
 
 結果:
@@ -174,8 +176,8 @@ screwUp({
 プラグインは、インポートして使用できるメタデータ定数を含む、TypeScriptファイルを生成できます:
 
 ```typescript
-import { defineConfig } from 'vite';
-import screwUp from 'screw-up';
+import { defineConfig } from "vite";
+import screwUp from "screw-up";
 
 export default defineConfig({
   plugins: [
@@ -183,10 +185,16 @@ export default defineConfig({
       // メタデータファイル生成を有効化
       outputMetadataFile: true,
       // カスタムパス（オプション）
-      outputMetadataFilePath: 'src/generated/packageMetadata.ts',
+      outputMetadataFilePath: "src/generated/packageMetadata.ts",
       // 含めるキー（オプション）
-      outputMetadataKeys: ['name', 'version', 'description', 'author', 'license']
-    })
+      outputMetadataKeys: [
+        "name",
+        "version",
+        "description",
+        "author",
+        "license",
+      ],
+    }),
   ],
   // ...
 });
@@ -208,7 +216,7 @@ export const license = "Apache-2.0";
 その後、これらの定数をソースコードでインポートして使用できます:
 
 ```typescript
-import { name, version } from './generated/packageMetadata.js';
+import { name, version } from "./generated/packageMetadata.js";
 
 // Output: my-awesome-library v2.1.0
 console.log(`${name} v${version}`);
@@ -228,8 +236,8 @@ TypeScriptソースファイルに加えて、より良いTypeScriptサポート
 screwUp({
   outputMetadataFile: true,
   // オプション: 型定義ファイルのカスタムパス
-  outputMetadataFileTypePath: 'src/generated/packageMetadata.d.ts'
-})
+  outputMetadataFileTypePath: "src/generated/packageMetadata.d.ts",
+});
 ```
 
 TypeScript型宣言は以下のようなコードです:
@@ -284,8 +292,14 @@ Gitメタデータを含む例:
 
 ```typescript
 screwUp({
-  outputKeys: ['name', 'version', 'git.version', 'git.commit.hash', 'git.commit.short']
-})
+  outputKeys: [
+    "name",
+    "version",
+    "git.version",
+    "git.commit.hash",
+    "git.commit.short",
+  ],
+});
 ```
 
 結果:
@@ -300,7 +314,7 @@ screwUp({
  */
 ```
 
-----
+---
 
 ## 高度な使用方法
 
@@ -356,7 +370,7 @@ UIパッケージをビルドすると、バナーには以下が含まれます
 - pnpmワークスペース: `pnpm-workspace.yaml`ファイルで検出
 - Lerna: `lerna.json`ファイルで検出
 
-----
+---
 
 ## CLI使用方法
 
@@ -431,7 +445,7 @@ packコマンドは、内部で`npm pack`を使用して、仮のパッケージ
 - `--readme <path>`: README.mdを指定したファイルで置換
 - `--inheritable-fields <list>`: 親から継承するフィールドのコンマ区切りリスト（デフォルト: version,description,author,license,repository,keywords,homepage,bugs,readme）
 - `--no-wds`: バージョンインクリメントのワーキングディレクトリステータスチェックを無効化
-- `--no-replace-peer-deps`: peerDependenciesの"*"を実際のバージョンに置き換える機能を無効化
+- `--no-replace-peer-deps`: peerDependenciesの"\*"を実際のバージョンに置き換える機能を無効化
 - `--peer-deps-prefix <prefix>`: 置き換えられるpeerDependenciesのバージョンプレフィックス（デフォルト: "^"）
 
 ### publishコマンド
@@ -463,7 +477,7 @@ publishコマンドの機能:
 
 - `--inheritable-fields <list>`: 親から継承するフィールドのコンマ区切りリスト
 - `--no-wds`: バージョンインクリメントのワーキングディレクトリステータスチェックを無効化
-- `--no-replace-peer-deps`: peerDependenciesの"*"を実際のバージョンに置き換える機能を無効化
+- `--no-replace-peer-deps`: peerDependenciesの"\*"を実際のバージョンに置き換える機能を無効化
 - `--peer-deps-prefix <prefix>`: 置き換えられるpeerDependenciesのバージョンプレフィックス（デフォルト: "^"）
 - すべての`npm publish`オプションがサポートされています（例: `--dry-run`、`--tag`、`--access`、`--registry`）
 
@@ -517,7 +531,7 @@ screw-up pack --readme ./docs/README_package.md
 
 ### peerDependencies置き換え機能
 
-ワークスペース環境では、開発中のバージョン制約を避けるために`peerDependencies`で兄弟パッケージを"*"で参照することが一般的です。パッケージ化時、screw-upは自動的にこれらのワイルドカードを実際のバージョン番号に置き換えます:
+ワークスペース環境では、開発中のバージョン制約を避けるために`peerDependencies`で兄弟パッケージを"\*"で参照することが一般的です。パッケージ化時、screw-upは自動的にこれらのワイルドカードを実際のバージョン番号に置き換えます:
 
 ```json
 {
@@ -528,11 +542,11 @@ screw-up pack --readme ./docs/README_package.md
 }
 ```
 
-パッケージ化後、"*"は実際のバージョンに置き換えられます:
+パッケージ化後、"\*"は実際のバージョンに置き換えられます:
 
 ```json
 {
-  "name": "@workspace/cli", 
+  "name": "@workspace/cli",
   "peerDependencies": {
     "@workspace/core": "^2.1.0"
   }
@@ -557,8 +571,9 @@ screw-up pack --peer-deps-prefix ""
 ```
 
 この機能の特徴：
+
 - ワークスペース環境でのみ動作（`workspaces`フィールドを持つワークスペースルートが必要）
-- ワークスペース兄弟パッケージ名と一致する"*"値のみを置き換え
+- ワークスペース兄弟パッケージ名と一致する"\*"値のみを置き換え
 - 非ワークスペース依存関係は変更されません
 - packおよびpublishコマンドでデフォルトで有効
 
@@ -579,7 +594,7 @@ screw-up publish --inheritable-fields "version,description,keywords"
 
 デフォルト継承フィールド：`version`、`description`、`author`、`license`、`repository`、`keywords`、`homepage`、`bugs`、`readme`
 
-----
+---
 
 ## 運用の推奨構成
 
@@ -644,15 +659,15 @@ my-project/
 #### Vite設定
 
 ```typescript
-import { defineConfig } from 'vite';
-import screwUp from 'screw-up';
+import { defineConfig } from "vite";
+import screwUp from "screw-up";
 
 export default defineConfig({
   plugins: [
     screwUp({
       // (必要であれば`packageMetadata.ts`を生成)
-      outputMetadataFile: true
-    })
+      outputMetadataFile: true,
+    }),
   ],
   // ...
 });
@@ -771,7 +786,7 @@ screw-up pack packages/plugin --no-replace-peer-deps
 screw-up publish packages/core --peer-deps-prefix "~"
 ```
 
-----
+---
 
 ## 補足
 

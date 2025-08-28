@@ -3,11 +3,11 @@
 // Under MIT.
 // https://github.com/kekyo/screw-up/
 
-import * as git from 'isomorphic-git';
-import * as fs from 'fs/promises';
-import dayjs from 'dayjs';
-import { GitMetadata } from './types.js';
-import { Logger } from './internal.js';
+import * as git from "isomorphic-git";
+import * as fs from "fs/promises";
+import dayjs from "dayjs";
+import { GitMetadata } from "./types.js";
+import { Logger } from "./internal.js";
 
 // Ported from: https://github.com/kekyo/RelaxVersioner/blob/master/RelaxVersioner.Core/Analyzer.cs
 
@@ -51,7 +51,7 @@ interface TagInfo {
  */
 const parseVersionComponent = (value: string): number | undefined => {
   const num = parseInt(value, 10);
-  return (num < 0 || num > 65535) ? undefined : num;
+  return num < 0 || num > 65535 ? undefined : num;
 };
 
 /**
@@ -61,7 +61,7 @@ const parseVersionComponent = (value: string): number | undefined => {
  */
 const parseVersion = (tagName: string): Version | undefined => {
   // Remove common prefix 'v'.
-  const cleanTag = tagName.replace(/^v/i, '');
+  const cleanTag = tagName.replace(/^v/i, "");
 
   // Match version pattern: major.minor[.build[.revision]].
   const versionRegex = /^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:\.(\d+))?$/;
@@ -78,7 +78,7 @@ const parseVersion = (tagName: string): Version | undefined => {
 
   const version: Version = {
     major,
-    original: tagName
+    original: tagName,
   };
 
   if (match[2] !== undefined) {
@@ -113,7 +113,9 @@ const parseVersion = (tagName: string): Version | undefined => {
  */
 const isValidVersion = (version: Version): boolean => {
   // At least major component and optionally minor
-  return version.major >= 0 && (version.minor === undefined || version.minor >= 0);
+  return (
+    version.major >= 0 && (version.minor === undefined || version.minor >= 0)
+  );
 };
 
 /**
@@ -125,22 +127,22 @@ const isValidVersion = (version: Version): boolean => {
 const compareVersions = (a: Version, b: Version): number => {
   // Compare major
   if (a.major !== b.major) return b.major - a.major;
-  
+
   // Compare minor (treat undefined as 0)
   const aMinor = a.minor ?? 0;
   const bMinor = b.minor ?? 0;
   if (aMinor !== bMinor) return bMinor - aMinor;
-  
+
   // Compare build (treat undefined as 0)
   const aBuild = a.build ?? 0;
   const bBuild = b.build ?? 0;
   if (aBuild !== bBuild) return bBuild - aBuild;
-  
+
   // Compare revision (treat undefined as 0)
   const aRevision = a.revision ?? 0;
   const bRevision = b.revision ?? 0;
   if (aRevision !== bRevision) return bRevision - aRevision;
-  
+
   return 0;
 };
 
@@ -160,12 +162,12 @@ const incrementLastVersionComponent = (version: Version): Version => {
   if (version.minor !== undefined) {
     return { ...version, minor: version.minor + 1 };
   }
-  
+
   // If only major exists, increment major
-  return { 
-    ...version, 
+  return {
+    ...version,
     major: version.major + 1,
-    original: `${version.major + 1}`
+    original: `${version.major + 1}`,
   };
 };
 
@@ -176,19 +178,19 @@ const incrementLastVersionComponent = (version: Version): Version => {
  */
 const formatVersion = (version: Version): string => {
   let result = `${version.major}`;
-  
+
   if (version.minor !== undefined) {
     result += `.${version.minor}`;
-    
+
     if (version.build !== undefined) {
       result += `.${version.build}`;
-      
+
       if (version.revision !== undefined) {
         result += `.${version.revision}`;
       }
     }
   }
-  
+
   return result;
 };
 
@@ -200,16 +202,19 @@ const formatVersion = (version: Version): string => {
  * @param hash - The hash of the commit
  * @returns The commit or undefined if the commit is not found
  */
-const getCommit = async (repositoryPath: string, hash: string): Promise<CommitInfo | undefined> => {
+const getCommit = async (
+  repositoryPath: string,
+  hash: string,
+): Promise<CommitInfo | undefined> => {
   try {
     const commit = await git.readCommit({ fs, dir: repositoryPath, oid: hash });
-    
+
     return {
       hash: commit.oid,
       shortHash: commit.oid.substring(0, 7),
       date: new Date(commit.commit.author.timestamp * 1000).toISOString(),
       message: commit.commit.message.trim(),
-      parents: commit.commit.parent || []
+      parents: commit.commit.parent || [],
     };
   } catch {
     return undefined;
@@ -221,17 +226,27 @@ const getCommit = async (repositoryPath: string, hash: string): Promise<CommitIn
  * @param repositoryPath - Local Git repository directory
  * @returns The current commit or undefined if the current commit is not found
  */
-const getCurrentCommit = async (repositoryPath: string): Promise<CommitInfo | undefined> => {
+const getCurrentCommit = async (
+  repositoryPath: string,
+): Promise<CommitInfo | undefined> => {
   try {
-    const currentOid = await git.resolveRef({ fs, dir: repositoryPath, ref: 'HEAD' });
-    const commit = await git.readCommit({ fs, dir: repositoryPath, oid: currentOid });
+    const currentOid = await git.resolveRef({
+      fs,
+      dir: repositoryPath,
+      ref: "HEAD",
+    });
+    const commit = await git.readCommit({
+      fs,
+      dir: repositoryPath,
+      oid: currentOid,
+    });
 
     return {
       hash: commit.oid,
       shortHash: commit.oid.substring(0, 7),
       date: new Date(commit.commit.author.timestamp * 1000).toISOString(),
       message: commit.commit.message.trim(),
-      parents: commit.commit.parent || []
+      parents: commit.commit.parent || [],
     };
   } catch {
     return undefined;
@@ -244,18 +259,29 @@ const getCurrentCommit = async (repositoryPath: string): Promise<CommitInfo | un
  * @param commitHash - The hash of the commit
  * @returns The related tags or an empty array if no tags are found
  */
-const getRelatedTags = async (repositoryPath: string, commitHash: string): Promise<TagInfo[]> => {
+const getRelatedTags = async (
+  repositoryPath: string,
+  commitHash: string,
+): Promise<TagInfo[]> => {
   try {
     const tags = await git.listTags({ fs, dir: repositoryPath });
     const tagInfos: TagInfo[] = [];
-    
+
     for (const tagName of tags) {
       try {
-        const tagOid = await git.resolveRef({ fs, dir: repositoryPath, ref: `refs/tags/${tagName}` });
+        const tagOid = await git.resolveRef({
+          fs,
+          dir: repositoryPath,
+          ref: `refs/tags/${tagName}`,
+        });
         // For annotated tags, get the actual commit ID
         let targetCommitOid = tagOid;
         try {
-          const tagObject = await git.readTag({ fs, dir: repositoryPath, oid: tagOid });
+          const tagObject = await git.readTag({
+            fs,
+            dir: repositoryPath,
+            oid: tagOid,
+          });
           if (tagObject && tagObject.tag.object) {
             targetCommitOid = tagObject.tag.object;
           }
@@ -268,13 +294,13 @@ const getRelatedTags = async (repositoryPath: string, commitHash: string): Promi
             tagInfos.push({
               name: tagName,
               hash: commitHash,
-              version
+              version,
             });
           } else {
             tagInfos.push({
               name: tagName,
               hash: commitHash,
-              version: undefined
+              version: undefined,
             });
           }
         }
@@ -282,7 +308,7 @@ const getRelatedTags = async (repositoryPath: string, commitHash: string): Promi
         // Skip tags that can't be resolved
       }
     }
-    
+
     // Sort by name
     return tagInfos.sort((a, b) => a.name.localeCompare(b.name));
   } catch {
@@ -296,18 +322,29 @@ const getRelatedTags = async (repositoryPath: string, commitHash: string): Promi
  * @param commitHash - The hash of the commit
  * @returns The related tags or an empty array if no tags are found
  */
-const getRelatedTagsForVersioning = async (repositoryPath: string, commitHash: string): Promise<TagInfo[]> => {
+const getRelatedTagsForVersioning = async (
+  repositoryPath: string,
+  commitHash: string,
+): Promise<TagInfo[]> => {
   try {
     const tags = await git.listTags({ fs, dir: repositoryPath });
     const tagInfos: TagInfo[] = [];
-    
+
     for (const tagName of tags) {
       try {
-        const tagOid = await git.resolveRef({ fs, dir: repositoryPath, ref: `refs/tags/${tagName}` });
+        const tagOid = await git.resolveRef({
+          fs,
+          dir: repositoryPath,
+          ref: `refs/tags/${tagName}`,
+        });
         // For annotated tags, get the actual commit ID
         let targetCommitOid = tagOid;
         try {
-          const tagObject = await git.readTag({ fs, dir: repositoryPath, oid: tagOid });
+          const tagObject = await git.readTag({
+            fs,
+            dir: repositoryPath,
+            oid: tagOid,
+          });
           if (tagObject && tagObject.tag.object) {
             targetCommitOid = tagObject.tag.object;
           }
@@ -320,7 +357,7 @@ const getRelatedTagsForVersioning = async (repositoryPath: string, commitHash: s
             tagInfos.push({
               name: tagName,
               hash: commitHash,
-              version
+              version,
             });
           }
         }
@@ -340,15 +377,22 @@ const getRelatedTagsForVersioning = async (repositoryPath: string, commitHash: s
  * @param commitHash - The hash of the commit
  * @returns The commit related branch name or undefined if not found
  */
-const getRelatedBranches = async (repositoryPath: string, commitHash: string): Promise<string[]> => {
+const getRelatedBranches = async (
+  repositoryPath: string,
+  commitHash: string,
+): Promise<string[]> => {
   try {
     const branches = await git.listBranches({ fs, dir: repositoryPath });
     const relatedBranches: string[] = [];
-    
+
     for (const branch of branches) {
       try {
         // Check if the branch HEAD points to the specified commit
-        const branchOid = await git.resolveRef({ fs, dir: repositoryPath, ref: branch });
+        const branchOid = await git.resolveRef({
+          fs,
+          dir: repositoryPath,
+          ref: branch,
+        });
         if (branchOid === commitHash) {
           relatedBranches.push(branch);
         }
@@ -369,7 +413,9 @@ const getRelatedBranches = async (repositoryPath: string, commitHash: string): P
  * @param repositoryPath - Local Git repository directory
  * @returns Modified files
  */
-const getModifiedFiles = async (repositoryPath: string): Promise<git.StatusRow[]> => {
+const getModifiedFiles = async (
+  repositoryPath: string,
+): Promise<git.StatusRow[]> => {
   try {
     const status = await git.statusMatrix({ fs, dir: repositoryPath });
     // statusMatrix returns [filepath, headStatus, workdirStatus, stageStatus]
@@ -377,12 +423,13 @@ const getModifiedFiles = async (repositoryPath: string): Promise<git.StatusRow[]
     // workdirStatus: 0=absent, 1=present, 2=modified
     // stageStatus: 0=absent, 1=present, 2=modified, 3=added
     // By default, ignored files are excluded (ignored: false)
-    return status.filter(([, head, workdir, stage]) => 
-      workdir === 2 ||     // modified in working directory (unstaged)
-      stage === 2 ||       // modified in stage (staged)  
-      stage === 3 ||       // added to stage (staged)
-      (head === 1 && workdir === 0) ||  // deleted from working directory
-      (head === 0 && workdir === 1)     // untracked files (respecting .gitignore)
+    return status.filter(
+      ([, head, workdir, stage]) =>
+        workdir === 2 || // modified in working directory (unstaged)
+        stage === 2 || // modified in stage (staged)
+        stage === 3 || // added to stage (staged)
+        (head === 1 && workdir === 0) || // deleted from working directory
+        (head === 0 && workdir === 1), // untracked files (respecting .gitignore)
     );
   } catch {
     return [];
@@ -413,13 +460,12 @@ interface ScheduledCommit {
 const lookupVersionLabelRecursive = async (
   cwd: string,
   commit: CommitInfo,
-  reachedCommits: Map<string, Version>
+  reachedCommits: Map<string, Version>,
 ): Promise<Version | undefined> => {
-
   // Scheduled commit analysis stack
   const scheduledStack: ScheduledCommit[] = [];
 
-  let version: Version = { major: 0, minor: 0, build: 1, original: '0.0.1' };
+  let version: Version = { major: 0, minor: 0, build: 1, original: "0.0.1" };
   let currentCommit = commit;
 
   // Trace back to the parent commit repeatedly with the following conditions:
@@ -433,12 +479,15 @@ const lookupVersionLabelRecursive = async (
       version = reachedCommits.get(currentCommit.hash)!;
       break;
     }
-    
+
     // Detected mostly larger version tag.
-    const relatedTags = await getRelatedTagsForVersioning(cwd, currentCommit.hash);
+    const relatedTags = await getRelatedTagsForVersioning(
+      cwd,
+      currentCommit.hash,
+    );
     const versionCandidates = relatedTags
-      .filter(tag => tag.version && isValidVersion(tag.version))
-      .filter(tag => tag.version!.minor !== undefined)   // "1.2" or more.
+      .filter((tag) => tag.version && isValidVersion(tag.version))
+      .filter((tag) => tag.version!.minor !== undefined) // "1.2" or more.
       .sort((a, b) => compareVersions(a.version!, b.version!));
     if (versionCandidates.length >= 1) {
       // Found version tags, use the highest version
@@ -450,11 +499,17 @@ const lookupVersionLabelRecursive = async (
     // Get parent commits
     let parentCommits: CommitInfo[] = [];
     try {
-      const commitObj = await git.readCommit({ fs, dir: cwd, oid: currentCommit.hash });
+      const commitObj = await git.readCommit({
+        fs,
+        dir: cwd,
+        oid: currentCommit.hash,
+      });
       const parentHashes = commitObj.commit.parent || [];
-      parentCommits =
-        (await Promise.all(parentHashes.map(parentHash => getCommit(cwd, parentHash)))).
-        filter(ci => ci !== undefined);
+      parentCommits = (
+        await Promise.all(
+          parentHashes.map((parentHash) => getCommit(cwd, parentHash)),
+        )
+      ).filter((ci) => ci !== undefined);
     } catch {
       // If we can't get parent information, use default version
     }
@@ -466,7 +521,7 @@ const lookupVersionLabelRecursive = async (
 
     // Schedule this commit for later processing
     scheduledStack.push({ commit: currentCommit, parents: parentCommits });
-    
+
     // Move to the first parent (primary branch)
     currentCommit = parentCommits[0];
   }
@@ -484,8 +539,15 @@ const lookupVersionLabelRecursive = async (
     if (parents.length >= 2) {
       // Check alternate parent commits (feature branches)
       for (let index = 1; index < parents.length; index++) {
-        const alternateParentVersion = await lookupVersionLabelRecursive(cwd, parents[index], reachedCommits);
-        if (alternateParentVersion && compareVersions(alternateParentVersion, version) < 0) {
+        const alternateParentVersion = await lookupVersionLabelRecursive(
+          cwd,
+          parents[index],
+          reachedCommits,
+        );
+        if (
+          alternateParentVersion &&
+          compareVersions(alternateParentVersion, version) < 0
+        ) {
           // Use higher version from alternate parent
           version = alternateParentVersion;
         }
@@ -510,7 +572,10 @@ const lookupVersionLabelRecursive = async (
  * @returns The metadata object with git metadata
  */
 const getGitMetadata = async (
-  repositoryPath: string, checkWorkingDirectoryStatus: boolean, logger: Logger) => {
+  repositoryPath: string,
+  checkWorkingDirectoryStatus: boolean,
+  logger: Logger,
+) => {
   const metadata: any = {};
 
   // Try to find git root directory from the given path
@@ -533,8 +598,12 @@ const getGitMetadata = async (
     const reachedCommits = new Map<string, Version>();
 
     // Lookup version
-    let version = await lookupVersionLabelRecursive(gitRootPath, currentCommit, reachedCommits);
-    
+    let version = await lookupVersionLabelRecursive(
+      gitRootPath,
+      currentCommit,
+      reachedCommits,
+    );
+
     // Set git metadata into 'git' key
     const gitMetadata: GitMetadata = { tags: [], branches: [] };
     metadata.git = gitMetadata;
@@ -545,30 +614,35 @@ const getGitMetadata = async (
         const modifiedFiles = await getModifiedFiles(gitRootPath);
         if (modifiedFiles.length >= 1) {
           const newVersion = incrementLastVersionComponent(version);
-          logger.debug(`Increased git version by detected modified items: ${formatVersion(version)} ---> ${formatVersion(newVersion)}, Files=[${modifiedFiles.map(formatModifiedFile).join(', ')}]`);
+          logger.debug(
+            `Increased git version by detected modified items: ${formatVersion(version)} ---> ${formatVersion(newVersion)}, Files=[${modifiedFiles.map(formatModifiedFile).join(", ")}]`,
+          );
           version = newVersion;
         }
       }
 
       const gitVersion = formatVersion(version);
       gitMetadata.version = gitVersion;
-      metadata.version = gitVersion;     // Fallback default version metadata
+      metadata.version = gitVersion; // Fallback default version metadata
     }
 
     // Set commit information
     gitMetadata.commit = {
       hash: currentCommit.hash,
       shortHash: currentCommit.shortHash,
-      date: dayjs(currentCommit.date).format('YYYY-MM-DDTHH:mm:ssZ[Z]'),
-      message: currentCommit.message
+      date: dayjs(currentCommit.date).format("YYYY-MM-DDTHH:mm:ssZ[Z]"),
+      message: currentCommit.message,
     };
 
     // Try to find the actual tag name if it exists
     const relatedTags = await getRelatedTags(gitRootPath, currentCommit.hash);
-    gitMetadata.tags = relatedTags.map(tag => tag.name);
+    gitMetadata.tags = relatedTags.map((tag) => tag.name);
 
     // Get branch information
-    const relatedBranches = await getRelatedBranches(gitRootPath, currentCommit.hash);
+    const relatedBranches = await getRelatedBranches(
+      gitRootPath,
+      currentCommit.hash,
+    );
     gitMetadata.branches = relatedBranches;
   } catch (error) {
     // If any error occurs, return empty metadata
@@ -588,13 +662,19 @@ const getGitMetadata = async (
  * @returns Git metadata fetcher function
  */
 export const getFetchGitMetadata = (
-  targetDir: string, checkWorkingDirectoryStatus: boolean, logger: Logger) => {
+  targetDir: string,
+  checkWorkingDirectoryStatus: boolean,
+  logger: Logger,
+) => {
   let cachedMetadata: any;
   return async () => {
     if (!cachedMetadata) {
       cachedMetadata = await getGitMetadata(
-        targetDir, checkWorkingDirectoryStatus, logger);
+        targetDir,
+        checkWorkingDirectoryStatus,
+        logger,
+      );
     }
     return cachedMetadata;
   };
-}
+};
