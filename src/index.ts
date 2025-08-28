@@ -3,9 +3,9 @@
 // Under MIT.
 // https://github.com/kekyo/screw-up/
 
-import { screwUp } from './vite-plugin';
+import { screwUp } from "./vite-plugin";
 
 // Expose screw-up Vite plugin
 
-export * from './types';
+export * from "./types";
 export default screwUp;

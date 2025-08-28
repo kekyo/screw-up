@@ -8,7 +8,7 @@ Simply package metadata inserter for NPM.
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![npm version](https://img.shields.io/npm/v/screw-up.svg)](https://www.npmjs.com/package/screw-up)
 
-----
+---
 
 [日本語はこちら](./README_ja.md)
 
@@ -62,14 +62,14 @@ my-awesome-library-2.1.0.tgz
 
 ## Key Features
 
-* Automatic metadata extraction: Reads metadata from `package.json` automatically.
-* Workspace support: Works with monorepos and automatically inherits metadata from parent packages.
-* Flexible output: Specify exactly which metadata to include and in what order.
-* TypeScript metadata generation: Can automatically generates TypeScript files with metadata constants for use in your source code.
-* Git metadata extraction: Automatically extracts Git commit hash, tags, branches, and version information from local Git repository.
-* Supported pack/publish CLI interface: When publishing using this feature, the package is generated after applying the above processing to `package.json`.
+- Automatic metadata extraction: Reads metadata from `package.json` automatically.
+- Workspace support: Works with monorepos and automatically inherits metadata from parent packages.
+- Flexible output: Specify exactly which metadata to include and in what order.
+- TypeScript metadata generation: Can automatically generates TypeScript files with metadata constants for use in your source code.
+- Git metadata extraction: Automatically extracts Git commit hash, tags, branches, and version information from local Git repository.
+- Supported pack/publish CLI interface: When publishing using this feature, the package is generated after applying the above processing to `package.json`.
 
-----
+---
 
 ## Installation
 
@@ -89,12 +89,12 @@ If you want to quickly learn about recommended configurations and operation meth
 Add the plugin to your `vite.config.ts`:
 
 ```typescript
-import { defineConfig } from 'vite';
-import screwUp from 'screw-up';
+import { defineConfig } from "vite";
+import screwUp from "screw-up";
 
 export default defineConfig({
   plugins: [
-    screwUp()  // Uses default output keys
+    screwUp(), // Uses default output keys
   ],
   // ...
 });
@@ -108,14 +108,14 @@ When no `outputKeys` are specified, the plugin uses these metadata keys with exa
 You can specify which metadata fields to include and in what order:
 
 ```typescript
-import { defineConfig } from 'vite';
-import screwUp from 'screw-up';
+import { defineConfig } from "vite";
+import screwUp from "screw-up";
 
 export default defineConfig({
   plugins: [
     screwUp({
-      outputKeys: ['name', 'version', 'license']  // Only include these fields
-    })
+      outputKeys: ["name", "version", "license"], // Only include these fields
+    }),
   ],
   // ...
 });
@@ -139,11 +139,13 @@ For example `package.json` declarations:
 ```json
 {
   "name": "my-package",
-  "author": {   // Nested metadata
+  "author": {
+    // Nested metadata
     "name": "Jane Developer",
     "email": "jane@example.com"
   },
-  "repository": {   // Nested metadata
+  "repository": {
+    // Nested metadata
     "type": "git",
     "url": "https://github.com/user/my-package"
   }
@@ -154,8 +156,8 @@ You can reference nested fields in your `outputKeys`:
 
 ```typescript
 screwUp({
-  outputKeys: ['name', 'author.name', 'author.email', 'repository.url']
-})
+  outputKeys: ["name", "author.name", "author.email", "repository.url"],
+});
 ```
 
 Results in:
@@ -174,8 +176,8 @@ Results in:
 The plugin can generate TypeScript files containing metadata constants that you can import and use in your source code:
 
 ```typescript
-import { defineConfig } from 'vite';
-import screwUp from 'screw-up';
+import { defineConfig } from "vite";
+import screwUp from "screw-up";
 
 export default defineConfig({
   plugins: [
@@ -183,10 +185,16 @@ export default defineConfig({
       // Enable metadata file generation
       outputMetadataFile: true,
       // Custom path (optional)
-      outputMetadataFilePath: 'src/generated/packageMetadata.ts',
+      outputMetadataFilePath: "src/generated/packageMetadata.ts",
       // Keys to include (optional)
-      outputMetadataKeys: ['name', 'version', 'description', 'author', 'license']
-    })
+      outputMetadataKeys: [
+        "name",
+        "version",
+        "description",
+        "author",
+        "license",
+      ],
+    }),
   ],
   // ...
 });
@@ -208,7 +216,7 @@ export const license = "Apache-2.0";
 You can then import and use these constants in your source code:
 
 ```typescript
-import { name, version } from './generated/packageMetadata.js';
+import { name, version } from "./generated/packageMetadata.js";
 
 // Output: my-awesome-library v2.1.0
 console.log(`${name} v${version}`);
@@ -228,8 +236,8 @@ You can customize the output file path by specifying `outputMetadataFileTypePath
 screwUp({
   outputMetadataFile: true,
   // Optional: Custom path for type definition file
-  outputMetadataFileTypePath: 'src/generated/packageMetadata.d.ts'
-})
+  outputMetadataFileTypePath: "src/generated/packageMetadata.d.ts",
+});
 ```
 
 The TypeScript type declarations look like this:
@@ -284,8 +292,14 @@ Example with Git metadata:
 
 ```typescript
 screwUp({
-  outputKeys: ['name', 'version', 'git.version', 'git.commit.hash', 'git.commit.short']
-})
+  outputKeys: [
+    "name",
+    "version",
+    "git.version",
+    "git.commit.hash",
+    "git.commit.short",
+  ],
+});
 ```
 
 Results in:
@@ -300,7 +314,7 @@ Results in:
  */
 ```
 
-----
+---
 
 ## Advanced Usage
 
@@ -356,7 +370,7 @@ The plugin automatically detects and supports:
 - pnpm workspaces: Detected via `pnpm-workspace.yaml` file
 - Lerna: Detected via `lerna.json` file
 
-----
+---
 
 ## CLI Usage
 
@@ -431,7 +445,7 @@ However, to successfully pack the files, you must define the `version` key. scre
 - `--readme <path>`: Replace README.md with specified file
 - `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent (default: version,description,author,license,repository,keywords,homepage,bugs,readme)
 - `--no-wds`: Disable working directory status check for version increment
-- `--no-replace-peer-deps`: Disable replacing "*" in peerDependencies with actual versions
+- `--no-replace-peer-deps`: Disable replacing "\*" in peerDependencies with actual versions
 - `--peer-deps-prefix <prefix>`: Version prefix for replaced peerDependencies (default: "^")
 
 ### Publish Command
@@ -463,7 +477,7 @@ The publish command:
 
 - `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent
 - `--no-wds`: Disable working directory status check for version increment
-- `--no-replace-peer-deps`: Disable replacing "*" in peerDependencies with actual versions
+- `--no-replace-peer-deps`: Disable replacing "\*" in peerDependencies with actual versions
 - `--peer-deps-prefix <prefix>`: Version prefix for replaced peerDependencies (default: "^")
 - All `npm publish` options are supported (e.g., `--dry-run`, `--tag`, `--access`, `--registry`)
 
@@ -517,7 +531,7 @@ When both are specified, the `--readme` CLI option takes priority over the `pack
 
 ### PeerDependencies replacement feature
 
-In workspace environments, it's common to reference sibling packages using "*" in `peerDependencies` to avoid version constraints during development. When packaging, screw-up automatically replaces these wildcards with actual version numbers:
+In workspace environments, it's common to reference sibling packages using "\*" in `peerDependencies` to avoid version constraints during development. When packaging, screw-up automatically replaces these wildcards with actual version numbers:
 
 ```json
 {
@@ -528,11 +542,11 @@ In workspace environments, it's common to reference sibling packages using "*" i
 }
 ```
 
-After packaging, the "*" is replaced with the actual version:
+After packaging, the "\*" is replaced with the actual version:
 
 ```json
 {
-  "name": "@workspace/cli", 
+  "name": "@workspace/cli",
   "peerDependencies": {
     "@workspace/core": "^2.1.0"
   }
@@ -557,8 +571,9 @@ screw-up pack --peer-deps-prefix ""
 ```
 
 This feature:
+
 - Only works in workspace environments (requires workspace root with `workspaces` field)
-- Only replaces "*" values that match workspace sibling package names
+- Only replaces "\*" values that match workspace sibling package names
 - Leaves non-workspace dependencies unchanged
 - Is enabled by default for pack and publish commands
 
@@ -579,7 +594,7 @@ screw-up publish --inheritable-fields "version,description,keywords"
 
 Default inheritable fields: `version`, `description`, `author`, `license`, `repository`, `keywords`, `homepage`, `bugs`, `readme`
 
-----
+---
 
 ## Recommended configuration
 
@@ -643,15 +658,15 @@ Key Points:
 #### Vite configuration
 
 ```typescript
-import { defineConfig } from 'vite';
-import screwUp from 'screw-up';
+import { defineConfig } from "vite";
+import screwUp from "screw-up";
 
 export default defineConfig({
   plugins: [
     screwUp({
       // (Generate `packageMetadata.ts` when you need it)
-      outputMetadataFile: true
-    })
+      outputMetadataFile: true,
+    }),
   ],
   // ...
 });
@@ -769,7 +784,7 @@ screw-up pack packages/plugin --no-replace-peer-deps
 screw-up publish packages/core --peer-deps-prefix "~"
 ```
 
-----
+---
 
 ## Note
 
