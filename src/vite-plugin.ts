@@ -224,8 +224,11 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
     // (especially vite-plugin-dts, avoid packageMetadata.ts is not found)
     enforce: 'pre',
     // Plugin starting
-    applyToEnvironment: async () => {
+    applyToEnvironment: async penv => {
       logger.info(`${version}-${git_commit_hash}: Started.`);
+
+      // Partial (but maybe exact) project root
+      projectRoot = penv.config.root;
       
       // Generate type definition file early since it doesn't require actual metadata values
       if (projectRoot && await generateMetadataTypeDefinitionFile()) {
