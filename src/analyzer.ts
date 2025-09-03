@@ -8,13 +8,14 @@ import * as fs from 'fs/promises';
 import dayjs from 'dayjs';
 import { GitMetadata } from './types.js';
 import { Logger } from './internal.js';
+import { loadOrBuildTagCache } from './cache-manager.js';
 
 // Ported from: https://github.com/kekyo/RelaxVersioner/blob/master/RelaxVersioner.Core/Analyzer.cs
 
 /**
  * Version information
  */
-interface Version {
+export interface Version {
   major: number;
   minor?: number;
   build?: number;
@@ -36,7 +37,7 @@ interface CommitInfo {
 /**
  * Tag information
  */
-interface TagInfo {
+export interface TagInfo {
   name: string;
   hash: string;
   version: Version | undefined;
@@ -45,7 +46,7 @@ interface TagInfo {
 /**
  * Tag cache for performance optimization
  */
-interface TagCache {
+export interface TagCache {
   commitToTags: Map<string, TagInfo[]>;
   initialized: boolean;
 }
@@ -259,90 +260,6 @@ const getCurrentCommit = async (
   } catch {
     return undefined;
   }
-};
-
-/**
- * Build tag to commit mapping for fast lookups
- * @param repositoryPath - Local Git repository directory
- * @returns Tag cache with commit to tags mapping
- */
-const buildTagCache = async (repositoryPath: string): Promise<TagCache> => {
-  const cache: TagCache = {
-    commitToTags: new Map<string, TagInfo[]>(),
-    initialized: true,
-  };
-
-  try {
-    const tags = await git.listTags({ fs, dir: repositoryPath });
-
-    // Process all tags in parallel for speed
-    await Promise.all(
-      tags.map(async (tagName) => {
-        try {
-          const tagOid = await git.resolveRef({
-            fs,
-            dir: repositoryPath,
-            ref: `refs/tags/${tagName}`,
-          });
-
-          const version = parseVersion(tagName);
-          const tagInfo: TagInfo = {
-            name: tagName,
-            hash: tagOid, // This will be updated for annotated tags
-            version: version && isValidVersion(version) ? version : undefined,
-          };
-
-          // First, assume it's a lightweight tag pointing directly to a commit
-          if (!cache.commitToTags.has(tagOid)) {
-            cache.commitToTags.set(tagOid, []);
-          }
-          cache.commitToTags.get(tagOid)!.push({ ...tagInfo, hash: tagOid });
-
-          // Try to read as annotated tag
-          try {
-            const tagObject = await git.readTag({
-              fs,
-              dir: repositoryPath,
-              oid: tagOid,
-            });
-
-            if (tagObject && tagObject.tag.object) {
-              const commitOid = tagObject.tag.object;
-              // Remove from lightweight position if it was an annotated tag
-              const lightweightTags = cache.commitToTags.get(tagOid);
-              if (lightweightTags) {
-                const index = lightweightTags.findIndex(
-                  (t) => t.name === tagName
-                );
-                if (index >= 0) {
-                  lightweightTags.splice(index, 1);
-                  if (lightweightTags.length === 0) {
-                    cache.commitToTags.delete(tagOid);
-                  }
-                }
-              }
-
-              // Add to actual commit position
-              if (!cache.commitToTags.has(commitOid)) {
-                cache.commitToTags.set(commitOid, []);
-              }
-              cache.commitToTags
-                .get(commitOid)!
-                .push({ ...tagInfo, hash: commitOid });
-            }
-          } catch {
-            // It's a lightweight tag, already added above
-          }
-        } catch {
-          // Skip tags that can't be resolved
-        }
-      })
-    );
-  } catch {
-    // If we can't list tags, return empty cache
-  }
-
-  return cache;
 };
 
 /**
@@ -732,11 +649,25 @@ const getGitMetadata = async (
       return metadata;
     }
 
-    // Build tag cache for performance
-    const tagCache = await buildTagCache(gitRootPath);
-    logger.debug(
-      `Built tag cache with ${tagCache.commitToTags.size} commit entries`
+    // Load or build tag cache with differential updates
+    const { cache: tagCache, stats } = await loadOrBuildTagCache(
+      gitRootPath,
+      (tagName: string) => {
+        const version = parseVersion(tagName);
+        return version && isValidVersion(version) ? version : undefined;
+      },
+      logger
     );
+
+    if (stats.fullRebuild) {
+      logger.debug(
+        `Built new tag cache: ${stats.totalTags} tags in ${stats.updateTime}ms`
+      );
+    } else {
+      logger.debug(
+        `Updated cache differentially: +${stats.added} -${stats.deleted} ~${stats.modified} =${stats.unchanged} (${stats.updateTime}ms)`
+      );
+    }
 
     // Initialize reached commits cache
     const reachedCommits = new Map<string, Version>();
