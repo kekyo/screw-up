@@ -12,13 +12,14 @@ import {
   isCacheValid,
   buildCacheValidation,
   reconstructTagCache,
+  cleanupOldCacheFiles,
+  getCachePath,
 } from './cache';
 import {
   calculateTagDiff,
   removeTagsFromCache,
   addTagsToCache,
   updateTagsInCache,
-  getAllTagNames,
 } from './cache-operations';
 import {
   getTagsInfo,
@@ -89,6 +90,19 @@ export const loadOrBuildTagCache = async (
     // Save updated cache
     const validation = await buildCacheValidation(repoPath);
     await saveCachedTags(repoPath, cache, validation);
+
+    // Cleanup old cache files if current cache is older than 24 hours
+    if (cachedData && Date.now() - cachedData.timestamp > 24 * 60 * 60 * 1000) {
+      try {
+        const cachePath = getCachePath(repoPath);
+        const deletedCount = await cleanupOldCacheFiles(cachePath, Date.now());
+        if (deletedCount > 0) {
+          logger.debug(`Cleaned up ${deletedCount} old cache files`);
+        }
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
 
     return {
       cache,

@@ -154,6 +154,11 @@ export const buildCompleteTagCache = async (
     })
   );
 
+  // Sort tags by name for each commit to ensure consistent ordering
+  for (const tags of cache.values()) {
+    tags.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
   return cache;
 };
 

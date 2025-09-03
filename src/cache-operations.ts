@@ -99,7 +99,10 @@ export const addTagsToCache = (
 
   for (const tag of newTags) {
     const existing = newCache.get(tag.hash) || [];
-    newCache.set(tag.hash, [...existing, tag]);
+    const updated = [...existing, tag];
+    // Sort tags by name to ensure consistent ordering
+    updated.sort((a, b) => a.name.localeCompare(b.name));
+    newCache.set(tag.hash, updated);
   }
 
   return newCache;
@@ -198,7 +201,10 @@ export const mergeCaches = (
     // Add only non-duplicate tags
     const newTags = tags.filter((tag) => !existingNames.has(tag.name));
     if (existing.length > 0 || newTags.length > 0) {
-      merged.set(hash, [...existing, ...newTags]);
+      const mergedTags = [...existing, ...newTags];
+      // Sort tags by name to ensure consistent ordering
+      mergedTags.sort((a, b) => a.name.localeCompare(b.name));
+      merged.set(hash, mergedTags);
     }
   }
 

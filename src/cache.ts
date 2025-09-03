@@ -14,6 +14,10 @@ import type { TagCache, TagInfo } from './analyzer';
  * Cache management for tag information
  */
 
+// Cache cleanup constants
+const CLEANUP_TRIGGER_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+const CLEANUP_DELETE_AGE_MS = 10 * 24 * 60 * 60 * 1000; // 10 days
+
 /**
  * Cache validation information
  */
@@ -42,7 +46,7 @@ interface CachedData {
 /**
  * Get cache file path for a repository
  */
-const getCachePath = (repoPath: string): string => {
+export const getCachePath = (repoPath: string): string => {
   const absoluteRepoPath = path.resolve(repoPath);
 
   // Hash repository path with SHA1
@@ -234,4 +238,54 @@ export const reconstructTagCache = (cachedData: CachedData): TagCache => {
     commitToTags: new Map(Object.entries(cachedData.tagCache.commitToTags)),
     initialized: true,
   };
+};
+
+/**
+ * Clean up old cache files in the cache directory
+ * @param currentCachePath - Path of the current cache file (to exclude from deletion)
+ * @param currentTimestamp - Current timestamp in milliseconds
+ * @returns Number of deleted files
+ */
+export const cleanupOldCacheFiles = async (
+  currentCachePath: string,
+  currentTimestamp: number
+): Promise<number> => {
+  let deletedCount = 0;
+
+  try {
+    const cacheDir = path.dirname(currentCachePath);
+    const currentFileName = path.basename(currentCachePath);
+
+    // List all files in cache directory
+    const files = await fs.readdir(cacheDir);
+
+    // Process each file
+    await Promise.all(
+      files.map(async (fileName) => {
+        // Skip non-JSON files and current cache file
+        if (!fileName.endsWith('.json') || fileName === currentFileName) {
+          return;
+        }
+
+        const filePath = path.join(cacheDir, fileName);
+
+        try {
+          const stats = await fs.stat(filePath);
+          const fileAge = currentTimestamp - stats.mtimeMs;
+
+          // Delete if older than 10 days
+          if (fileAge > CLEANUP_DELETE_AGE_MS) {
+            await fs.unlink(filePath);
+            deletedCount++;
+          }
+        } catch {
+          // Ignore errors for individual files (permission issues, file already deleted, etc.)
+        }
+      })
+    );
+  } catch {
+    // Ignore directory read errors
+  }
+
+  return deletedCount;
 };
