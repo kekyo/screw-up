@@ -7,7 +7,7 @@ import type { Plugin } from 'vite';
 import { readFile, writeFile, readdir, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, dirname } from 'path';
-import { createAsyncLock } from 'async-primitives';
+import { createMutex } from 'async-primitives';
 import { resolvePackageMetadata, createConsoleLogger } from './internal';
 import { ScrewUpOptions, PackageMetadata } from './types';
 import { getFetchGitMetadata } from './analyzer';
@@ -158,7 +158,7 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
   const resolvedOutputMetadataFileTypePath =
     outputMetadataFileTypePath ||
     outputMetadataFilePath.replace(/\.ts$/, '.d.ts');
-  const generateMetadataSourceLocker = createAsyncLock();
+  const generateMetadataSourceLocker = createMutex();
 
   const loggerPrefix = `${name}-vite`;
   let logger = createConsoleLogger(loggerPrefix);
@@ -304,15 +304,18 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
       // Avoid race conditions.
       const l = await generateMetadataSourceLocker.lock();
       try {
-        logger.debug(`configResolved: Started.`);
+        // Enable debug logging for performance analysis
+        const tempEnableLogging = true;
 
         // Save project root
         projectRoot = config.root;
-        if (config?.logger) {
+        if (tempEnableLogging || config?.logger) {
           logger = createConsoleLogger(loggerPrefix, config.logger);
         } else if (config?.customLogger) {
           logger = createConsoleLogger(loggerPrefix, config.customLogger);
         }
+
+        logger.debug(`configResolved: Started.`);
         // Get Git metadata fetcher function
         fetchGitMetadata = getFetchGitMetadata(
           projectRoot,
