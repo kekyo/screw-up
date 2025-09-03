@@ -3,26 +3,26 @@
 // Under MIT.
 // https://github.com/kekyo/screw-up/
 
-import { join } from "path";
-import { createReadStream, existsSync } from "fs";
-import { mkdir, mkdtemp, writeFile, copyFile, rm } from "fs/promises";
+import { join } from 'path';
+import { createReadStream, existsSync } from 'fs';
+import { mkdir, mkdtemp, writeFile, copyFile, rm } from 'fs/promises';
 import {
   createTarPacker,
   storeReaderToFile,
   extractTo,
   createTarExtractor,
   createEntryItemGenerator,
-} from "tar-vern";
-import { spawn } from "child_process";
-import { tmpdir } from "os";
+} from 'tar-vern';
+import { spawn } from 'child_process';
+import { tmpdir } from 'os';
 import {
   resolveRawPackageJsonObject,
   findWorkspaceRoot,
   collectWorkspaceSiblings,
   replacePeerDependenciesWildcards,
   Logger,
-} from "./internal";
-import { getFetchGitMetadata } from "./analyzer";
+} from './internal';
+import { getFetchGitMetadata } from './analyzer';
 
 // We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
 
@@ -36,42 +36,42 @@ import { getFetchGitMetadata } from "./analyzer";
  */
 const runNpmPack = async (
   targetDir: string,
-  packDestDir: string,
+  packDestDir: string
 ): Promise<string> => {
   return new Promise((res, rej) => {
     const npmProcess = spawn(
-      "npm",
-      ["pack", "--pack-destination", packDestDir],
+      'npm',
+      ['pack', '--pack-destination', packDestDir],
       {
         cwd: targetDir,
-        stdio: ["ignore", "pipe", "pipe"],
-      },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }
     );
 
-    let stdout = "";
-    let stderr = "";
+    let stdout = '';
+    let stderr = '';
 
-    npmProcess.stdout.on("data", (data) => {
+    npmProcess.stdout.on('data', (data) => {
       stdout += data.toString();
     });
 
-    npmProcess.stderr.on("data", (data) => {
+    npmProcess.stderr.on('data', (data) => {
       stderr += data.toString();
     });
 
-    npmProcess.on("close", (code) => {
+    npmProcess.on('close', (code) => {
       if (code === 0) {
         // npm pack outputs the filename on stdout (last line or line ending with .tgz)
-        const lines = stdout.trim().split("\n");
+        const lines = stdout.trim().split('\n');
         // Find the line that ends with .tgz (actual filename) or use the last line
         const filename =
-          lines.find((line) => line.trim().endsWith(".tgz")) ||
+          lines.find((line) => line.trim().endsWith('.tgz')) ||
           lines[lines.length - 1];
-        if (filename && filename.trim().endsWith(".tgz")) {
+        if (filename && filename.trim().endsWith('.tgz')) {
           const fullPath = join(packDestDir, filename.trim());
           res(fullPath);
         } else {
-          rej(new Error("npm pack did not output a valid .tgz filename"));
+          rej(new Error('npm pack did not output a valid .tgz filename'));
         }
       } else {
         const errorMessage = `npm pack failed with exit code ${code}`;
@@ -86,7 +86,7 @@ const runNpmPack = async (
       }
     });
 
-    npmProcess.on("error", (error) => {
+    npmProcess.on('error', (error) => {
       rej(new Error(`Failed to spawn npm pack: ${error.message}`));
     });
   });
@@ -123,7 +123,7 @@ export const packAssets = async (
   readmeReplacementPath: string | undefined,
   replacePeerDepsWildcards: boolean,
   peerDepsVersionPrefix: string,
-  logger: Logger,
+  logger: Logger
 ): Promise<PackedResult | undefined> => {
   // Check if target directory exists
   if (!existsSync(targetDir)) {
@@ -136,7 +136,7 @@ export const packAssets = async (
     !existsSync(readmeReplacementCandidatePath)
   ) {
     throw new Error(
-      `README replacement file is not found: ${readmeReplacementCandidatePath}`,
+      `README replacement file is not found: ${readmeReplacementCandidatePath}`
     );
   }
 
@@ -144,7 +144,7 @@ export const packAssets = async (
   const fetchGitMetadata = getFetchGitMetadata(
     targetDir,
     checkWorkingDirectoryStatus,
-    logger,
+    logger
   );
 
   // Resolve package metadata with source tracking
@@ -153,7 +153,7 @@ export const packAssets = async (
     fetchGitMetadata,
     alwaysOverrideVersionFromGit,
     inheritableFields,
-    logger,
+    logger
   );
 
   let resolvedPackageJson = result.metadata;
@@ -168,14 +168,14 @@ export const packAssets = async (
   if (packageJsonReadme) {
     // When does not override by parameter (CLI)
     if (!readmeReplacementCandidatePath) {
-      const packageJsonReadmeDir = result.sourceMap.get("readme");
+      const packageJsonReadmeDir = result.sourceMap.get('readme');
       const packageJsonReadmePath = join(
         packageJsonReadmeDir,
-        packageJsonReadme,
+        packageJsonReadme
       );
       if (!existsSync(packageJsonReadmePath)) {
         throw new Error(
-          `README replacement file is not found: ${packageJsonReadmePath}`,
+          `README replacement file is not found: ${packageJsonReadmePath}`
         );
       }
       readmeReplacementCandidatePath = packageJsonReadmePath;
@@ -193,20 +193,20 @@ export const packAssets = async (
         fetchGitMetadata,
         alwaysOverrideVersionFromGit,
         inheritableFields,
-        logger,
+        logger
       );
       if (siblings.size > 0) {
         resolvedPackageJson = replacePeerDependenciesWildcards(
           resolvedPackageJson,
           siblings,
-          peerDepsVersionPrefix,
+          peerDepsVersionPrefix
         );
       }
     }
   }
 
   // Create temporary directory for npm pack
-  const baseTempDir = await mkdtemp(join(tmpdir(), "screw-up-npm-pack-"));
+  const baseTempDir = await mkdtemp(join(tmpdir(), 'screw-up-npm-pack-'));
   await mkdir(baseTempDir, { recursive: true });
 
   try {
@@ -214,36 +214,36 @@ export const packAssets = async (
     const npmTarballPath = await runNpmPack(targetDir, baseTempDir);
 
     // Step 2: Extract the npm-generated tarball into staging directory
-    const stagingDir = join(baseTempDir, "staging");
+    const stagingDir = join(baseTempDir, 'staging');
     await mkdir(stagingDir, { recursive: true });
 
     const stream = createReadStream(npmTarballPath);
-    await extractTo(createTarExtractor(stream, "gzip"), stagingDir);
+    await extractTo(createTarExtractor(stream, 'gzip'), stagingDir);
 
     // Step 3: Process extracted files (package.json/README replacement)
     // Replace package.json with our processed version
-    const packageJsonPath = join(stagingDir, "package", "package.json");
+    const packageJsonPath = join(stagingDir, 'package', 'package.json');
     if (existsSync(packageJsonPath)) {
       await writeFile(
         packageJsonPath,
-        JSON.stringify(resolvedPackageJson, null, 2),
+        JSON.stringify(resolvedPackageJson, null, 2)
       );
     }
 
     // Replace README.md
     if (readmeReplacementCandidatePath) {
-      const readmeDestPath = join(stagingDir, "package", "README.md");
+      const readmeDestPath = join(stagingDir, 'package', 'README.md');
       await copyFile(readmeReplacementCandidatePath, readmeDestPath);
     }
 
     // Step 4: Re-create tarball with modified files
-    const outputFileName = `${resolvedPackageJson?.name?.replace("/", "-") ?? "package"}-${resolvedPackageJson?.version ?? "0.0.0"}.tgz`;
+    const outputFileName = `${resolvedPackageJson?.name?.replace('/', '-') ?? 'package'}-${resolvedPackageJson?.version ?? '0.0.0'}.tgz`;
     await mkdir(outputDir, { recursive: true });
     const outputFile = join(outputDir, outputFileName);
 
     // Re-packing final tar file from the modified staging directory
     const itemGenerator = createEntryItemGenerator(stagingDir);
-    const packer = createTarPacker(itemGenerator, "gzip");
+    const packer = createTarPacker(itemGenerator, 'gzip');
     await storeReaderToFile(packer, outputFile);
 
     // PackedResult
@@ -269,7 +269,7 @@ export const getComputedPackageJsonObject = async (
   fetchGitMetadata: () => Promise<any>,
   alwaysOverrideVersionFromGit: boolean,
   inheritableFields: Set<string>,
-  logger: Logger,
+  logger: Logger
 ): Promise<any> => {
   // Check if target directory exists
   if (!existsSync(targetDir)) {
@@ -282,7 +282,7 @@ export const getComputedPackageJsonObject = async (
     fetchGitMetadata,
     alwaysOverrideVersionFromGit,
     inheritableFields,
-    logger,
+    logger
   );
   return result.metadata;
 };
@@ -304,7 +304,7 @@ export interface ParsedArgs {
  */
 export const parseArgs = (
   args: string[],
-  argOptionMap: Map<string, Set<string>>,
+  argOptionMap: Map<string, Set<string>>
 ): ParsedArgs => {
   const result: any = {
     argv: args,
@@ -314,7 +314,7 @@ export const parseArgs = (
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg.startsWith("--")) {
+    if (arg.startsWith('--')) {
       const optionName = arg.slice(2);
       // Found option bedore command
       if (!result.command) {
@@ -333,7 +333,7 @@ export const parseArgs = (
         }
       }
       // Sigle hyphen option is always flag
-    } else if (arg.startsWith("-")) {
+    } else if (arg.startsWith('-')) {
       const optionName = arg.slice(1);
       if (optionName.length == 1) {
         result.options[optionName] = true;

@@ -3,12 +3,12 @@
 // Under MIT.
 // https://github.com/kekyo/screw-up/
 
-import { existsSync } from "fs";
-import { readFile } from "fs/promises";
-import { dirname, join } from "path";
-import { glob } from "glob";
-import JSON5 from "json5";
-import { PackageMetadata } from "./types";
+import { existsSync } from 'fs';
+import { readFile } from 'fs/promises';
+import { dirname, join } from 'path';
+import { glob } from 'glob';
+import JSON5 from 'json5';
+import { PackageMetadata } from './types';
 
 // We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
 
@@ -97,11 +97,11 @@ const flattenObject = (obj: any, prefix: string, map: PackageMetadata) => {
   for (const [key, value] of Object.entries(obj)) {
     if (!value) continue;
     const fullKey = prefix ? `${prefix}.${key}` : key;
-    if (typeof value === "string") {
+    if (typeof value === 'string') {
       map[fullKey] = value;
     } else if (Array.isArray(value)) {
-      map[fullKey] = value.map((v) => String(v)).join(",");
-    } else if (typeof value === "object") {
+      map[fullKey] = value.map((v) => String(v)).join(',');
+    } else if (typeof value === 'object') {
       // Recursively flatten nested objects
       flattenObject(value, fullKey, map);
     } else {
@@ -119,29 +119,29 @@ const flattenObject = (obj: any, prefix: string, map: PackageMetadata) => {
  */
 export const findWorkspaceRoot = async (
   startPath: string,
-  logger: Logger,
+  logger: Logger
 ): Promise<string | undefined> => {
   let currentPath = startPath;
 
   while (currentPath !== dirname(currentPath)) {
-    const packageJsonPath = join(currentPath, "package.json");
+    const packageJsonPath = join(currentPath, 'package.json');
 
     if (existsSync(packageJsonPath)) {
       try {
-        const content = await readFile(packageJsonPath, "utf-8");
+        const content = await readFile(packageJsonPath, 'utf-8');
         const packageJson = JSON5.parse(content);
 
         // Check for workspace configurations
         if (
           packageJson.workspaces ||
-          existsSync(join(currentPath, "pnpm-workspace.yaml")) ||
-          existsSync(join(currentPath, "lerna.json"))
+          existsSync(join(currentPath, 'pnpm-workspace.yaml')) ||
+          existsSync(join(currentPath, 'lerna.json'))
         ) {
           return currentPath;
         }
       } catch (error) {
         logger.warn(
-          `Failed to parse package.json at ${packageJsonPath}: ${error}`,
+          `Failed to parse package.json at ${packageJsonPath}: ${error}`
         );
       }
     }
@@ -166,13 +166,13 @@ export const collectWorkspaceSiblings = async (
   fetchGitMetadata: () => Promise<any>,
   alwaysOverrideVersionFromGit: boolean,
   inheritableFields: Set<string>,
-  logger: Logger,
+  logger: Logger
 ): Promise<Map<string, WorkspaceSibling>> => {
   const siblings = new Map<string, WorkspaceSibling>();
 
   try {
-    const rootPackageJsonPath = join(workspaceRoot, "package.json");
-    const content = await readFile(rootPackageJsonPath, "utf-8");
+    const rootPackageJsonPath = join(workspaceRoot, 'package.json');
+    const content = await readFile(rootPackageJsonPath, 'utf-8');
     const rootPackageJson = JSON5.parse(content);
 
     // Get workspace patterns
@@ -192,7 +192,7 @@ export const collectWorkspaceSiblings = async (
 
     // Read package.json from each workspace directory
     for (const workspaceDir of workspaceDirs) {
-      const packageJsonPath = join(workspaceRoot, workspaceDir, "package.json");
+      const packageJsonPath = join(workspaceRoot, workspaceDir, 'package.json');
       if (existsSync(packageJsonPath)) {
         try {
           const packagePath = join(workspaceRoot, workspaceDir);
@@ -203,7 +203,7 @@ export const collectWorkspaceSiblings = async (
             fetchGitMetadata,
             alwaysOverrideVersionFromGit,
             inheritableFields,
-            logger,
+            logger
           );
 
           const packageJson = resolvedPackage.metadata;
@@ -217,14 +217,14 @@ export const collectWorkspaceSiblings = async (
           }
         } catch (error) {
           logger.warn(
-            `Failed to resolve package.json from ${packageJsonPath}: ${error}`,
+            `Failed to resolve package.json from ${packageJsonPath}: ${error}`
           );
         }
       }
     }
   } catch (error) {
     logger.warn(
-      `Failed to collect workspace siblings from ${workspaceRoot}: ${error}`,
+      `Failed to collect workspace siblings from ${workspaceRoot}: ${error}`
     );
   }
 
@@ -241,23 +241,23 @@ export const collectWorkspaceSiblings = async (
 export const replacePeerDependenciesWildcards = (
   packageJson: any,
   siblings: Map<string, WorkspaceSibling>,
-  versionPrefix: string,
+  versionPrefix: string
 ): any => {
   // Deep clone the package.json to avoid modifying the original
   const modifiedPackageJson = JSON5.parse(JSON.stringify(packageJson));
 
   if (
     !modifiedPackageJson.peerDependencies ||
-    typeof modifiedPackageJson.peerDependencies !== "object"
+    typeof modifiedPackageJson.peerDependencies !== 'object'
   ) {
     return modifiedPackageJson;
   }
 
   // Process each peer dependency
   for (const [depName, depVersion] of Object.entries(
-    modifiedPackageJson.peerDependencies,
+    modifiedPackageJson.peerDependencies
   )) {
-    if (depVersion === "*" && siblings.has(depName)) {
+    if (depVersion === '*' && siblings.has(depName)) {
       const sibling = siblings.get(depName)!;
       modifiedPackageJson.peerDependencies[depName] =
         `${versionPrefix}${sibling.version}`;
@@ -288,13 +288,13 @@ export const mergePackageMetadata = async (
   childMetadata: PackageMetadata,
   parentSourceDir: string,
   childSourceDir: string,
-  _repositoryPath: string,
+  _repositoryPath: string
 ): Promise<PackageMetadata> => {
   // Fetch git metadata
   const metadata = await fetchGitMetadata();
 
   const merged: PackageMetadata = {};
-  flattenObject(metadata, "", merged);
+  flattenObject(metadata, '', merged);
 
   // Start with parent metadata
   for (const key in parentMetadata) {
@@ -345,7 +345,7 @@ const mergeRawPackageJson = async (
   childMetadata: any,
   parentSourceDir: string,
   childSourceDir: string,
-  repositoryPath: string,
+  repositoryPath: string
 ): Promise<any> => {
   // Fetch git metadata
   const gitMetadata = await fetchGitMetadata();
@@ -374,7 +374,7 @@ const mergeRawPackageJson = async (
   // Always override version from Git if enabled (new default behavior)
   if (alwaysOverrideVersionFromGit && gitMetadata.version) {
     merged.version = gitMetadata.version;
-    sourceMap.set("version", repositoryPath); // Mark as Git-sourced
+    sourceMap.set('version', repositoryPath); // Mark as Git-sourced
   }
 
   return merged;
@@ -399,28 +399,28 @@ const resolvePackageMetadataT = async <T>(
     b: T,
     aDir: string,
     bDir: string,
-    repositoryPath: string,
-  ) => Promise<T>,
+    repositoryPath: string
+  ) => Promise<T>
 ): Promise<T> => {
   const workspaceRoot = await findWorkspaceRoot(projectRoot, logger);
 
   if (!workspaceRoot) {
     // No workspace, just read local package.json
-    const localPackagePath = join(projectRoot, "package.json");
+    const localPackagePath = join(projectRoot, 'package.json');
     const localMetadata = await readPackageMetadataFn(localPackagePath);
     return mergePackageMetadataFn(
       {} as T,
       localMetadata,
-      "", // dummy
+      '', // dummy
       projectRoot,
-      projectRoot,
+      projectRoot
     );
   }
 
-  const projectPackagePath = join(projectRoot, "package.json");
+  const projectPackagePath = join(projectRoot, 'package.json');
 
   // Start with root package metadata
-  const rootPackagePath = join(workspaceRoot, "package.json");
+  const rootPackagePath = join(workspaceRoot, 'package.json');
   const metadata = await readPackageMetadataFn(rootPackagePath);
 
   // If current project is not the root, merge with project-specific metadata
@@ -434,15 +434,15 @@ const resolvePackageMetadataT = async <T>(
       projectMetadata,
       workspaceRoot,
       projectRoot,
-      projectRoot,
+      projectRoot
     );
   } else {
     return mergePackageMetadataFn(
       {} as T,
       metadata,
-      "", // dummy
+      '', // dummy
       workspaceRoot,
-      projectRoot,
+      projectRoot
     );
   }
 };
@@ -457,13 +457,13 @@ const resolvePackageMetadataT = async <T>(
  */
 const readPackageMetadata = async (
   logger: Logger,
-  packagePath: string,
+  packagePath: string
 ): Promise<PackageMetadata> => {
   try {
-    const content = await readFile(packagePath, "utf-8");
+    const content = await readFile(packagePath, 'utf-8');
     const json = JSON5.parse(content);
     const map: PackageMetadata = {};
-    flattenObject(json, "", map);
+    flattenObject(json, '', map);
     return map;
   } catch (error) {
     logger.error(`Failed to read package.json from ${packagePath}: ${error}`);
@@ -483,7 +483,7 @@ export const resolvePackageMetadata = async (
   projectRoot: string,
   fetchGitMetadata: () => Promise<any>,
   alwaysOverrideVersionFromGit: boolean,
-  logger: Logger,
+  logger: Logger
 ): Promise<PackageResolutionResult<PackageMetadata>> => {
   const sourceMap = new Map<string, string>();
   const metadata = await resolvePackageMetadataT<PackageMetadata>(
@@ -494,8 +494,8 @@ export const resolvePackageMetadata = async (
       undefined,
       fetchGitMetadata,
       alwaysOverrideVersionFromGit,
-      sourceMap,
-    ),
+      sourceMap
+    )
   );
 
   return {
@@ -512,10 +512,10 @@ export const resolvePackageMetadata = async (
  */
 const readRawPackageJson = async (
   logger: Logger,
-  packagePath: string,
+  packagePath: string
 ): Promise<any> => {
   try {
-    const content = await readFile(packagePath, "utf-8");
+    const content = await readFile(packagePath, 'utf-8');
     return JSON5.parse(content);
   } catch (error) {
     logger.error(`Failed to read package.json from ${packagePath}: ${error}`);
@@ -537,7 +537,7 @@ export const resolveRawPackageJsonObject = async (
   fetchGitMetadata: () => Promise<any>,
   alwaysOverrideVersionFromGit: boolean,
   inheritableFields: Set<string>,
-  logger: Logger,
+  logger: Logger
 ): Promise<PackageResolutionResult<any>> => {
   const sourceMap = new Map<string, string>();
   const packageJson = await resolvePackageMetadataT<any>(
@@ -549,8 +549,8 @@ export const resolveRawPackageJsonObject = async (
       fetchGitMetadata,
       alwaysOverrideVersionFromGit,
       inheritableFields,
-      sourceMap,
-    ),
+      sourceMap
+    )
   );
 
   return {
