@@ -42,6 +42,14 @@ interface TagInfo {
   version: Version | undefined;
 }
 
+/**
+ * Tag cache for performance optimization
+ */
+interface TagCache {
+  commitToTags: Map<string, TagInfo[]>;
+  initialized: boolean;
+}
+
 /////////////////////////////////////////////////////////////////////////////////
 
 /**
@@ -254,6 +262,106 @@ const getCurrentCommit = async (
 };
 
 /**
+ * Build tag to commit mapping for fast lookups
+ * @param repositoryPath - Local Git repository directory
+ * @returns Tag cache with commit to tags mapping
+ */
+const buildTagCache = async (repositoryPath: string): Promise<TagCache> => {
+  const cache: TagCache = {
+    commitToTags: new Map<string, TagInfo[]>(),
+    initialized: true,
+  };
+
+  try {
+    const tags = await git.listTags({ fs, dir: repositoryPath });
+
+    // Process all tags in parallel for speed
+    await Promise.all(
+      tags.map(async (tagName) => {
+        try {
+          const tagOid = await git.resolveRef({
+            fs,
+            dir: repositoryPath,
+            ref: `refs/tags/${tagName}`,
+          });
+
+          const version = parseVersion(tagName);
+          const tagInfo: TagInfo = {
+            name: tagName,
+            hash: tagOid, // This will be updated for annotated tags
+            version: version && isValidVersion(version) ? version : undefined,
+          };
+
+          // First, assume it's a lightweight tag pointing directly to a commit
+          if (!cache.commitToTags.has(tagOid)) {
+            cache.commitToTags.set(tagOid, []);
+          }
+          cache.commitToTags.get(tagOid)!.push({ ...tagInfo, hash: tagOid });
+
+          // Try to read as annotated tag
+          try {
+            const tagObject = await git.readTag({
+              fs,
+              dir: repositoryPath,
+              oid: tagOid,
+            });
+
+            if (tagObject && tagObject.tag.object) {
+              const commitOid = tagObject.tag.object;
+              // Remove from lightweight position if it was an annotated tag
+              const lightweightTags = cache.commitToTags.get(tagOid);
+              if (lightweightTags) {
+                const index = lightweightTags.findIndex(
+                  (t) => t.name === tagName
+                );
+                if (index >= 0) {
+                  lightweightTags.splice(index, 1);
+                  if (lightweightTags.length === 0) {
+                    cache.commitToTags.delete(tagOid);
+                  }
+                }
+              }
+
+              // Add to actual commit position
+              if (!cache.commitToTags.has(commitOid)) {
+                cache.commitToTags.set(commitOid, []);
+              }
+              cache.commitToTags
+                .get(commitOid)!
+                .push({ ...tagInfo, hash: commitOid });
+            }
+          } catch {
+            // It's a lightweight tag, already added above
+          }
+        } catch {
+          // Skip tags that can't be resolved
+        }
+      })
+    );
+  } catch {
+    // If we can't list tags, return empty cache
+  }
+
+  return cache;
+};
+
+/**
+ * Get related tags for a commit using cache
+ * @param cache - Tag cache
+ * @param commitHash - The hash of the commit
+ * @returns The related tags or an empty array if no tags are found
+ */
+const getRelatedTagsFromCache = (
+  cache: TagCache,
+  commitHash: string
+): TagInfo[] => {
+  if (!cache.initialized) {
+    return [];
+  }
+  return cache.commitToTags.get(commitHash) || [];
+};
+
+/**
  * Get related tags for a commit
  * @param repositoryPath - Local Git repository directory
  * @param commitHash - The hash of the commit
@@ -274,21 +382,10 @@ const getRelatedTags = async (
           dir: repositoryPath,
           ref: `refs/tags/${tagName}`,
         });
-        // For annotated tags, get the actual commit ID
-        let targetCommitOid = tagOid;
-        try {
-          const tagObject = await git.readTag({
-            fs,
-            dir: repositoryPath,
-            oid: tagOid,
-          });
-          if (tagObject && tagObject.tag.object) {
-            targetCommitOid = tagObject.tag.object;
-          }
-        } catch {
-          // For lightweight tags, use as-is
-        }
-        if (targetCommitOid === commitHash) {
+
+        // Optimization: Check if lightweight tag matches first
+        if (tagOid === commitHash) {
+          // Direct match - this is a lightweight tag pointing to our commit
           const version = parseVersion(tagName);
           if (version && isValidVersion(version)) {
             tagInfos.push({
@@ -302,6 +399,34 @@ const getRelatedTags = async (
               hash: commitHash,
               version: undefined,
             });
+          }
+        } else {
+          // Not a direct match - check if it's an annotated tag
+          try {
+            const tagObject = await git.readTag({
+              fs,
+              dir: repositoryPath,
+              oid: tagOid,
+            });
+            if (tagObject && tagObject.tag.object === commitHash) {
+              // Annotated tag pointing to our commit
+              const version = parseVersion(tagName);
+              if (version && isValidVersion(version)) {
+                tagInfos.push({
+                  name: tagName,
+                  hash: commitHash,
+                  version,
+                });
+              } else {
+                tagInfos.push({
+                  name: tagName,
+                  hash: commitHash,
+                  version: undefined,
+                });
+              }
+            }
+          } catch {
+            // This is a lightweight tag that doesn't point to our commit
           }
         }
       } catch {
@@ -337,21 +462,10 @@ const getRelatedTagsForVersioning = async (
           dir: repositoryPath,
           ref: `refs/tags/${tagName}`,
         });
-        // For annotated tags, get the actual commit ID
-        let targetCommitOid = tagOid;
-        try {
-          const tagObject = await git.readTag({
-            fs,
-            dir: repositoryPath,
-            oid: tagOid,
-          });
-          if (tagObject && tagObject.tag.object) {
-            targetCommitOid = tagObject.tag.object;
-          }
-        } catch {
-          // For lightweight tags, use as-is
-        }
-        if (targetCommitOid === commitHash) {
+
+        // Optimization: Check if lightweight tag matches first
+        if (tagOid === commitHash) {
+          // Direct match - this is a lightweight tag pointing to our commit
           const version = parseVersion(tagName);
           if (version && isValidVersion(version)) {
             tagInfos.push({
@@ -359,6 +473,28 @@ const getRelatedTagsForVersioning = async (
               hash: commitHash,
               version,
             });
+          }
+        } else {
+          // Not a direct match - check if it's an annotated tag
+          try {
+            const tagObject = await git.readTag({
+              fs,
+              dir: repositoryPath,
+              oid: tagOid,
+            });
+            if (tagObject && tagObject.tag.object === commitHash) {
+              // Annotated tag pointing to our commit
+              const version = parseVersion(tagName);
+              if (version && isValidVersion(version)) {
+                tagInfos.push({
+                  name: tagName,
+                  hash: commitHash,
+                  version,
+                });
+              }
+            }
+          } catch {
+            // This is a lightweight tag that doesn't point to our commit
           }
         }
       } catch {
@@ -455,12 +591,14 @@ interface ScheduledCommit {
  * @param cwd - The directory to check
  * @param commit - The commit to lookup
  * @param reachedCommits - The map of reached commits
+ * @param tagCache - Optional tag cache for performance
  * @returns The version or undefined if no version is found
  */
 const lookupVersionLabelRecursive = async (
   cwd: string,
   commit: CommitInfo,
-  reachedCommits: Map<string, Version>
+  reachedCommits: Map<string, Version>,
+  tagCache?: TagCache
 ): Promise<Version | undefined> => {
   // Scheduled commit analysis stack
   const scheduledStack: ScheduledCommit[] = [];
@@ -481,10 +619,9 @@ const lookupVersionLabelRecursive = async (
     }
 
     // Detected mostly larger version tag.
-    const relatedTags = await getRelatedTagsForVersioning(
-      cwd,
-      currentCommit.hash
-    );
+    const relatedTags = tagCache
+      ? getRelatedTagsFromCache(tagCache, currentCommit.hash)
+      : await getRelatedTagsForVersioning(cwd, currentCommit.hash);
     const versionCandidates = relatedTags
       .filter((tag) => tag.version && isValidVersion(tag.version))
       .filter((tag) => tag.version!.minor !== undefined) // "1.2" or more.
@@ -542,7 +679,8 @@ const lookupVersionLabelRecursive = async (
         const alternateParentVersion = await lookupVersionLabelRecursive(
           cwd,
           parents[index],
-          reachedCommits
+          reachedCommits,
+          tagCache
         );
         if (
           alternateParentVersion &&
@@ -594,6 +732,12 @@ const getGitMetadata = async (
       return metadata;
     }
 
+    // Build tag cache for performance
+    const tagCache = await buildTagCache(gitRootPath);
+    logger.debug(
+      `Built tag cache with ${tagCache.commitToTags.size} commit entries`
+    );
+
     // Initialize reached commits cache
     const reachedCommits = new Map<string, Version>();
 
@@ -601,7 +745,8 @@ const getGitMetadata = async (
     let version = await lookupVersionLabelRecursive(
       gitRootPath,
       currentCommit,
-      reachedCommits
+      reachedCommits,
+      tagCache
     );
 
     // Set git metadata into 'git' key
@@ -634,8 +779,8 @@ const getGitMetadata = async (
       message: currentCommit.message,
     };
 
-    // Try to find the actual tag name if it exists
-    const relatedTags = await getRelatedTags(gitRootPath, currentCommit.hash);
+    // Try to find the actual tag name if it exists (use cache for performance)
+    const relatedTags = getRelatedTagsFromCache(tagCache, currentCommit.hash);
     gitMetadata.tags = relatedTags.map((tag) => tag.name);
 
     // Get branch information
