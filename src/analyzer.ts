@@ -8,7 +8,8 @@ import * as fs from 'fs/promises';
 import dayjs from 'dayjs';
 import { GitMetadata } from './types.js';
 import { Logger } from './internal.js';
-import { loadOrBuildTagCache } from './cache-manager.js';
+import { listTagsFast, resolveTagsBatch } from './fast-tags.js';
+import { buildCompleteTagCache } from './git-operations.js';
 
 // Ported from: https://github.com/kekyo/RelaxVersioner/blob/master/RelaxVersioner.Core/Analyzer.cs
 
@@ -41,14 +42,6 @@ export interface TagInfo {
   name: string;
   hash: string;
   version: Version | undefined;
-}
-
-/**
- * Tag cache for performance optimization
- */
-export interface TagCache {
-  commitToTags: Map<string, TagInfo[]>;
-  initialized: boolean;
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -263,166 +256,19 @@ const getCurrentCommit = async (
 };
 
 /**
- * Get related tags for a commit using cache
- * @param cache - Tag cache
+ * Get related tags from commit map
+ * @param commitToTags - Map of commit hash to tags
  * @param commitHash - The hash of the commit
  * @returns The related tags or an empty array if no tags are found
  */
-const getRelatedTagsFromCache = (
-  cache: TagCache,
+const getRelatedTagsFromMap = (
+  commitToTags: Map<string, TagInfo[]>,
   commitHash: string
 ): TagInfo[] => {
-  if (!cache.initialized) {
-    return [];
-  }
-  return cache.commitToTags.get(commitHash) || [];
+  return commitToTags.get(commitHash) || [];
 };
 
-/**
- * Get related tags for a commit
- * @param repositoryPath - Local Git repository directory
- * @param commitHash - The hash of the commit
- * @returns The related tags or an empty array if no tags are found
- */
-const getRelatedTags = async (
-  repositoryPath: string,
-  commitHash: string
-): Promise<TagInfo[]> => {
-  try {
-    const tags = await git.listTags({ fs, dir: repositoryPath });
-    const tagInfos: TagInfo[] = [];
-
-    for (const tagName of tags) {
-      try {
-        const tagOid = await git.resolveRef({
-          fs,
-          dir: repositoryPath,
-          ref: `refs/tags/${tagName}`,
-        });
-
-        // Optimization: Check if lightweight tag matches first
-        if (tagOid === commitHash) {
-          // Direct match - this is a lightweight tag pointing to our commit
-          const version = parseVersion(tagName);
-          if (version && isValidVersion(version)) {
-            tagInfos.push({
-              name: tagName,
-              hash: commitHash,
-              version,
-            });
-          } else {
-            tagInfos.push({
-              name: tagName,
-              hash: commitHash,
-              version: undefined,
-            });
-          }
-        } else {
-          // Not a direct match - check if it's an annotated tag
-          try {
-            const tagObject = await git.readTag({
-              fs,
-              dir: repositoryPath,
-              oid: tagOid,
-            });
-            if (tagObject && tagObject.tag.object === commitHash) {
-              // Annotated tag pointing to our commit
-              const version = parseVersion(tagName);
-              if (version && isValidVersion(version)) {
-                tagInfos.push({
-                  name: tagName,
-                  hash: commitHash,
-                  version,
-                });
-              } else {
-                tagInfos.push({
-                  name: tagName,
-                  hash: commitHash,
-                  version: undefined,
-                });
-              }
-            }
-          } catch {
-            // This is a lightweight tag that doesn't point to our commit
-          }
-        }
-      } catch {
-        // Skip tags that can't be resolved
-      }
-    }
-
-    // Sort by name
-    return tagInfos.sort((a, b) => a.name.localeCompare(b.name));
-  } catch {
-    return [];
-  }
-};
-
-/**
- * Get related tags for versioning
- * @param repositoryPath - Local Git repository directory
- * @param commitHash - The hash of the commit
- * @returns The related tags or an empty array if no tags are found
- */
-const getRelatedTagsForVersioning = async (
-  repositoryPath: string,
-  commitHash: string
-): Promise<TagInfo[]> => {
-  try {
-    const tags = await git.listTags({ fs, dir: repositoryPath });
-    const tagInfos: TagInfo[] = [];
-
-    for (const tagName of tags) {
-      try {
-        const tagOid = await git.resolveRef({
-          fs,
-          dir: repositoryPath,
-          ref: `refs/tags/${tagName}`,
-        });
-
-        // Optimization: Check if lightweight tag matches first
-        if (tagOid === commitHash) {
-          // Direct match - this is a lightweight tag pointing to our commit
-          const version = parseVersion(tagName);
-          if (version && isValidVersion(version)) {
-            tagInfos.push({
-              name: tagName,
-              hash: commitHash,
-              version,
-            });
-          }
-        } else {
-          // Not a direct match - check if it's an annotated tag
-          try {
-            const tagObject = await git.readTag({
-              fs,
-              dir: repositoryPath,
-              oid: tagOid,
-            });
-            if (tagObject && tagObject.tag.object === commitHash) {
-              // Annotated tag pointing to our commit
-              const version = parseVersion(tagName);
-              if (version && isValidVersion(version)) {
-                tagInfos.push({
-                  name: tagName,
-                  hash: commitHash,
-                  version,
-                });
-              }
-            }
-          } catch {
-            // This is a lightweight tag that doesn't point to our commit
-          }
-        }
-      } catch {
-        // Skip tags that can't be resolved
-      }
-    }
-    return tagInfos;
-  } catch {
-    return [];
-  }
-};
+// Removed: getRelatedTags and getRelatedTagsForVersioning functions are no longer needed as we use the commit map directly
 
 /**
  * Get the commit related branch name.
@@ -508,14 +354,14 @@ interface ScheduledCommit {
  * @param cwd - The directory to check
  * @param commit - The commit to lookup
  * @param reachedCommits - The map of reached commits
- * @param tagCache - Optional tag cache for performance
+ * @param commitToTags - Map of commit hash to tags for performance
  * @returns The version or undefined if no version is found
  */
 const lookupVersionLabelRecursive = async (
   cwd: string,
   commit: CommitInfo,
   reachedCommits: Map<string, Version>,
-  tagCache?: TagCache
+  commitToTags: Map<string, TagInfo[]>
 ): Promise<Version | undefined> => {
   // Scheduled commit analysis stack
   const scheduledStack: ScheduledCommit[] = [];
@@ -536,9 +382,7 @@ const lookupVersionLabelRecursive = async (
     }
 
     // Detected mostly larger version tag.
-    const relatedTags = tagCache
-      ? getRelatedTagsFromCache(tagCache, currentCommit.hash)
-      : await getRelatedTagsForVersioning(cwd, currentCommit.hash);
+    const relatedTags = getRelatedTagsFromMap(commitToTags, currentCommit.hash);
     const versionCandidates = relatedTags
       .filter((tag) => tag.version && isValidVersion(tag.version))
       .filter((tag) => tag.version!.minor !== undefined) // "1.2" or more.
@@ -597,7 +441,7 @@ const lookupVersionLabelRecursive = async (
           cwd,
           parents[index],
           reachedCommits,
-          tagCache
+          commitToTags
         );
         if (
           alternateParentVersion &&
@@ -631,6 +475,7 @@ const getGitMetadata = async (
   checkWorkingDirectoryStatus: boolean,
   logger: Logger
 ) => {
+  const startTime = Date.now();
   const metadata: any = {};
 
   // Try to find git root directory from the given path
@@ -639,6 +484,9 @@ const getGitMetadata = async (
     gitRootPath = await git.findRoot({ fs, filepath: repositoryPath });
   } catch {
     // No git repository found
+    logger.debug(
+      `[screw-up] Total getGitMetadata: ${Date.now() - startTime}ms`
+    );
     return metadata;
   }
 
@@ -646,11 +494,15 @@ const getGitMetadata = async (
     // Get current commit
     const currentCommit = await getCurrentCommit(gitRootPath);
     if (!currentCommit) {
+      logger.debug(
+        `[screw-up] Total getGitMetadata: ${Date.now() - startTime}ms`
+      );
       return metadata;
     }
 
-    // Load or build tag cache with differential updates
-    const { cache: tagCache, stats } = await loadOrBuildTagCache(
+    // Build tag map directly
+    const buildStart = Date.now();
+    const commitToTags = await buildCompleteTagCache(
       gitRootPath,
       (tagName: string) => {
         const version = parseVersion(tagName);
@@ -658,16 +510,10 @@ const getGitMetadata = async (
       },
       logger
     );
-
-    if (stats.fullRebuild) {
-      logger.debug(
-        `Built new tag cache: ${stats.totalTags} tags in ${stats.updateTime}ms`
-      );
-    } else {
-      logger.debug(
-        `Updated cache differentially: +${stats.added} -${stats.deleted} ~${stats.modified} =${stats.unchanged} (${stats.updateTime}ms)`
-      );
-    }
+    logger.debug(
+      `[screw-up] buildCompleteTagCache: ${Date.now() - buildStart}ms`
+    );
+    logger.debug(`Built tag map with ${commitToTags.size} commits`);
 
     // Initialize reached commits cache
     const reachedCommits = new Map<string, Version>();
@@ -677,7 +523,7 @@ const getGitMetadata = async (
       gitRootPath,
       currentCommit,
       reachedCommits,
-      tagCache
+      commitToTags
     );
 
     // Set git metadata into 'git' key
@@ -710,8 +556,8 @@ const getGitMetadata = async (
       message: currentCommit.message,
     };
 
-    // Try to find the actual tag name if it exists (use cache for performance)
-    const relatedTags = getRelatedTagsFromCache(tagCache, currentCommit.hash);
+    // Try to find the actual tag name if it exists
+    const relatedTags = getRelatedTagsFromMap(commitToTags, currentCommit.hash);
     gitMetadata.tags = relatedTags.map((tag) => tag.name);
 
     // Get branch information
@@ -725,6 +571,7 @@ const getGitMetadata = async (
     logger.warn(`Failed to extract git metadata: ${error}`);
   }
 
+  logger.debug(`[screw-up] Total getGitMetadata: ${Date.now() - startTime}ms`);
   return metadata;
 };
 
