@@ -42,8 +42,8 @@
     "pack": "npm run build && node dist/main.js pack --pack-destination artifacts/",
     "check-bootstrap": "[ ! -f src/generated/packageMetadata.ts ] && cp src/generated/packageMetadata-bootstrap src/generated/packageMetadata.ts"
   },
-  "peerDependencies": {
-    "async-primitives": ">=1.0.0",
+  "dependencies": {
+    "async-primitives": ">=1.2.0",
     "dayjs": ">=1.11.0",
     "glob": ">=11.0.0",
     "isomorphic-git": ">=1.30.0",
@@ -53,7 +53,7 @@
   },
   "devDependencies": {
     "@types/node": ">=20.0.0",
-    "prettier-max": ">=1.0.0",
+    "prettier-max": ">=1.6.0",
     "simple-git": ">=3.0.0",
     "tar": ">=7.4.0",
     "typescript": ">=5.0.0",
