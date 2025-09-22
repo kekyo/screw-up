@@ -794,6 +794,12 @@ screw-up publish packages/core --peer-deps-prefix "~"
 
 screw-upのGitタグからバージョン番号を計算するアルゴリズムは、完全にRelaxVersionerと同一です。つまり、あなたがASP.NET Coreでサーバーのコードを保守している場合、.NETとのバージョンを完全に統一して扱うことができます。
 
+## ディスカッションとPR
+
+ディスカッションは、 [GitHubのディスカッションページ](https://github.com/kekyo/screw-up/discussions)を参照して下さい。現在はissueベースのディスカッションを取りやめています。
+
+PRはWelcomeです。`develop`ブランチからの差分で送って下さい。送信する前に、あなたの変更をsquashしておいて下さい。
+
 ## ライセンス
 
 Under MIT

@@ -794,6 +794,12 @@ Therefore, this project was designed with Vite plugin usage in mind, focusing on
 
 The algorithm for calculating version numbers from Git tags is identical to RelaxVersioner. This means that if you are maintaining server code with ASP.NET Core, you can treat the .NET version as completely unified.
 
+## Discussions and Pull Requests
+
+For discussions, please refer to the [GitHub Discussions page](https://github.com/kekyo/screw-up/discussions). We have currently stopped issue-based discussions.
+
+Pull requests are welcome! Please submit them as diffs against the `develop` branch and squashed changes before send.
+
 ## License
 
 Under MIT

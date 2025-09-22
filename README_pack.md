@@ -70,7 +70,13 @@ my-awesome-library-2.1.0.tgz
 
 ## Documentation
 
-[See the repository](https://github.com/kekyo/screw-up/)
+[See the repository document](https://github.com/kekyo/screw-up/).
+
+## Discussions and Pull Requests
+
+For discussions, please refer to the [GitHub Discussions page](https://github.com/kekyo/screw-up/discussions). We have currently stopped issue-based discussions.
+
+Pull requests are welcome! Please submit them as diffs against the `develop` branch and squashed changes before send.
 
 ## License
 
