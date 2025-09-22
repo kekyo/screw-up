@@ -616,7 +616,7 @@ my-project/
 │   └── generated/
 │       ├── packageMetadata.ts    # `outputMetadataFile`により自動生成
 │       ├── packageMetadata.d.ts  # `outputMetadataFile`により自動生成
-│       └── .gitignore            # `packageMetadata.ts`を除外
+│       └── .gitignore            # `packageMetadata.ts`を除外(プラグインが自動生成)
 └── dist/                         # メタデータバナー付きビルド出力
 ```
 
@@ -673,7 +673,7 @@ export default defineConfig({
 });
 ```
 
-`outputMetadataFile`を`true`にすると、`packageMetadata.ts`と`packageMetadata.d.ts`が生成されるようになります。デフォルトでは、`packageMetadata.ts`にGitコミットIDが含まれるため、コミット毎にファイルが更新されます。毎回Gitの差分が発生するため、これを`.gitignore`で除外することをおすすめします。
+`outputMetadataFile`を`true`にすると、`packageMetadata.ts`と`packageMetadata.d.ts`が生成されるようになります。デフォルトでは`packageMetadata.ts`にGitコミットIDが含まれるため、コミット毎にファイルが更新されます。現在のscrew-upはメタデータファイルと同じディレクトリに`.gitignore`が存在しない場合、自動的に作成して除外設定を行います。ただし、生成先を変更した場合などは`.gitignore`が維持されていることを確認してください。
 
 #### 開発環境セットアップ
 
