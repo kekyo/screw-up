@@ -1146,6 +1146,11 @@ describe('metadata file generation tests', () => {
     );
     expect(metadataContent).toContain('export const author = "Test Author";');
     expect(metadataContent).toContain('export const license = "MIT";');
+
+    const gitignorePath = join(tempDir, 'src', 'generated', '.gitignore');
+    expect(existsSync(gitignorePath)).toBe(true);
+    const gitignoreContent = readFileSync(gitignorePath, 'utf-8');
+    expect(gitignoreContent).toContain('packageMetadata.ts');
   }, 30000);
 
   it('should generate metadata TypeScript file with custom path', async () => {
@@ -1199,6 +1204,11 @@ describe('metadata file generation tests', () => {
       'export const description = "Custom path test";'
     );
     expect(metadataContent).toContain('export const license = "Apache-2.0";');
+
+    const gitignorePath = join(tempDir, 'lib', '.gitignore');
+    expect(existsSync(gitignorePath)).toBe(true);
+    const gitignoreContent = readFileSync(gitignorePath, 'utf-8');
+    expect(gitignoreContent).toContain('metadata.ts');
   }, 30000);
 
   it('should sanitize keys with special characters', async () => {
@@ -1304,6 +1314,14 @@ describe('metadata file generation tests', () => {
       'packageMetadata.ts'
     );
     expect(existsSync(defaultMetadataPath)).toBe(false);
+
+    const defaultGitignorePath = join(
+      tempDir,
+      'src',
+      'generated',
+      '.gitignore'
+    );
+    expect(existsSync(defaultGitignorePath)).toBe(false);
   }, 30000);
 
   it('should use custom outputMetadataKeys different from outputKeys', async () => {
@@ -1426,6 +1444,9 @@ describe('metadata file generation tests', () => {
       'packageMetadata.ts'
     );
     expect(existsSync(metadataPath)).toBe(false);
+
+    const gitignorePath = join(tempDir, 'src', 'generated', '.gitignore');
+    expect(existsSync(gitignorePath)).toBe(false);
   }, 30000);
 });
 
