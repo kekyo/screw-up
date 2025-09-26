@@ -483,6 +483,97 @@ export declare function createTest(name: string): TestInterface;
     expect(txtContent).toBe('This is a text file.\n');
   }, 30000);
 
+  it('should adjust declaration maps after banner insertion', async () => {
+    const packageJson = {
+      name: 'declaration-lib',
+      version: '1.0.0',
+      description: 'Library with declaration maps',
+      author: 'Mapper',
+      license: 'MIT',
+    };
+    writeFileSync(
+      join(tempDir, 'package.json'),
+      JSON.stringify(packageJson, null, 2)
+    );
+
+    const srcDir = join(tempDir, 'src');
+    mkdirSync(srcDir);
+    writeFileSync(
+      join(srcDir, 'index.ts'),
+      'export function greet(name: string) { return `Hi ${name}`; }\n'
+    );
+
+    const distDir = join(tempDir, 'dist');
+    await build({
+      root: tempDir,
+      plugins: [
+        {
+          name: 'dts-with-map-generator',
+          generateBundle() {
+            const dts = `export declare function greet(name: string): string;\n`;
+            const map = {
+              version: 3,
+              file: 'index.d.ts',
+              sources: ['../src/index.ts'],
+              sourcesContent: [
+                'export function greet(name: string) { return `Hi ${name}`; }\n',
+              ],
+              names: [],
+              mappings: 'AAAA',
+            };
+            this.emitFile({
+              type: 'asset',
+              fileName: 'index.d.ts',
+              source: dts,
+            });
+            this.emitFile({
+              type: 'asset',
+              fileName: 'index.d.ts.map',
+              source: `${JSON.stringify(map)}\n`,
+            });
+          },
+        },
+        screwUp(),
+      ],
+      build: {
+        lib: {
+          entry: join(srcDir, 'index.ts'),
+          name: 'DeclarationLib',
+          fileName: 'index',
+          formats: ['es'],
+        },
+        outDir: distDir,
+        minify: false,
+      },
+    });
+
+    const dtsPath = join(distDir, 'index.d.ts');
+    const dtsMapPath = join(distDir, 'index.d.ts.map');
+    expect(existsSync(dtsPath)).toBe(true);
+    expect(existsSync(dtsMapPath)).toBe(true);
+
+    const dtsContent = readFileSync(dtsPath, 'utf-8');
+    const dtsMapContent = readFileSync(dtsMapPath, 'utf-8');
+    const map = JSON.parse(dtsMapContent);
+
+    const expectedBanner = generateBanner(packageJson, [
+      'name',
+      'version',
+      'description',
+      'author',
+      'license',
+      'repository.url',
+      'git.commit.hash',
+    ]);
+
+    expect(dtsContent.startsWith(`${expectedBanner}\n`)).toBe(true);
+
+    const insertedLineCount = `${expectedBanner}\n`.split('\n').length - 1;
+    const expectedPrefix = ';'.repeat(insertedLineCount);
+    expect(map.mappings.startsWith(expectedPrefix)).toBe(true);
+    expect(map.mappings.slice(expectedPrefix.length)).toBe('AAAA');
+  }, 30000);
+
   it('should not insert banner when insertMetadataBanner is false', async () => {
     // Create test package.json
     const packageJson = {
