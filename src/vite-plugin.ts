@@ -4,7 +4,7 @@
 // https://github.com/kekyo/screw-up/
 
 import type { Plugin } from 'vite';
-import type { OutputOptions } from 'rollup';
+import type { OutputAsset, OutputOptions } from 'rollup';
 import { readFile, writeFile, readdir, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, dirname, basename } from 'path';
@@ -118,6 +118,55 @@ const generateMetadataTypeFileContent = (outputKeys: string[]): string => {
   lines.push('');
 
   return lines.join('\n');
+};
+
+/**
+ * Count how many newline characters exist in the banner block.
+ * The result equals the line delta that needs to be applied to sourcemaps.
+ */
+const countInsertedLines = (bannerWithTrailingNewline: string): number => {
+  return bannerWithTrailingNewline.split('\n').length - 1;
+};
+
+/**
+ * Convert asset payloads to UTF-8 strings to simplify sourcemap adjustments.
+ */
+const stringifyAssetSource = (source: string | Uint8Array): string =>
+  typeof source === 'string' ? source : Buffer.from(source).toString('utf-8');
+
+/**
+ * Prepend the specified number of empty lines to a sourcemap by adding semicolons
+ * at the beginning of the VLQ mappings string.
+ * @returns Updated sourcemap JSON string, or undefined if no change is needed.
+ */
+const applyLineOffsetToSourceMap = (
+  source: string | Uint8Array,
+  lineOffset: number
+): string | undefined => {
+  if (lineOffset <= 0) {
+    return undefined;
+  }
+
+  const original = stringifyAssetSource(source);
+  let map: any;
+  try {
+    map = JSON.parse(original);
+  } catch {
+    return undefined;
+  }
+
+  if (!map || typeof map.mappings !== 'string') {
+    return undefined;
+  }
+
+  const prefix = ';'.repeat(lineOffset);
+  if (map.mappings.startsWith(prefix)) {
+    return undefined;
+  }
+
+  map.mappings = prefix + map.mappings;
+  const serialized = JSON.stringify(map);
+  return original.endsWith('\n') ? `${serialized}\n` : serialized;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -529,7 +578,27 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
           ) {
             if (typeof chunk.source === 'string') {
               // Assets are not covered by rollup banner injection, so prepend manually
-              chunk.source = insertBannerHeader(chunk.source, banner + '\n'); // insert more blank line
+              const bannerBlock = `${banner}\n`;
+              // Insert banner while preserving shebang semantics and capture line delta for maps
+              chunk.source = insertBannerHeader(chunk.source, bannerBlock); // insert more blank line
+              const lineOffset = countInsertedLines(bannerBlock);
+
+              const mapFileName = `${fileName}.map`;
+              const mapAsset = bundle[mapFileName] as OutputAsset | undefined;
+              if (
+                mapAsset &&
+                mapAsset.type === 'asset' &&
+                mapAsset.source !== undefined
+              ) {
+                // Rewrite the sourcemap mappings so declaration lines still map back correctly
+                const adjusted = applyLineOffsetToSourceMap(
+                  mapAsset.source,
+                  lineOffset
+                );
+                if (adjusted !== undefined) {
+                  mapAsset.source = adjusted;
+                }
+              }
               count++;
             }
           }
@@ -564,10 +633,27 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
               // Append banner to the asset file if it doesn't already contain it
               if (!content.includes(banner)) {
                 // Backfill banners onto assets emitted by other plugins as well
+                const bannerBlock = `${banner}\n`;
                 await writeFile(
                   filePath,
-                  insertBannerHeader(content, banner + '\n')
+                  insertBannerHeader(content, bannerBlock)
                 );
+
+                const lineOffset = countInsertedLines(bannerBlock);
+                const mapPath = `${filePath}.map`;
+                try {
+                  const mapContent = await readFile(mapPath, 'utf-8');
+                  // Align existing .d.ts.map files so consumer toolchains see accurate positions
+                  const adjusted = applyLineOffsetToSourceMap(
+                    mapContent,
+                    lineOffset
+                  );
+                  if (adjusted !== undefined) {
+                    await writeFile(mapPath, adjusted);
+                  }
+                } catch {
+                  // Declarations without sourcemap can be safely ignored
+                }
                 count++;
               }
             } catch (error) {
