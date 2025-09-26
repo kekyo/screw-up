@@ -12,6 +12,7 @@ import { tmpdir } from 'os';
 import { build } from 'vite';
 import dayjs from 'dayjs';
 import { simpleGit } from 'simple-git';
+import { TraceMap, originalPositionFor } from '@jridgewell/trace-mapping';
 import {
   findWorkspaceRoot,
   mergePackageMetadata,
@@ -159,6 +160,75 @@ export function hello(name: string): string {
       new RegExp(`^${expectedBanner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
     );
   }, 30000); // 30 second timeout for build
+
+  it('should preserve source maps when banner is inserted', async () => {
+    const packageJson = {
+      name: 'sourcemap-lib',
+      version: '1.0.0',
+      description: 'Sourcemap test library',
+      author: 'Source Mapper',
+      license: 'MIT',
+    };
+    writeFileSync(
+      join(tempDir, 'package.json'),
+      JSON.stringify(packageJson, null, 2)
+    );
+
+    const srcDir = join(tempDir, 'src');
+    mkdirSync(srcDir);
+    const sourceContent = `export function greet(name: string) {\n  const salutation = 'Hello';\n  return \`${'${salutation}, ${name}!'}\`;\n}\n`;
+    writeFileSync(join(srcDir, 'index.ts'), sourceContent);
+
+    const distDir = join(tempDir, 'dist');
+    await build({
+      root: tempDir,
+      plugins: [screwUp()],
+      build: {
+        lib: {
+          entry: join(srcDir, 'index.ts'),
+          name: 'SourcemapLib',
+          fileName: 'index',
+          formats: ['es'],
+        },
+        outDir: distDir,
+        minify: false,
+        sourcemap: true,
+      },
+    });
+
+    const outputPath = join(distDir, 'index.mjs');
+    const mapPath = join(distDir, 'index.mjs.map');
+
+    expect(existsSync(outputPath)).toBe(true);
+    expect(existsSync(mapPath)).toBe(true);
+
+    const output = readFileSync(outputPath, 'utf-8');
+    const expectedBanner = `/*!\n * name: sourcemap-lib\n * version: 1.0.0\n * description: Sourcemap test library\n * author: Source Mapper\n * license: MIT\n */`;
+    expect(output).toMatch(
+      new RegExp(`^${expectedBanner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
+    );
+
+    const map = JSON.parse(readFileSync(mapPath, 'utf-8'));
+    const traceMap = new TraceMap(map);
+
+    const generatedLines = output.split('\n');
+    // Find the rendered line that contains our return statement after banner insertion
+    const returnLineIndex = generatedLines.findIndex((line) =>
+      line.includes('return `${salutation}, ${name}!`;')
+    );
+    expect(returnLineIndex).toBeGreaterThan(-1);
+    const column = generatedLines[returnLineIndex].indexOf('return');
+
+    // Map the generated location back to the original TypeScript source via sourcemap data
+    const position = originalPositionFor(traceMap, {
+      line: returnLineIndex + 1,
+      column,
+    });
+
+    // The mapped result must still point at src/index.ts line 3, confirming no offset drift
+    expect(position.source).toContain('src/index.ts');
+    expect(position.line).toBe(3);
+  }, 30000);
 
   it('should use default output keys when not specified', () => {
     const metadata = {

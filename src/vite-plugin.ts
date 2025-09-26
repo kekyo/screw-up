@@ -4,6 +4,7 @@
 // https://github.com/kekyo/screw-up/
 
 import type { Plugin } from 'vite';
+import type { OutputOptions } from 'rollup';
 import { readFile, writeFile, readdir, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, dirname, basename } from 'path';
@@ -165,7 +166,7 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
 
   const loggerPrefix = `${name}-vite`;
   let logger = createConsoleLogger(loggerPrefix);
-  let banner: string;
+  let banner = '';
   let metadata: any;
   let projectRoot: string;
   let fetchGitMetadata = () => Promise.resolve<any>({});
@@ -332,6 +333,7 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
     enforce: 'pre',
     // Plugin starting
     applyToEnvironment: async (penv) => {
+      // Prime metadata generation once so dependent files are ready immediately
       logger.info(`${version}-${git_commit_hash}: Started.`);
 
       // Partial (but maybe exact) project root
@@ -359,6 +361,78 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
 
       return true;
     },
+    // Build configuration phase
+    config: (config) => {
+      // Branch: When banner injection is disabled, leave rollup output untouched
+      if (!insertMetadataBanner) {
+        return;
+      }
+
+      config.build ??= {};
+      const rollupOptions = (config.build.rollupOptions ??= {});
+      // Normalize rollup outputs to an array so we can inject a banner even when empty
+      const ensureOutputs = (): OutputOptions[] => {
+        // Branch: Consumer already supplied an array of outputs (possibly empty)
+        if (Array.isArray(rollupOptions.output)) {
+          const outputs = rollupOptions.output as OutputOptions[];
+          // Branch: Array exists but contains no entry yet; create one lazily
+          if (outputs.length === 0) {
+            const output: OutputOptions = {};
+            outputs.push(output);
+            return outputs;
+          }
+          outputs.forEach((output, index) => {
+            // Branch: Array slot is nullish (user emptied it); replace with object to keep consistent
+            if (!output) {
+              outputs[index] = {};
+            }
+          });
+          return outputs;
+        }
+
+        // Branch: Single output object was provided; wrap it to unify processing
+        if (rollupOptions.output) {
+          return [rollupOptions.output as OutputOptions];
+        }
+
+        // Branch: No output specified at all; create placeholder so banner hook can run
+        const output: OutputOptions = {};
+        rollupOptions.output = output;
+        return [output];
+      };
+
+      const outputs = ensureOutputs();
+
+      outputs.forEach((output) => {
+        const previousBanner = output.banner;
+        // Preserve any existing banner configuration and append ours later in order
+        const resolvePreviousBanner = async (chunk: any) => {
+          // Branch: User provided banner as function; resolve it per chunk for compatibility
+          if (typeof previousBanner === 'function') {
+            const resolved = await previousBanner(chunk);
+            return resolved ?? '';
+          }
+          return previousBanner ?? '';
+        };
+
+        output.banner = async (chunk: any) => {
+          const existingBanner = await resolvePreviousBanner(chunk);
+          const currentBanner = banner ?? '';
+          // If we have not generated the banner yet, fall back to the previous setting
+          if (!currentBanner) {
+            return existingBanner;
+          }
+          if (!existingBanner) {
+            return currentBanner;
+          }
+          // Avoid duplicating when the existing banner already starts with our content
+          if (existingBanner.startsWith(currentBanner)) {
+            return existingBanner;
+          }
+          return `${currentBanner}\n${existingBanner}`;
+        };
+      });
+    },
     // Configuration resolved phase
     configResolved: async (config) => {
       // Avoid race conditions.
@@ -382,6 +456,7 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
           checkWorkingDirectoryStatus,
           logger
         );
+        // Refresh banner string and generated files before TypeScript compilation kicks in
         // Generate metadata TypeScript file early to ensure it's available during TypeScript compilation
         if (await generateMetadataSourceFiles()) {
           logger.info(
@@ -401,6 +476,7 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
         logger.debug(`configureServer: Started.`);
 
         // Exclude generated metadata file from watcher to prevent infinite loop
+        // Branch: Metadata file output is enabled and watcher is present; unwatch to avoid churn
         if (outputMetadataFile && server.watcher) {
           const metadataSourcePath = join(projectRoot, outputMetadataFilePath);
           // Use unwatch to exclude the file from being watched
@@ -410,6 +486,7 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
           );
         }
 
+        // Rebuild banner metadata on dev server startup to keep values fresh
         if (await generateMetadataSourceFiles()) {
           logger.info(
             `configureServer: Metadata source file is generated: ${outputMetadataFilePath}`
@@ -445,14 +522,13 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
         let count = 0;
         for (const fileName in bundle) {
           const chunk = bundle[fileName];
-          if (chunk.type === 'chunk') {
-            chunk.code = insertBannerHeader(chunk.code, banner);
-            count++;
-          } else if (
+          if (
+            // Branch: Only treat assets that match filters; JS chunks already handled via rollup banner
             chunk.type === 'asset' &&
             assetFiltersRegex.some((filter) => filter.test(fileName))
           ) {
             if (typeof chunk.source === 'string') {
+              // Assets are not covered by rollup banner injection, so prepend manually
               chunk.source = insertBannerHeader(chunk.source, banner + '\n'); // insert more blank line
               count++;
             }
@@ -480,12 +556,14 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
           const filePath = join(options.dir, file);
 
           // Check if the file is target asset file
+          // Branch: Apply banner only to filtered assets in post-write stage
           if (assetFiltersRegex.some((filter) => filter.test(file))) {
             try {
               // Read the asset file
               const content = await readFile(filePath, 'utf-8');
               // Append banner to the asset file if it doesn't already contain it
               if (!content.includes(banner)) {
+                // Backfill banners onto assets emitted by other plugins as well
                 await writeFile(
                   filePath,
                   insertBannerHeader(content, banner + '\n')
