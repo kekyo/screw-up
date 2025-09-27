@@ -230,6 +230,70 @@ export function hello(name: string): string {
     expect(position.line).toBe(3);
   }, 30000);
 
+  it('should keep shebang before metadata banner', async () => {
+    const packageJson = {
+      name: 'shebang-cli',
+      version: '1.0.0',
+      description: 'CLI with shebang',
+      author: 'CLI Tester',
+      license: 'MIT',
+    };
+    writeFileSync(
+      join(tempDir, 'package.json'),
+      JSON.stringify(packageJson, null, 2)
+    );
+
+    const srcDir = join(tempDir, 'src');
+    mkdirSync(srcDir);
+    writeFileSync(
+      join(srcDir, 'cli.ts'),
+      `export function run(): void {
+  const name = process.argv.at(2) ?? 'world';
+  console.log('hello', name);
+}
+
+run();
+`
+    );
+
+    const distDir = join(tempDir, 'dist');
+    await build({
+      root: tempDir,
+      plugins: [screwUp()],
+      build: {
+        lib: {
+          entry: join(srcDir, 'cli.ts'),
+          name: 'ShebangCli',
+          fileName: 'cli',
+          formats: ['cjs'],
+        },
+        outDir: distDir,
+        minify: false,
+        rollupOptions: {
+          output: {
+            banner: '#!/usr/bin/env node',
+          },
+        },
+      },
+    });
+
+    const candidates = ['cli.cjs', 'cli.js', 'cli.mjs'];
+    const outputPath = candidates
+      .map((fileName) => join(distDir, fileName))
+      .find((filePath) => existsSync(filePath));
+    if (!outputPath) {
+      throw new Error(
+        `Expected built CLI artefact not found. Checked: ${candidates.join(', ')}`
+      );
+    }
+    const output = readFileSync(outputPath, 'utf-8');
+    expect(output.startsWith('#!/usr/bin/env node\n')).toBe(true);
+    const shebangPosition = output.indexOf('#!/usr/bin/env node');
+    const metadataPosition = output.indexOf('/*!');
+    expect(metadataPosition).toBeGreaterThan(-1);
+    expect(metadataPosition).toBeGreaterThan(shebangPosition);
+  }, 30000);
+
   it('should use default output keys when not specified', () => {
     const metadata = {
       name: 'test-package',

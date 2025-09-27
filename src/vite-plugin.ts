@@ -56,6 +56,52 @@ const insertBannerHeader = (content: string, banner: string): string => {
 };
 
 /**
+ * Adds a trailing newline to the banner text when needed so subsequent
+ * concatenations do not collapse onto the last line.
+ */
+const ensureTrailingNewline = (value: string, newline: string): string =>
+  value.endsWith(newline) ? value : value + newline;
+
+/**
+ * Merge screw-up's metadata banner with an existing Rollup banner, keeping any
+ * shebang line at the very top and preventing duplicate metadata blocks.
+ */
+const mergeBanners = (
+  currentBanner: string,
+  existingBanner: string
+): string => {
+  if (!currentBanner) {
+    return existingBanner;
+  }
+  if (!existingBanner) {
+    return currentBanner;
+  }
+
+  if (existingBanner.includes(currentBanner)) {
+    return existingBanner;
+  }
+
+  // Preserve shebang at the very top while sliding the metadata banner underneath it.
+  const shebangMatch = existingBanner.match(/^(#![^\r\n]*)(\r?\n)?([\s\S]*)$/);
+  if (shebangMatch) {
+    const [, shebangLine, newlineSeq = '\n', rest = ''] = shebangMatch;
+    if (rest.startsWith(currentBanner)) {
+      return existingBanner;
+    }
+    const currentWithNewline = ensureTrailingNewline(currentBanner, newlineSeq);
+    if (rest.length === 0) {
+      return `${shebangLine}${newlineSeq}${currentWithNewline}`;
+    }
+    return `${shebangLine}${newlineSeq}${currentWithNewline}${rest}`;
+  }
+
+  // Default path: prepend metadata banner before the previous banner content.
+  const newlineSeq = existingBanner.includes('\r\n') ? '\r\n' : '\n';
+  const currentWithNewline = ensureTrailingNewline(currentBanner, newlineSeq);
+  return `${currentWithNewline}${existingBanner}`;
+};
+
+/**
  * Convert string key to valid TypeScript identifier
  * @param key - The key to convert
  * @returns Valid TypeScript identifier
@@ -412,7 +458,7 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
     },
     // Build configuration phase
     config: (config) => {
-      // Branch: When banner injection is disabled, leave rollup output untouched
+      // When banner injection is disabled, leave rollup output untouched
       if (!insertMetadataBanner) {
         return;
       }
@@ -421,17 +467,17 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
       const rollupOptions = (config.build.rollupOptions ??= {});
       // Normalize rollup outputs to an array so we can inject a banner even when empty
       const ensureOutputs = (): OutputOptions[] => {
-        // Branch: Consumer already supplied an array of outputs (possibly empty)
+        // Consumer already supplied an array of outputs (possibly empty)
         if (Array.isArray(rollupOptions.output)) {
           const outputs = rollupOptions.output as OutputOptions[];
-          // Branch: Array exists but contains no entry yet; create one lazily
+          // Array exists but contains no entry yet; create one lazily
           if (outputs.length === 0) {
             const output: OutputOptions = {};
             outputs.push(output);
             return outputs;
           }
           outputs.forEach((output, index) => {
-            // Branch: Array slot is nullish (user emptied it); replace with object to keep consistent
+            // Array slot is nullish (user emptied it); replace with object to keep consistent
             if (!output) {
               outputs[index] = {};
             }
@@ -439,12 +485,12 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
           return outputs;
         }
 
-        // Branch: Single output object was provided; wrap it to unify processing
+        // Single output object was provided; wrap it to unify processing
         if (rollupOptions.output) {
           return [rollupOptions.output as OutputOptions];
         }
 
-        // Branch: No output specified at all; create placeholder so banner hook can run
+        // No output specified at all; create placeholder so banner hook can run
         const output: OutputOptions = {};
         rollupOptions.output = output;
         return [output];
@@ -456,7 +502,7 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
         const previousBanner = output.banner;
         // Preserve any existing banner configuration and append ours later in order
         const resolvePreviousBanner = async (chunk: any) => {
-          // Branch: User provided banner as function; resolve it per chunk for compatibility
+          // User provided banner as function; resolve it per chunk for compatibility
           if (typeof previousBanner === 'function') {
             const resolved = await previousBanner(chunk);
             return resolved ?? '';
@@ -467,18 +513,7 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
         output.banner = async (chunk: any) => {
           const existingBanner = await resolvePreviousBanner(chunk);
           const currentBanner = banner ?? '';
-          // If we have not generated the banner yet, fall back to the previous setting
-          if (!currentBanner) {
-            return existingBanner;
-          }
-          if (!existingBanner) {
-            return currentBanner;
-          }
-          // Avoid duplicating when the existing banner already starts with our content
-          if (existingBanner.startsWith(currentBanner)) {
-            return existingBanner;
-          }
-          return `${currentBanner}\n${existingBanner}`;
+          return mergeBanners(currentBanner, existingBanner);
         };
       });
     },
@@ -525,7 +560,7 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
         logger.debug(`configureServer: Started.`);
 
         // Exclude generated metadata file from watcher to prevent infinite loop
-        // Branch: Metadata file output is enabled and watcher is present; unwatch to avoid churn
+        // Metadata file output is enabled and watcher is present; unwatch to avoid churn
         if (outputMetadataFile && server.watcher) {
           const metadataSourcePath = join(projectRoot, outputMetadataFilePath);
           // Use unwatch to exclude the file from being watched
@@ -572,7 +607,7 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
         for (const fileName in bundle) {
           const chunk = bundle[fileName];
           if (
-            // Branch: Only treat assets that match filters; JS chunks already handled via rollup banner
+            // Only treat assets that match filters; JS chunks already handled via rollup banner
             chunk.type === 'asset' &&
             assetFiltersRegex.some((filter) => filter.test(fileName))
           ) {
@@ -625,7 +660,7 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
           const filePath = join(options.dir, file);
 
           // Check if the file is target asset file
-          // Branch: Apply banner only to filtered assets in post-write stage
+          // Apply banner only to filtered assets in post-write stage
           if (assetFiltersRegex.some((filter) => filter.test(file))) {
             try {
               // Read the asset file
