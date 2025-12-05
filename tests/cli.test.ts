@@ -1907,6 +1907,35 @@ describe('CLI tests', () => {
       }
     }, 10000);
 
+    it('should allow dump without package.json when forced', async () => {
+      const emptyDir = join(tempDir, 'empty-no-package-dump-force');
+      mkdirSync(emptyDir);
+
+      const result = await execCliMain(['dump', emptyDir, '--force'], {
+        cwd: tempDir,
+      });
+
+      const packageJson = JSON.parse(result);
+      expect(packageJson.name).toBeUndefined();
+      expect(packageJson.version).toBe('0.0.1');
+      expect(packageJson.git?.commit?.hash).toBe('unknown');
+      expect(packageJson.git?.commit?.shortHash).toBe('unknown');
+      expect(packageJson.git?.tags).toEqual([]);
+      expect(packageJson.git?.branches).toEqual([]);
+    }, 10000);
+
+    it('should accept short -f option for force dump', async () => {
+      const emptyDir = join(tempDir, 'empty-no-package-dump-force-short');
+      mkdirSync(emptyDir);
+
+      const result = await execCliMain(['dump', emptyDir, '-f'], {
+        cwd: tempDir,
+      });
+
+      const packageJson = JSON.parse(result);
+      expect(packageJson.version).toBe('0.0.1');
+    }, 10000);
+
     it('should dump complete package.json with all metadata', async () => {
       // Create comprehensive package.json
       const comprehensivePackageJson = {
@@ -2442,7 +2471,7 @@ describe('CLI tests', () => {
       expect(packageJson.keywords).toEqual(['test', 'workspace']);
 
       // Verify other fields are NOT inherited
-      expect(packageJson.version).toBeUndefined();
+      expect(packageJson.version).toBe('0.0.1');
       expect(packageJson.license).toBeUndefined();
       expect(packageJson.workspaces).toBeUndefined();
     }, 10000);

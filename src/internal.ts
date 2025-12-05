@@ -377,6 +377,20 @@ const mergeRawPackageJson = async (
     sourceMap.set('version', repositoryPath); // Mark as Git-sourced
   }
 
+  if (!merged.version) {
+    merged.version = '0.0.1';
+    const gitInfo =
+      typeof merged.git === 'object' && merged.git !== null ? merged.git : {};
+    gitInfo.version = gitInfo.version ?? merged.version;
+    gitInfo.commit = gitInfo.commit ?? {
+      hash: 'unknown',
+      shortHash: 'unknown',
+    };
+    gitInfo.tags = gitInfo.tags ?? [];
+    gitInfo.branches = gitInfo.branches ?? [];
+    merged.git = gitInfo;
+  }
+
   return merged;
 };
 
@@ -512,12 +526,19 @@ export const resolvePackageMetadata = async (
  */
 const readRawPackageJson = async (
   logger: Logger,
-  packagePath: string
+  packagePath: string,
+  ignoreNotExist: boolean = false
 ): Promise<any> => {
+  if (ignoreNotExist && !existsSync(packagePath)) {
+    return {};
+  }
   try {
     const content = await readFile(packagePath, 'utf-8');
     return JSON5.parse(content);
   } catch (error) {
+    if (ignoreNotExist && (error as any)?.code === 'ENOENT') {
+      return {};
+    }
     logger.error(`Failed to read package.json from ${packagePath}: ${error}`);
     throw error;
   }
@@ -537,13 +558,16 @@ export const resolveRawPackageJsonObject = async (
   fetchGitMetadata: () => Promise<any>,
   alwaysOverrideVersionFromGit: boolean,
   inheritableFields: Set<string>,
-  logger: Logger
+  logger: Logger,
+  ignoreNotExist: boolean = false
 ): Promise<PackageResolutionResult<any>> => {
   const sourceMap = new Map<string, string>();
+  const readRawPackageJsonFn = async (packagePath: string) =>
+    readRawPackageJson(logger, packagePath, ignoreNotExist);
   const packageJson = await resolvePackageMetadataT<any>(
     projectRoot,
     logger,
-    readRawPackageJson.bind(undefined, logger),
+    readRawPackageJsonFn,
     mergeRawPackageJson.bind(
       undefined,
       fetchGitMetadata,

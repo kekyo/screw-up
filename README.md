@@ -501,11 +501,13 @@ The dump command:
 - Shows the final computed `package.json` after all processing (workspace inheritance, Git metadata, etc.)
 - Useful for debugging and understanding how your package metadata will be resolved
 - Outputs clean JSON that can be piped to other tools (ex: `jq`)
+- `-f/--force` lets you dump even without `package.json`; only Git (or default) metadata is included
 
 #### Options
 
 - `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent
 - `--no-wds`: Disable working directory status check for version increment
+- `-f, --force`: Allow dumping without `package.json` (Git/default metadata only)
 
 ### README replacement feature
 

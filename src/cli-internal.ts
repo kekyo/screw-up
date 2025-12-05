@@ -269,7 +269,8 @@ export const getComputedPackageJsonObject = async (
   fetchGitMetadata: () => Promise<any>,
   alwaysOverrideVersionFromGit: boolean,
   inheritableFields: Set<string>,
-  logger: Logger
+  logger: Logger,
+  ignoreNotExist: boolean = false
 ): Promise<any> => {
   // Check if target directory exists
   if (!existsSync(targetDir)) {
@@ -282,7 +283,8 @@ export const getComputedPackageJsonObject = async (
     fetchGitMetadata,
     alwaysOverrideVersionFromGit,
     inheritableFields,
-    logger
+    logger,
+    ignoreNotExist
   );
   return result.metadata;
 };
