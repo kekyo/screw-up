@@ -496,16 +496,57 @@ screw-up dump ./my-project
 screw-up dump --inheritable-fields "author,license"
 ```
 
+以下の出力例のように、Gitのコミット情報も追加されます:
+
+```json
+{
+  "git": {
+    "tags": [],
+    "branches": [
+      "develop"
+    ],
+    "version": "1.13.2",
+    "commit": {
+      "hash": "49a4245d6c5ce6604167005f5234c1c4a38a852b",
+      "shortHash": "49a4245",
+      "date": "2025-12-05T11:50:38+09:00Z",
+      "message": "feat: Added force dump mode."
+    }
+  },
+  "version": "1.13.2",
+  "name": "screw-up",
+  "description": "Simply package metadata inserter on Vite plugin",
+
+  // ...
+}
+```
+
 dumpコマンドの機能:
 
 - すべての処理（ワークスペース継承、Gitメタデータなど）後の最終的な計算済み`package.json`を表示
 - デバッグとパッケージメタデータの解決方法の理解に有用
 - 他のツールにパイプできるクリーンなJSONを出力（`jq`など）
+- `-f/--force`を指定すると`package.json`が存在しなくても、Git（またはデフォルト）のメタデータだけで出力できます。
 
 #### オプション
 
 - `--inheritable-fields <list>`: 親から継承するフィールドのコンマ区切りリスト
 - `--no-wds`: バージョンインクリメントのワーキングディレクトリステータスチェックを無効化
+- `-f, --force`: `package.json`が無い場合でも強制的に出力（Git/デフォルトメタデータのみ）
+
+#### 汎用的な使用方法
+
+`-f`を使用すれば、NPMプロジェクトではない環境でも、Gitのメタデータを参照してバージョン管理を行うことが出来ます。
+例えば、`jq`コマンドと組み合わせて、あなたのC言語ヘッダファイルにバージョンやコミットIDを埋め込むことが出来ます:
+
+```bash
+# version.hを生成する
+screw-up dump -f | jq -r '
+  "#pragma once\n" +
+  "#define APP_VERSION \"" + (.version // "0.0.1") + "\"\n" +
+  "#define APP_COMMIT \"" + (.git.commit.shortHash // "unknown") + "\"\n"
+' > version.h
+```
 
 ### README置換機能
 

@@ -66,6 +66,7 @@ Options:
   --inheritable-fields <list>   Comma-separated list of fields to inherit from parent
   --no-wds                      Do not check working directory status to increase version
   --no-git-version-override     Do not override version from Git (use package.json version)
+  -f, --force                   Allow dumping even if package.json does not exist
   -h, --help                    Show help for dump command
 `);
 };
@@ -80,6 +81,8 @@ const dumpCommand = async (args: ParsedArgs, logger: Logger) => {
   const inheritableFieldsOption = args.options['inheritable-fields'] as string;
   const alwaysOverrideVersionFromGit = !args.options['no-git-version-override'];
   const checkWorkingDirectoryStatus = args.options['no-wds'] ? false : true;
+  const ignorePackageJsonNotExist =
+    args.options['force'] || args.options['f'] ? true : false;
 
   // Parse inheritable fields from CLI option or use defaults
   const inheritableFields = parseInheritableFields(inheritableFieldsOption);
@@ -108,7 +111,8 @@ const dumpCommand = async (args: ParsedArgs, logger: Logger) => {
       fetchGitMetadata,
       alwaysOverrideVersionFromGit,
       inheritableFields,
-      _logger
+      _logger,
+      ignorePackageJsonNotExist
     );
 
     if (computedPackageJson) {

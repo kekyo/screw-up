@@ -495,17 +495,57 @@ screw-up dump ./my-project
 # Dump with custom inheritable fields
 screw-up dump --inheritable-fields "author,license"
 ```
+As shown in the following output example, Git commit information is also added:
+
+```json
+{
+  "git": {
+    "tags": [],
+    "branches": [
+      "develop"
+    ],
+    "version": "1.13.2",
+    "commit": {
+      "hash": "49a4245d6c5ce6604167005f5234c1c4a38a852b",
+      "shortHash": "49a4245",
+      "date": "2025-12-05T11:50:38+09:00Z",
+      "message": "feat: Added force dump mode."
+    }
+  },
+  "version": "1.13.2",
+  "name": "screw-up",
+  "description": "Simply package metadata inserter on Vite plugin",
+
+  // ...
+}
+```
 
 The dump command:
 
 - Shows the final computed `package.json` after all processing (workspace inheritance, Git metadata, etc.)
 - Useful for debugging and understanding how your package metadata will be resolved
 - Outputs clean JSON that can be piped to other tools (ex: `jq`)
+- `-f/--force` lets you dump even without `package.json`; only Git (or default) metadata is included
 
 #### Options
 
 - `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent
 - `--no-wds`: Disable working directory status check for version increment
+- `-f, --force`: Allow dumping without `package.json` (Git/default metadata only)
+
+#### Generic usage
+
+With `-f`, you can use screw-up outside NPM projects and still leverage Git metadata for versioning.
+For example, combine with `jq` to generate a C header that embeds version and commit IDs:
+
+```bash
+# Generate version.h
+screw-up dump -f | jq -r '
+  "#pragma once\n" +
+  "#define APP_VERSION \"" + (.version // "0.0.1") + "\"\n" +
+  "#define APP_COMMIT \"" + (.git.commit.shortHash // "unknown") + "\"\n"
+' > version.h
+```
 
 ### README replacement feature
 
