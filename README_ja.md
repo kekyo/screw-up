@@ -502,9 +502,7 @@ screw-up dump --inheritable-fields "author,license"
 {
   "git": {
     "tags": [],
-    "branches": [
-      "develop"
-    ],
+    "branches": ["develop"],
     "version": "1.13.2",
     "commit": {
       "hash": "49a4245d6c5ce6604167005f5234c1c4a38a852b",
@@ -515,7 +513,7 @@ screw-up dump --inheritable-fields "author,license"
   },
   "version": "1.13.2",
   "name": "screw-up",
-  "description": "Simply package metadata inserter on Vite plugin",
+  "description": "Simply package metadata inserter on Vite plugin"
 
   // ...
 }
