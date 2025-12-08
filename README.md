@@ -382,6 +382,9 @@ The `screw-up` package includes a command-line interface for packaging and publi
 # Dump how `package.json` is resolved (JSON)
 screw-up dump
 
+# Format a template with package metadata placeholders
+screw-up format -i ./template.txt ./output.txt
+
 # Pack with custom README and limited inheritance
 screw-up pack --readme ./docs/DIST_README.md --inheritable-fields "version,license"
 
@@ -410,8 +413,127 @@ For help with any command:
 ```bash
 screw-up --help
 screw-up dump --help
+screw-up format --help
 screw-up pack --help
 screw-up publish --help
+```
+
+### Dump Command
+
+Dump computed package.json as JSON:
+
+```bash
+# Dump current directory package.json
+screw-up dump
+
+# Dump specific directory package.json
+screw-up dump ./my-project
+
+# Dump with custom inheritable fields
+screw-up dump --inheritable-fields "author,license"
+```
+
+As shown in the following output example, Git commit information is also added:
+
+```json
+{
+  "git": {
+    "tags": [],
+    "branches": ["develop"],
+    "version": "1.13.2",
+    "commit": {
+      "hash": "49a4245d6c5ce6604167005f5234c1c4a38a852b",
+      "shortHash": "49a4245",
+      "date": "2025-12-05T11:50:38+09:00Z",
+      "message": "feat: Added force dump mode."
+    }
+  },
+  "version": "1.13.2",
+  "name": "screw-up",
+  "description": "Simply package metadata inserter on Vite plugin"
+
+  // ...
+}
+```
+
+The dump command:
+
+- Shows the final computed `package.json` after all processing (workspace inheritance, Git metadata, etc.)
+- Useful for debugging and understanding how your package metadata will be resolved
+- Outputs clean JSON that can be piped to other tools (ex: `jq`)
+- `-f/--force` lets you dump even without `package.json`; only Git (or default) metadata is included
+
+#### Options
+
+- `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent (default: version,description,author,license,repository,keywords,homepage,bugs,readme)
+- `--no-wds`: Disable working directory status check for version increment
+- `-f, --force`: Allow dumping without `package.json` (Git/default metadata only)
+
+#### Generic usage
+
+With `-f`, you can use screw-up outside NPM projects and still leverage Git metadata for versioning.
+For example, combine with `jq` to generate a C header that embeds version and commit IDs:
+
+```bash
+# Generate version.h
+screw-up dump -f | jq -r '
+  "#pragma once\n" +
+  "#define APP_VERSION \"" + (.version // "0.0.1") + "\"\n" +
+  "#define APP_COMMIT \"" + (.git.commit.shortHash // "unknown") + "\"\n"
+' > version.h
+```
+
+### Format Command
+
+Replace placeholders in text with computed package metadata.
+
+This command is similar to the dump command, but instead of outputting JSON, it can be used to format text within screw-up.
+Therefore, it might be easier to handle than processing screw-up output with jq:
+
+```bash
+# Format stdin template and print to stdout
+screw-up format
+
+# Format a file and write the result to another file
+screw-up format -i ./template.txt ./output.txt
+
+# Use custom brackets instead of {...}
+screw-up format -i ./template.txt -b "#{,}#"
+```
+
+Placeholders use `{field}` by default. Dot notation lets you reach nested values such as `{repository.url}` or `{git.commit.hash}`.
+
+Input comes from stdin unless `-i/--input` is provided, and output always goes to stdout; if you pass an output path, the formatted text is also written there.
+
+#### Options
+
+- `-i, --input <path>`: Template file to format (defaults to stdin)
+- `-b, --bracket <open,close>`: Change placeholder brackets (default `{,}`)
+- `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent (default: version,description,author,license,repository,keywords,homepage,bugs,readme)
+- `--no-wds`: Disable working directory status check for version increment
+- `--no-git-version-override`: Do not override version from Git (use package.json version)
+- `-f, --force`: Allow formatting without `package.json` (Git/default metadata only)
+
+#### Example
+
+For example, prepare an input text file like the following:
+
+```c
+#pragma once
+#define VERSION "{version}"
+#define COMMIT_ID "{git.commit.shortHash}"
+```
+
+By entering the following into screw-up, you can generate C language header files:
+
+```bash
+screw-up format -i ./version.h.in ./version.h
+```
+
+```c
+#pragma once
+#define APP_VERSION "1.13.2"
+#define APP_COMMIT "49a4245"
 ```
 
 ### Pack Command
@@ -475,80 +597,15 @@ The publish command:
 
 #### Options
 
-- `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent
+- `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent (default: version,description,author,license,repository,keywords,homepage,bugs,readme)
 - `--no-wds`: Disable working directory status check for version increment
 - `--no-replace-peer-deps`: Disable replacing "\*" in peerDependencies with actual versions
 - `--peer-deps-prefix <prefix>`: Version prefix for replaced peerDependencies (default: "^")
 - All `npm publish` options are supported (e.g., `--dry-run`, `--tag`, `--access`, `--registry`)
 
-### Dump Command
-
-Dump computed package.json as JSON:
-
-```bash
-# Dump current directory package.json
-screw-up dump
-
-# Dump specific directory package.json
-screw-up dump ./my-project
-
-# Dump with custom inheritable fields
-screw-up dump --inheritable-fields "author,license"
-```
-
-As shown in the following output example, Git commit information is also added:
-
-```json
-{
-  "git": {
-    "tags": [],
-    "branches": ["develop"],
-    "version": "1.13.2",
-    "commit": {
-      "hash": "49a4245d6c5ce6604167005f5234c1c4a38a852b",
-      "shortHash": "49a4245",
-      "date": "2025-12-05T11:50:38+09:00Z",
-      "message": "feat: Added force dump mode."
-    }
-  },
-  "version": "1.13.2",
-  "name": "screw-up",
-  "description": "Simply package metadata inserter on Vite plugin"
-
-  // ...
-}
-```
-
-The dump command:
-
-- Shows the final computed `package.json` after all processing (workspace inheritance, Git metadata, etc.)
-- Useful for debugging and understanding how your package metadata will be resolved
-- Outputs clean JSON that can be piped to other tools (ex: `jq`)
-- `-f/--force` lets you dump even without `package.json`; only Git (or default) metadata is included
-
-#### Options
-
-- `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent
-- `--no-wds`: Disable working directory status check for version increment
-- `-f, --force`: Allow dumping without `package.json` (Git/default metadata only)
-
-#### Generic usage
-
-With `-f`, you can use screw-up outside NPM projects and still leverage Git metadata for versioning.
-For example, combine with `jq` to generate a C header that embeds version and commit IDs:
-
-```bash
-# Generate version.h
-screw-up dump -f | jq -r '
-  "#pragma once\n" +
-  "#define APP_VERSION \"" + (.version // "0.0.1") + "\"\n" +
-  "#define APP_COMMIT \"" + (.git.commit.shortHash // "unknown") + "\"\n"
-' > version.h
-```
-
 ### README replacement feature
 
-The pack command supports README replacement using multiple methods:
+The pack and publish command supports README replacement using multiple methods:
 
 #### Via CLI option
 
@@ -831,7 +888,8 @@ This project was developed as a successor to [RelaxVersioner](https://github.com
 While RelaxVersioner was designed for the .NET platform and added NPM support options, it did not integrate well with Git tags.
 Therefore, this project was designed with Vite plugin usage in mind, focusing on the most optimal workflow and specifications.
 
-The algorithm for calculating version numbers from Git tags is identical to RelaxVersioner. This means that if you are maintaining server code with ASP.NET Core, you can treat the .NET version as completely unified.
+The algorithm for calculating version numbers from Git tags is identical to RelaxVersioner.
+This means that if you are maintaining server code with ASP.NET Core, you can treat both the .NET and NPM project version as completely unified.
 
 ## Discussions and Pull Requests
 
