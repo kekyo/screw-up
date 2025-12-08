@@ -5,7 +5,7 @@
 
 import { join, resolve } from 'path';
 import { existsSync } from 'fs';
-import { mkdtemp, rm, stat } from 'fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'fs/promises';
 import { spawn } from 'child_process';
 import { tmpdir } from 'os';
 import {
@@ -50,6 +50,207 @@ const parseInheritableFields = (
       .map((field) => field.trim())
       .filter((field) => field.length > 0)
   );
+};
+
+//////////////////////////////////////////////////////////////////////////////////
+
+const readInputText = async (inputPath?: string): Promise<string> => {
+  if (inputPath) {
+    const resolvedPath = resolve(inputPath);
+    return await readFile(resolvedPath, 'utf-8');
+  }
+
+  return await new Promise<string>((resolvePromise, rejectPromise) => {
+    let data = '';
+    process.stdin.setEncoding('utf-8');
+    process.stdin.on('data', (chunk) => {
+      data += chunk;
+    });
+    process.stdin.on('end', () => resolvePromise(data));
+    process.stdin.on('error', (err) => rejectPromise(err));
+  });
+};
+
+const escapeRegExp = (value: string): string =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const getValueByPath = (source: any, path: string): any => {
+  return path.split('.').reduce<any>((current, key) => {
+    if (current === undefined || current === null) {
+      return undefined;
+    }
+    if (typeof current !== 'object' && !Array.isArray(current)) {
+      return undefined;
+    }
+    return (current as any)[key];
+  }, source);
+};
+
+const stringifyValue = (value: any): string | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return 'null';
+  }
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+};
+
+const replacePlaceholders = (
+  text: string,
+  values: any,
+  openBracket: string,
+  closeBracket: string
+): string => {
+  const pattern = new RegExp(
+    `${escapeRegExp(openBracket)}(.*?)${escapeRegExp(closeBracket)}`,
+    'g'
+  );
+  return text.replace(pattern, (match, key) => {
+    const trimmedKey = String(key).trim();
+    const resolvedValue = stringifyValue(getValueByPath(values, trimmedKey));
+    return resolvedValue !== undefined ? resolvedValue : match;
+  });
+};
+
+//////////////////////////////////////////////////////////////////////////////////
+
+const showFormatHelp = () => {
+  console.info(`Usage: screw-up format [options] [output]
+
+Format input text by replacing placeholders with package metadata
+
+Arguments:
+  output                        Optional output file path (default: stdout)
+
+Options:
+  -i, --input <path>            Input template file (default: stdin)
+  -b, --bracket <open,close>    Placeholder brackets (default: {,})
+  --inheritable-fields <list>   Comma-separated list of fields to inherit from parent
+  --no-wds                      Do not check working directory status to increase version
+  --no-git-version-override     Do not override version from Git (use package.json version)
+  -f, --force                   Allow formatting even if package.json does not exist
+  -h, --help                    Show help for format command
+`);
+};
+
+const parseBracketOption = (
+  bracketOption: string | undefined
+): { openBracket: string; closeBracket: string } | undefined => {
+  if (!bracketOption) {
+    return { openBracket: '{', closeBracket: '}' };
+  }
+
+  const delimiterIndex = bracketOption.indexOf(',');
+  if (delimiterIndex === -1) {
+    return undefined;
+  }
+
+  const openBracket = bracketOption.slice(0, delimiterIndex);
+  const closeBracket = bracketOption.slice(delimiterIndex + 1);
+
+  if (!openBracket || !closeBracket) {
+    return undefined;
+  }
+
+  return { openBracket, closeBracket };
+};
+
+const formatCommand = async (args: ParsedArgs, logger: Logger) => {
+  if (args.options.help || args.options.h) {
+    showFormatHelp();
+    return 1;
+  }
+
+  const outputPath = args.positional[0];
+  const inputPathOption =
+    (args.options['input'] as string) ?? (args.options['i'] as string);
+  const bracketOption =
+    (args.options['bracket'] as string) ?? (args.options['b'] as string);
+  const inheritableFieldsOption = args.options['inheritable-fields'] as string;
+  const alwaysOverrideVersionFromGit = !args.options['no-git-version-override'];
+  const checkWorkingDirectoryStatus = args.options['no-wds'] ? false : true;
+  const ignorePackageJsonNotExist =
+    args.options['force'] || args.options['f'] ? true : false;
+
+  const bracket = parseBracketOption(
+    typeof bracketOption === 'string' ? bracketOption : undefined
+  );
+  if (!bracket) {
+    logger.error(
+      'format: Invalid bracket option, expected "open,close" pattern.'
+    );
+    return 1;
+  }
+
+  const { openBracket, closeBracket } = bracket;
+
+  const targetDir = resolve(process.cwd());
+
+  // Parse inheritable fields from CLI option or use defaults
+  const inheritableFields = parseInheritableFields(inheritableFieldsOption);
+
+  // The format command needs clean output, so ignore debug/info/warn outputs.
+  const _logger: Logger = {
+    debug: (msg) => {},
+    info: (msg) => {},
+    warn: (msg) => {},
+    error: logger.error,
+  };
+
+  try {
+    // Get Git metadata fetcher function
+    const fetchGitMetadata = getFetchGitMetadata(
+      targetDir,
+      checkWorkingDirectoryStatus,
+      _logger
+    );
+
+    // Resolve package metadata
+    const computedPackageJson = await getComputedPackageJsonObject(
+      targetDir,
+      fetchGitMetadata,
+      alwaysOverrideVersionFromGit,
+      inheritableFields,
+      _logger,
+      ignorePackageJsonNotExist
+    );
+
+    if (!computedPackageJson) {
+      _logger.error(`format: Unable to read package.json from: ${targetDir}`);
+      return 1;
+    }
+
+    const inputText = await readInputText(
+      typeof inputPathOption === 'string' ? inputPathOption : undefined
+    );
+
+    const formattedText = replacePlaceholders(
+      inputText,
+      computedPackageJson,
+      openBracket,
+      closeBracket
+    );
+
+    if (outputPath) {
+      const resolvedOutputPath = resolve(outputPath);
+      await writeFile(resolvedOutputPath, formattedText);
+    }
+
+    process.stdout.write(formattedText);
+  } catch (error) {
+    _logger.error(`format: Failed to format text: ${error}`);
+    return 1;
+  }
+
+  return 0;
 };
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -446,6 +647,7 @@ License: ${license}
 Usage: screw-up <command> [options]
 
 Commands:
+  format [output]                 Format text by replacing metadata placeholders
   dump [directory]                 Dump computed package.json as JSON
   pack [directory]                 Pack the project into a tar archive
   publish [directory|package.tgz]  Publish the project
@@ -454,6 +656,7 @@ Options:
   -h, --help                       Show help
 
 Examples:
+  screw-up format output.txt               # Format stdin template and write to file
   screw-up dump                            # Dump computed package.json as JSON
   screw-up pack                            # Pack current directory
   screw-up pack --pack-destination ./dist  # Pack to specific output directory
@@ -473,6 +676,7 @@ const argOptionMap = new Map([
       'peer-deps-prefix',
     ]),
   ],
+  ['format', new Set(['input', 'i', 'bracket', 'b', 'inheritable-fields'])],
   ['publish', new Set(['inheritable-fields', 'peer-deps-prefix'])],
 ]);
 
@@ -492,6 +696,8 @@ export const cliMain = async (
   }
 
   switch (parsedArgs.command) {
+    case 'format':
+      return await formatCommand(parsedArgs, logger);
     case 'dump':
       return await dumpCommand(parsedArgs, logger);
     case 'pack':

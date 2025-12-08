@@ -325,7 +325,7 @@ export const parseArgs = (
       } else {
         // Detect an argument option in the command
         const argOptions = argOptionMap.get(result.command);
-        if (argOptions.has(optionName)) {
+        if (argOptions?.has(optionName)) {
           // Option has an argument
           i++;
           result.options[optionName] = args[i];
@@ -334,11 +334,19 @@ export const parseArgs = (
           result.options[optionName] = true;
         }
       }
-      // Sigle hyphen option is always flag
+      // Single hyphen option is flag unless configured with an argument
     } else if (arg.startsWith('-')) {
       const optionName = arg.slice(1);
       if (optionName.length == 1) {
-        result.options[optionName] = true;
+        const argOptions = result.command
+          ? argOptionMap.get(result.command)
+          : undefined;
+        if (argOptions?.has(optionName)) {
+          i++;
+          result.options[optionName] = args[i];
+        } else {
+          result.options[optionName] = true;
+        }
       }
     } else if (!result.command) {
       result.command = arg;

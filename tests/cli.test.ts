@@ -706,7 +706,7 @@ describe('CLI tests', () => {
 
   const execCliMain = async (args: string[], options: any) => {
     let logs: string[] = [];
-    let consoleOutput: string[] = [];
+    let stdoutOutput: string[] = [];
     const logger = {
       debug: (msg) => logs.push(msg),
       info: (msg) => logs.push(msg),
@@ -714,10 +714,17 @@ describe('CLI tests', () => {
       error: (msg) => logs.push(msg),
     };
 
-    // Hook console.info for dump command
+    // Hook stdout and console.info for dump/format command outputs
+    const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: any, ..._args: any[]) => {
+      stdoutOutput.push(typeof chunk === 'string' ? chunk : chunk.toString());
+      return true;
+    }) as any;
+
     const originalConsoleInfo = console.info;
     console.info = (msg) => {
-      consoleOutput.push(msg);
+      const output = String(msg);
+      stdoutOutput.push(`${output}\n`);
     };
 
     const oldwd = process.cwd();
@@ -742,13 +749,14 @@ describe('CLI tests', () => {
         throw error;
       }
 
-      // For dump command, return console output instead of logs
-      if (args.length > 0 && args[0] === 'dump') {
-        return consoleOutput.join('\n');
+      // For dump/format commands, return stdout output instead of logs
+      if (args.length > 0 && (args[0] === 'dump' || args[0] === 'format')) {
+        return stdoutOutput.join('');
       }
       return logs.join('\n');
     } finally {
       console.info = originalConsoleInfo;
+      process.stdout.write = originalStdoutWrite as any;
       process.env = oldenv;
       process.chdir(oldwd);
     }
@@ -2009,6 +2017,67 @@ describe('CLI tests', () => {
       expect(result).toContain('\n');
       expect(result).toContain('  ');
     }, 10000);
+  });
+
+  //////////////////////////////////////////////////////////////////////////////////
+
+  describe('CLI format command tests', () => {
+    it('should format placeholders from input file to stdout', async () => {
+      const templatePath = join(testSourceDir, 'template.txt');
+      writeFileSync(templatePath, 'Package: {name}\nVersion: {version}\n');
+
+      const result = await execCliMain(['format', '--input', templatePath], {
+        cwd: testSourceDir,
+      });
+
+      expect(result).toBe('Package: test-package\nVersion: 1.0.0\n');
+    });
+
+    it('should write formatted output to file when output path is given', async () => {
+      const templatePath = join(testSourceDir, 'template-repo.txt');
+      writeFileSync(templatePath, 'Repo: {repository.url}');
+
+      // Update package.json with nested repository field for this test
+      const packageJsonWithRepo = {
+        name: 'test-package',
+        version: '2.3.4',
+        repository: {
+          url: 'https://example.com/repo.git',
+        },
+      };
+      writeFileSync(
+        join(testSourceDir, 'package.json'),
+        JSON.stringify(packageJsonWithRepo, null, 2)
+      );
+
+      const outputPath = join(testSourceDir, 'formatted.txt');
+
+      const result = await execCliMain(
+        ['format', '--input', templatePath, outputPath],
+        {
+          cwd: testSourceDir,
+        }
+      );
+
+      expect(result).toBe('Repo: https://example.com/repo.git');
+      expect(readFileSync(outputPath, 'utf-8')).toBe(
+        'Repo: https://example.com/repo.git'
+      );
+    });
+
+    it('should support custom bracket specification and short options', async () => {
+      const templatePath = join(testSourceDir, 'template-brackets.txt');
+      writeFileSync(templatePath, 'Name #{name}# / Version #{version}#');
+
+      const result = await execCliMain(
+        ['format', '-i', templatePath, '-b', '#{,}#'],
+        {
+          cwd: testSourceDir,
+        }
+      );
+
+      expect(result).toBe('Name test-package / Version 1.0.0');
+    });
   });
 
   //////////////////////////////////////////////////////////////////////////////////

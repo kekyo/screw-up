@@ -382,6 +382,9 @@ UIパッケージをビルドすると、バナーには以下が含まれます
 # `package.json`がどのように解決されるのかをダンプ (JSON)
 screw-up dump
 
+# メタデータプレースホルダーを使ってテンプレートを整形
+screw-up format -i ./template.txt ./output.txt
+
 # カスタムREADMEと限定継承でパック
 screw-up pack --readme ./docs/DIST_README.md --inheritable-fields "version,license"
 
@@ -410,8 +413,127 @@ screw-up publish ./release/my-package-1.0.0.tgz
 ```bash
 screw-up --help
 screw-up dump --help
+screw-up format --help
 screw-up pack --help
 screw-up publish --help
+```
+
+### dumpコマンド
+
+計算されたpackage.jsonをJSONとして出力します:
+
+```bash
+# 現在のディレクトリのpackage.jsonを出力
+screw-up dump
+
+# 特定のディレクトリのpackage.jsonを出力
+screw-up dump ./my-project
+
+# カスタム継承フィールドで出力
+screw-up dump --inheritable-fields "author,license"
+```
+
+以下の出力例のように、Gitのコミット情報も追加されます:
+
+```json
+{
+  "git": {
+    "tags": [],
+    "branches": ["develop"],
+    "version": "1.13.2",
+    "commit": {
+      "hash": "49a4245d6c5ce6604167005f5234c1c4a38a852b",
+      "shortHash": "49a4245",
+      "date": "2025-12-05T11:50:38+09:00Z",
+      "message": "feat: Added force dump mode."
+    }
+  },
+  "version": "1.13.2",
+  "name": "screw-up",
+  "description": "Simply package metadata inserter on Vite plugin"
+
+  // ...
+}
+```
+
+dumpコマンドの機能:
+
+- すべての処理（ワークスペース継承、Gitメタデータなど）後の最終的な計算済み`package.json`を表示
+- デバッグとパッケージメタデータの解決方法の理解に有用
+- 他のツールにパイプできるクリーンなJSONを出力（`jq`など）
+- `-f, --force`を指定すると`package.json`が存在しなくても、Git（またはデフォルト）のメタデータだけで出力できます。
+
+#### オプション
+
+- `--inheritable-fields <list>`: 親から継承するフィールドのコンマ区切りリスト（デフォルト: version,description,author,license,repository,keywords,homepage,bugs,readme）
+- `--no-wds`: バージョンインクリメントのワーキングディレクトリステータスチェックを無効化
+- `-f, --force`: `package.json`が無い場合でも強制的に出力（Git/デフォルトメタデータのみ）
+
+#### 汎用的な使用方法
+
+`-f`を使用すれば、NPMプロジェクトではない環境でも、Gitのメタデータを参照してバージョン管理を行うことが出来ます。
+例えば、`jq`コマンドと組み合わせて、あなたのC言語ヘッダファイルにバージョンやコミットIDを埋め込むことが出来ます:
+
+```bash
+# version.hを生成する
+screw-up dump -f | jq -r '
+  "#pragma once\n" +
+  "#define APP_VERSION \"" + (.version) + "\"\n" +
+  "#define APP_COMMIT \"" + (.git.commit.shortHash) + "\"\n"
+' > version.h
+```
+
+### formatコマンド
+
+計算されたパッケージメタデータでプレースホルダーを置換します。
+
+このコマンドはdumpコマンドに似ていますが、JSONを出力するのではなく、screw-up内でテキストを整形する目的で使えます。
+従って、screw-upの出力をjqで処理するよりも簡単に扱えるかも知れません:
+
+```bash
+# 標準入力を整形して標準出力に出力
+screw-up format
+
+# ファイルを整形し、別のファイルに書き出し
+screw-up format -i ./template.txt ./output.txt
+
+# {...} の代わりにカスタムブラケットを利用
+screw-up format -i ./template.txt -b "#{,}#"
+```
+
+プレースホルダーはデフォルトで`{フィールド名}`です。ドット区切りで`{repository.url}`や`{git.commit.hash}`のようにネストした値にもアクセスできます。
+
+入力は`-i/--input`未指定なら標準入力、出力は常に標準出力で、位置引数を指定するとそのファイルにも書き込みます。
+
+#### オプション
+
+- `-i, --input <path>`: 整形するテンプレートファイル（デフォルトは標準入力）
+- `-b, --bracket <open,close>`: プレースホルダーのブラケットを変更（デフォルト `{,}`）
+- `--inheritable-fields <list>`: 親から継承するフィールドのコンマ区切りリスト（デフォルト: version,description,author,license,repository,keywords,homepage,bugs,readme）
+- `--no-wds`: バージョンインクリメントのワーキングディレクトリステータスチェックを無効化
+- `--no-git-version-override`: Gitのバージョンによる上書きを無効化（package.jsonのversionを使用）
+- `-f, --force`: `package.json`が無くても強制的に整形（Git/デフォルトメタデータのみ）
+
+#### 使用例
+
+例えば、以下のような入力テキストファイルを用意し:
+
+```c
+#pragma once
+#define VERSION "{version}"
+#define COMMIT_ID "{git.commit.shortHash}"
+```
+
+次のようにscrew-upに入力することで、C言語対応のヘッダファイルを生成できます:
+
+```bash
+screw-up format -i ./version.h.in ./version.h
+```
+
+```c
+#pragma once
+#define APP_VERSION "1.13.2"
+#define APP_COMMIT "49a4245"
 ```
 
 ### packコマンド
@@ -475,80 +597,15 @@ publishコマンドの機能:
 
 #### オプション
 
-- `--inheritable-fields <list>`: 親から継承するフィールドのコンマ区切りリスト
+- `--inheritable-fields <list>`: 親から継承するフィールドのコンマ区切りリスト（デフォルト: version,description,author,license,repository,keywords,homepage,bugs,readme）
 - `--no-wds`: バージョンインクリメントのワーキングディレクトリステータスチェックを無効化
 - `--no-replace-peer-deps`: peerDependenciesの"\*"を実際のバージョンに置き換える機能を無効化
 - `--peer-deps-prefix <prefix>`: 置き換えられるpeerDependenciesのバージョンプレフィックス（デフォルト: "^"）
 - すべての`npm publish`オプションがサポートされています（例: `--dry-run`、`--tag`、`--access`、`--registry`）
 
-### dumpコマンド
-
-計算されたpackage.jsonをJSONとして出力します:
-
-```bash
-# 現在のディレクトリのpackage.jsonを出力
-screw-up dump
-
-# 特定のディレクトリのpackage.jsonを出力
-screw-up dump ./my-project
-
-# カスタム継承フィールドで出力
-screw-up dump --inheritable-fields "author,license"
-```
-
-以下の出力例のように、Gitのコミット情報も追加されます:
-
-```json
-{
-  "git": {
-    "tags": [],
-    "branches": ["develop"],
-    "version": "1.13.2",
-    "commit": {
-      "hash": "49a4245d6c5ce6604167005f5234c1c4a38a852b",
-      "shortHash": "49a4245",
-      "date": "2025-12-05T11:50:38+09:00Z",
-      "message": "feat: Added force dump mode."
-    }
-  },
-  "version": "1.13.2",
-  "name": "screw-up",
-  "description": "Simply package metadata inserter on Vite plugin"
-
-  // ...
-}
-```
-
-dumpコマンドの機能:
-
-- すべての処理（ワークスペース継承、Gitメタデータなど）後の最終的な計算済み`package.json`を表示
-- デバッグとパッケージメタデータの解決方法の理解に有用
-- 他のツールにパイプできるクリーンなJSONを出力（`jq`など）
-- `-f/--force`を指定すると`package.json`が存在しなくても、Git（またはデフォルト）のメタデータだけで出力できます。
-
-#### オプション
-
-- `--inheritable-fields <list>`: 親から継承するフィールドのコンマ区切りリスト
-- `--no-wds`: バージョンインクリメントのワーキングディレクトリステータスチェックを無効化
-- `-f, --force`: `package.json`が無い場合でも強制的に出力（Git/デフォルトメタデータのみ）
-
-#### 汎用的な使用方法
-
-`-f`を使用すれば、NPMプロジェクトではない環境でも、Gitのメタデータを参照してバージョン管理を行うことが出来ます。
-例えば、`jq`コマンドと組み合わせて、あなたのC言語ヘッダファイルにバージョンやコミットIDを埋め込むことが出来ます:
-
-```bash
-# version.hを生成する
-screw-up dump -f | jq -r '
-  "#pragma once\n" +
-  "#define APP_VERSION \"" + (.version // "0.0.1") + "\"\n" +
-  "#define APP_COMMIT \"" + (.git.commit.shortHash // "unknown") + "\"\n"
-' > version.h
-```
-
 ### README置換機能
 
-packコマンドは複数の方法でREADME置換をサポートします:
+packやpublishコマンドは、複数の方法でREADME置換をサポートします:
 
 #### CLIオプション経由
 
@@ -570,7 +627,8 @@ screw-up pack --readme ./docs/README_package.md
 
 ### peerDependencies置き換え機能
 
-ワークスペース環境では、開発中のバージョン制約を避けるために`peerDependencies`で兄弟パッケージを"\*"で参照することが一般的です。パッケージ化時、screw-upは自動的にこれらのワイルドカードを実際のバージョン番号に置き換えます:
+ワークスペース環境では、開発中のバージョン制約を避けるために`peerDependencies`で兄弟パッケージを"\*"で参照することが一般的です。
+パッケージ化時、screw-upは自動的にこれらのワイルドカードを実際のバージョン番号に置き換えます:
 
 ```json
 {
@@ -829,9 +887,12 @@ screw-up publish packages/core --peer-deps-prefix "~"
 
 ## 補足
 
-このプロジェクトは [RelaxVersioner](https://github.com/kekyo/RelaxVersioner/) の後継として開発されました。RelaxVersionerは.NETプラットフォーム向けで、NPMサポートオプションを追加しました。しかし、Gitタグとの親和性があまり良くないため、Viteプラグインを使用することを前提として、最も望ましい運用を想定して仕様を検討しました。
+このプロジェクトは [RelaxVersioner](https://github.com/kekyo/RelaxVersioner/) の後継として開発されました。
+RelaxVersionerは.NETプラットフォーム向けで、NPMサポートオプションを追加しました。
+しかし、Gitタグとの親和性があまり良くないため、Viteプラグインを使用することを前提として、最も望ましい運用を想定して仕様を検討しました。
 
-screw-upのGitタグからバージョン番号を計算するアルゴリズムは、完全にRelaxVersionerと同一です。つまり、あなたがASP.NET Coreでサーバーのコードを保守している場合、.NETとのバージョンを完全に統一して扱うことができます。
+screw-upのGitタグからバージョン番号を計算するアルゴリズムは、完全にRelaxVersionerと同一です。
+つまり、あなたがASP.NET Coreでサーバーのコードを保守している場合、.NETとNPMプロジェクトのバージョンを完全に統一して扱うことができます。
 
 ## ディスカッションとPR
 
