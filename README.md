@@ -76,7 +76,13 @@ my-awesome-library-2.1.0.tgz
 Install as a `devDependencies` since screw-up does not require any runtime code.
 
 ```bash
-npm install --save-dev screw-up
+npm install -D screw-up
+```
+
+Or, make it available as a global command:
+
+```bash
+npm install -g screw-up
 ```
 
 ## Usage
@@ -516,12 +522,12 @@ Input comes from stdin unless `-i/--input` is provided, and output always goes t
 
 #### Example
 
-For example, prepare an input text file like the following:
+For example, prepare an input text file like the following (`version.h.in`):
 
 ```c
 #pragma once
-#define VERSION "{version}"
-#define COMMIT_ID "{git.commit.shortHash}"
+#define APP_VERSION "{version}"
+#define APP_COMMIT "{git.commit.shortHash}"
 ```
 
 By entering the following into screw-up, you can generate C language header files:
@@ -529,6 +535,8 @@ By entering the following into screw-up, you can generate C language header file
 ```bash
 screw-up format -i ./version.h.in ./version.h
 ```
+
+`version.h`:
 
 ```c
 #pragma once

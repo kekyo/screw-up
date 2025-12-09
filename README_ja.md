@@ -76,7 +76,13 @@ my-awesome-library-2.1.0.tgz
 `devDependencies`にインストールして下さい。screw-upは実行時のコードを必要としません。
 
 ```bash
-npm install --save-dev screw-up
+npm install -D screw-up
+```
+
+または、グローバルコマンドとして使用可能にします:
+
+```bash
+npm install -g screw-up
 ```
 
 ## 使い方
@@ -516,12 +522,12 @@ screw-up format -i ./template.txt -b "#{,}#"
 
 #### 使用例
 
-例えば、以下のような入力テキストファイルを用意し:
+例えば、以下のような入力テキストファイル (`version.h.in`) を用意し:
 
 ```c
 #pragma once
-#define VERSION "{version}"
-#define COMMIT_ID "{git.commit.shortHash}"
+#define APP_VERSION "{version}"
+#define APP_COMMIT "{git.commit.shortHash}"
 ```
 
 次のようにscrew-upに入力することで、C言語対応のヘッダファイルを生成できます:
@@ -529,6 +535,8 @@ screw-up format -i ./template.txt -b "#{,}#"
 ```bash
 screw-up format -i ./version.h.in ./version.h
 ```
+
+`version.h`:
 
 ```c
 #pragma once
