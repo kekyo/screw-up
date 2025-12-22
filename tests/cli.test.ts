@@ -29,24 +29,6 @@ const defaultInheritableFields = new Set([
   'readme',
 ]);
 
-const sortObjectKeys = (obj) => {
-  if (typeof obj !== 'object' || obj === null) return obj;
-  if (Array.isArray(obj)) return obj.map(sortObjectKeys);
-  const sorted = {};
-  Object.keys(obj)
-    .sort()
-    .forEach((key) => {
-      sorted[key] = sortObjectKeys(obj[key]);
-    });
-  return sorted;
-};
-
-const expectedObject = (expected, actual) => {
-  expect(JSON.stringify(sortObjectKeys(actual))).toBe(
-    JSON.stringify(sortObjectKeys(expected))
-  );
-};
-
 describe('CLI tests', () => {
   const tempBaseDir = join(
     tmpdir(),
@@ -152,6 +134,11 @@ describe('CLI tests', () => {
       expect(metadata).toBeDefined();
       expect(metadata?.name).toBe('test-package');
       expect(metadata?.version).toBe('1.0.0');
+      expect(metadata?.buildDate).toBeDefined();
+      expect(metadata?.buildDate).toMatch(
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/
+      );
+      expect(dayjs(metadata?.buildDate).isValid()).toBe(true);
 
       // Check if test-package-1.0.0.tgz was created
       const archivePath = join(outputDir, packageFileName);
@@ -165,9 +152,15 @@ describe('CLI tests', () => {
         cwd: extractDir,
       });
 
+      const extractedPackageJson = JSON.parse(
+        readFileSync(join(extractDir, 'package', 'package.json'), 'utf-8')
+      );
+      expect(extractedPackageJson.buildDate).toBe(metadata?.buildDate);
+
       // Compare and verify archive contents each file by file
       const result = await runCLI('diff', [
         '-r',
+        '--exclude=package.json',
         relative(tempDir, targetDir),
         relative(tempDir, join(extractDir, 'package')),
       ]);
@@ -281,7 +274,7 @@ describe('CLI tests', () => {
         readFileSync(join(extractPackageDir, 'package.json'), 'utf-8')
       );
 
-      expectedObject(expectedJsonObject, actualJsonObject);
+      expect(actualJsonObject).toMatchObject(expectedJsonObject);
     });
 
     it('should handle workspace inheritance in package.json', async () => {
@@ -2031,6 +2024,23 @@ describe('CLI tests', () => {
       });
 
       expect(result).toBe('Package: test-package\nVersion: 1.0.0\n');
+    });
+
+    it('should replace buildDate placeholder with build time', async () => {
+      const templatePath = join(testSourceDir, 'template-build-date.txt');
+      writeFileSync(templatePath, 'Build: {buildDate}');
+
+      const result = await execCliMain(['format', '--input', templatePath], {
+        cwd: testSourceDir,
+      });
+
+      const match = result.match(/Build: ([^\n\r]+)/);
+      expect(match).not.toBeNull();
+      const buildDate = match?.[1].trim();
+      expect(buildDate).toMatch(
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/
+      );
+      expect(dayjs(buildDate).isValid()).toBe(true);
     });
 
     it('should write formatted output to file when output path is given', async () => {

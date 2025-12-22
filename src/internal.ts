@@ -8,6 +8,7 @@ import { readFile } from 'fs/promises';
 import { dirname, join } from 'path';
 import { glob } from 'glob';
 import JSON5 from 'json5';
+import dayjs from 'dayjs';
 import { PackageMetadata } from './types';
 
 // We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
@@ -319,6 +320,8 @@ export const mergePackageMetadata = async (
     merged.version = metadata.version;
   }
 
+  merged.buildDate = dayjs().format();
+
   return merged;
 };
 
@@ -390,6 +393,8 @@ const mergeRawPackageJson = async (
     gitInfo.branches = gitInfo.branches ?? [];
     merged.git = gitInfo;
   }
+
+  merged.buildDate = dayjs().format();
 
   return merged;
 };

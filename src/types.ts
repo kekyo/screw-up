@@ -13,8 +13,8 @@ export type PackageMetadata = Record<string, string>;
  */
 export interface GitMetadata {
   version?: string;
-  tags: string[];
-  branches: string[];
+  tags: readonly string[];
+  branches: readonly string[];
   commit?: {
     hash: string;
     shortHash: string;
@@ -36,13 +36,13 @@ export interface ScrewUpOptions {
    * Array of keys to output in banner in the specified order
    * @default ['name', 'version', 'description', 'author', 'license', 'repository.url', 'git.commit.hash']
    */
-  outputKeys?: string[];
+  outputKeys?: readonly string[];
   /**
    * Array of asset file regex to add banner to
    * @default ['\.d\.ts$']
    * @remarks Some output source files (includes '*.d.ts') are grouped into "Asset files" and are not included in the output. This option is used to specify the regex of asset files to add banner to.
    */
-  assetFilters?: string[];
+  assetFilters?: readonly string[];
   /**
    * Enable TypeScript metadata file generation
    * @default false
@@ -57,7 +57,7 @@ export interface ScrewUpOptions {
    * Array of keys to output in metadata file in the specified order
    * @default ['name', 'version', 'description', 'author', 'license', 'repository.url', 'git.commit.hash']
    */
-  outputMetadataKeys?: string[];
+  outputMetadataKeys?: readonly string[];
   /**
    * Output path for TypeScript metadata type definition file
    * @default outputMetadataFilePath with .d.ts extension

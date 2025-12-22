@@ -161,6 +161,77 @@ export function hello(name: string): string {
     );
   }, 30000); // 30 second timeout for build
 
+  it('should include buildDate when specified in outputKeys', async () => {
+    const packageJson = {
+      name: 'build-date-lib',
+      version: '1.0.0',
+    };
+    writeFileSync(
+      join(tempDir, 'package.json'),
+      JSON.stringify(packageJson, null, 2)
+    );
+
+    const srcDir = join(tempDir, 'src');
+    mkdirSync(srcDir);
+    writeFileSync(
+      join(srcDir, 'index.ts'),
+      'export const hello = "build-date";\n'
+    );
+
+    const tsconfig = {
+      compilerOptions: {
+        target: 'ES2020',
+        module: 'ESNext',
+        moduleResolution: 'bundler',
+        strict: true,
+        declaration: true,
+        outDir: './dist',
+      },
+      include: ['src'],
+    };
+    writeFileSync(
+      join(tempDir, 'tsconfig.json'),
+      JSON.stringify(tsconfig, null, 2)
+    );
+
+    const distDir = join(tempDir, 'dist');
+    const startTime = dayjs();
+    await build({
+      root: tempDir,
+      plugins: [
+        screwUp({
+          outputKeys: ['name', 'buildDate'],
+        }),
+      ],
+      build: {
+        lib: {
+          entry: join(srcDir, 'index.ts'),
+          name: 'BuildDateLib',
+          fileName: 'index',
+          formats: ['es'],
+        },
+        outDir: distDir,
+        minify: false,
+      },
+    });
+    const endTime = dayjs();
+
+    const outputPath = join(distDir, 'index.mjs');
+    expect(existsSync(outputPath)).toBe(true);
+
+    const output = readFileSync(outputPath, 'utf-8');
+    const match = output.match(/buildDate: ([^\n\r]*)/);
+    expect(match).not.toBeNull();
+    const buildDate = match?.[1].trim();
+    expect(buildDate).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/
+    );
+    const parsed = dayjs(buildDate);
+    expect(parsed.isValid()).toBe(true);
+    expect(parsed.isAfter(startTime.subtract(1, 'minute'))).toBe(true);
+    expect(parsed.isBefore(endTime.add(1, 'minute'))).toBe(true);
+  }, 30000);
+
   it('should preserve source maps when banner is inserted', async () => {
     const packageJson = {
       name: 'sourcemap-lib',

@@ -320,6 +320,11 @@ screwUp({
  */
 ```
 
+#### ビルド日時の挿入
+
+`buildDate` はビルド時刻を示すメタデータで、タイムゾーン付きのISO形式で挿入します。
+`outputKeys` / `outputMetadataKeys` に指定するか、CLIの `format` コマンドで `{buildDate}` を指定すると出力されます。
+
 ---
 
 ## 高度な使用方法
