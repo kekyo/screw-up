@@ -320,6 +320,11 @@ Results in:
  */
 ```
 
+#### Build date insertion
+
+`buildDate` is metadata indicating the build time, inserted in ISO format with the time zone.
+It is output when specified in `outputKeys` / `outputMetadataKeys` or when `{buildDate}` is specified in the CLI's `format` command.
+
 ---
 
 ## Advanced Usage
