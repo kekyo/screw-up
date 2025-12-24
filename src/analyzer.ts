@@ -552,7 +552,7 @@ const getGitMetadata = async (
     gitMetadata.commit = {
       hash: currentCommit.hash,
       shortHash: currentCommit.shortHash,
-      date: dayjs(currentCommit.date).format('YYYY-MM-DDTHH:mm:ssZ[Z]'),
+      date: dayjs(currentCommit.date).format('YYYY-MM-DDTHH:mm:ssZ'),
       message: currentCommit.message,
     };
 
