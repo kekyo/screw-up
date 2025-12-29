@@ -10,7 +10,7 @@ Simply package metadata inserter for NPM.
 
 ---
 
-[日本語はこちら](./README_ja.md)
+[(For Japanese language/日本語はこちら)](./README_ja.md)
 
 ## What is this?
 
@@ -51,6 +51,10 @@ To insert banner header each bundled source files (`dist/index.js` and etc.):
 
 You may have noticed the line `git.commit.hash:`. That's right, if your project is managed by Git (it is, right?), you can also insert commit IDs, branch information, and tag information.
 Most importantly, if a version is applied to a Git tag, you can automatically reflect that version tag in the `version` field of `package.json`. In other words, you can manage version numbers using only Git tags!
+
+This calculates the version number by measuring the commit height to the current HEAD based on the last applied version tag.
+
+![git-versioning](./images/git-versioning.png)
 
 Instead of using `npm pack`, you can use the CLI tool `screw-up` to generate packages, which will automatically apply the collected metadata to the NPM package's `package.json`:
 
@@ -428,6 +432,8 @@ screw-up format --help
 screw-up pack --help
 screw-up publish --help
 ```
+
+MEMO: While it can also be used in projects unrelated to NPM projects, such as C,C++ or other projects, in that case, you might also be interested in [screw-up-native](https://github.com/kekyo/screw-up-native/) sibling project, which is a ported native code implementation.
 
 ### Dump Command
 
@@ -903,6 +909,8 @@ Therefore, this project was designed with Vite plugin usage in mind, focusing on
 
 The algorithm for calculating version numbers from Git tags is identical to RelaxVersioner.
 This means that if you are maintaining server code with ASP.NET Core, you can treat both the .NET and NPM project version as completely unified.
+
+See also the sibling project [screw-up-native](https://github.com/kekyo/screw-up-native/). It should be portable and easy to use, especially for projects that don't need NPM for versioning.
 
 ## Discussions and Pull Requests
 

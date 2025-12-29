@@ -49,6 +49,10 @@ To insert banner header each bundled source files (`dist/index.js` and etc.):
 You may have noticed the line `git.commit.hash:`. That's right, if your project is managed by Git (it is, right?), you can also insert commit IDs, branch information, and tag information.
 Most importantly, if a version is applied to a Git tag, you can automatically reflect that version tag in the `version` field of `package.json`. In other words, you can manage version numbers using only Git tags!
 
+This calculates the version number by measuring the commit height to the current HEAD based on the last applied version tag.
+
+![git-versioning](./images/git-versioning.png)
+
 Instead of using `npm pack`, you can use the CLI tool `screw-up` to generate packages, which will automatically apply the collected metadata to the NPM package's `package.json`:
 
 ```bash

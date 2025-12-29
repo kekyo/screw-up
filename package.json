@@ -33,7 +33,8 @@
   },
   "files": [
     "dist",
-    "images/screw-up-120.png"
+    "images/screw-up-120.png",
+    "images/git-versioning.png"
   ],
   "scripts": {
     "build": "npm run check-bootstrap; vite build",

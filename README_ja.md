@@ -10,7 +10,7 @@ NPM向けの、シンプルなパッケージメタデータ挿入ツール
 
 ---
 
-[In English](./README.md)
+[(For English language)](./README.md)
 
 ## これは何ですか？
 
@@ -51,6 +51,10 @@ Viteプラグインは、自動的に`package.json`からメタデータを読�
 
 `git.commit.hash:`という行に気がついたかもしれません。そうです、プロジェクトがGitで管理されている場合（管理していますよね？）、そのコミットIDやブランチ・タグの情報を挿入させることもできます。
 そして最も重要なのは、Gitタグにバージョンが適用されている場合、そのバージョンタグを自動的に `package.json` の `version` に反映させることができます。つまり、Gitタグだけを使って、バージョン番号の管理ができます!
+
+これは、最後に適用されたバージョンタグに基づいて、現在のHEADまでのコミットの高さを測定することでバージョン番号を計算します。
+
+![git-versioning](./images/git-versioning.png)
 
 `npm pack` ではなく、CLIツール `screw-up` を使ってパッケージを生成すれば、収集されたメタデータをNPMパッケージの `package.json` に自動で適用できます:
 
@@ -428,6 +432,8 @@ screw-up format --help
 screw-up pack --help
 screw-up publish --help
 ```
+
+MEMO: NPMプロジェクトと関係のないプロジェクト、例えばC,C++などのプロジェクトで使用することもできますが、その場合は、ネイティブコードとして移植した姉妹プロジェクト [screw-up-native](https://github.com/kekyo/screw-up-native/) にも興味を持つと思います。
 
 ### dumpコマンド
 
@@ -906,6 +912,8 @@ RelaxVersionerは.NETプラットフォーム向けで、NPMサポートオプ�
 
 screw-upのGitタグからバージョン番号を計算するアルゴリズムは、完全にRelaxVersionerと同一です。
 つまり、あなたがASP.NET Coreでサーバーのコードを保守している場合、.NETとNPMプロジェクトのバージョンを完全に統一して扱うことができます。
+
+姉妹プロジェクト [screw-up-native](https://github.com/kekyo/screw-up-native/) も参照してください。特にNPMと関係の無いプロジェクトでバージョニングを行いたい場合には、ポータブルで使いやすいはずです。
 
 ## ディスカッションとPR
 
