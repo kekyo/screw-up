@@ -365,6 +365,9 @@ UIパッケージをビルドすると、バナーには以下が含まれます
 ### シンプルな例
 
 ```bash
+# TypeScriptメタデータファイルを生成
+screw-up metadata
+
 # `package.json`がどのように解決されるのかをダンプ (JSON)
 screw-up dump
 
@@ -398,6 +401,7 @@ screw-up publish ./release/my-package-1.0.0.tgz
 
 ```bash
 screw-up --help
+screw-up metadata --help
 screw-up dump --help
 screw-up format --help
 screw-up pack --help
@@ -405,6 +409,33 @@ screw-up publish --help
 ```
 
 MEMO: NPMプロジェクトと関係のないプロジェクト、例えばC,C++などのプロジェクトで使用することもできますが、その場合は、ネイティブコードとして移植した姉妹プロジェクト [screw-up-native](https://github.com/kekyo/screw-up-native/) にも興味を持つと思います。
+
+### metadataコマンド
+
+TypeScriptメタデータファイルを生成します（プラグインの `outputMetadataFile: true` と同等）:
+
+```bash
+# 現在のディレクトリにメタデータファイルを生成
+screw-up metadata
+
+# 出力先を指定
+screw-up metadata --output-metadata-file-path ./src/generated/meta.ts
+
+# 出力キーを限定
+screw-up metadata --output-metadata-keys "name,version"
+```
+
+metadataコマンドの機能:
+
+- TypeScriptのメタデータファイルを定数として出力
+- メタデータファイルと同じディレクトリに`.gitignore`が無ければ作成
+
+#### オプション
+
+- `--output-metadata-file-path <path>`: メタデータファイルの出力先（デフォルト: src/generated/packageMetadata.ts）
+- `--output-metadata-keys <list>`: 出力するメタデータキーのコンマ区切りリスト（デフォルト: name,version,description,author,license,repository.url,git.commit.hash）
+- `--no-wds`: バージョンインクリメントのワーキングディレクトリステータスチェックを無効化
+- `--no-git-version-override`: Gitのバージョンによる上書きを無効化（package.jsonのversionを使用）
 
 ### dumpコマンド
 

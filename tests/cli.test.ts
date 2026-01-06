@@ -2014,6 +2014,68 @@ describe('CLI tests', () => {
 
   //////////////////////////////////////////////////////////////////////////////////
 
+  describe('CLI metadata command tests', () => {
+    it('should generate metadata file with defaults', async () => {
+      await execCliMain(['metadata', testSourceDir], {
+        cwd: tempDir,
+      });
+
+      const metadataPath = join(
+        testSourceDir,
+        'src',
+        'generated',
+        'packageMetadata.ts'
+      );
+      expect(existsSync(metadataPath)).toBe(true);
+
+      const metadataContent = readFileSync(metadataPath, 'utf-8');
+      expect(metadataContent).toContain('export const name = "test-package";');
+      expect(metadataContent).toContain('export const version = "1.0.0";');
+
+      const gitignorePath = join(
+        testSourceDir,
+        'src',
+        'generated',
+        '.gitignore'
+      );
+      expect(existsSync(gitignorePath)).toBe(true);
+
+      const gitignoreContent = readFileSync(gitignorePath, 'utf-8');
+      expect(gitignoreContent).toContain('packageMetadata.ts');
+    });
+
+    it('should support custom output path and keys', async () => {
+      const customMetadataPath = join('src', 'meta', 'customMetadata.ts');
+
+      await execCliMain(
+        [
+          'metadata',
+          testSourceDir,
+          '--output-metadata-file-path',
+          customMetadataPath,
+          '--output-metadata-keys',
+          'name,version',
+        ],
+        {
+          cwd: tempDir,
+        }
+      );
+
+      const metadataPath = join(testSourceDir, customMetadataPath);
+      expect(existsSync(metadataPath)).toBe(true);
+
+      const metadataContent = readFileSync(metadataPath, 'utf-8');
+      expect(metadataContent).toContain('export const name = "test-package";');
+      expect(metadataContent).toContain('export const version = "1.0.0";');
+      expect(metadataContent).not.toContain('export const description');
+
+      const gitignorePath = join(testSourceDir, 'src', 'meta', '.gitignore');
+      expect(existsSync(gitignorePath)).toBe(true);
+    });
+  });
+
+  //////////////////////////////////////////////////////////////////////////////////
+
   describe('CLI format command tests', () => {
     it('should format placeholders from input file to stdout', async () => {
       const templatePath = join(testSourceDir, 'template.txt');

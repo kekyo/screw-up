@@ -365,6 +365,9 @@ The `screw-up` package includes a command-line interface for packaging and publi
 ### Examples
 
 ```bash
+# Generate TypeScript metadata file
+screw-up metadata
+
 # Dump how `package.json` is resolved (JSON)
 screw-up dump
 
@@ -398,6 +401,7 @@ For help with any command:
 
 ```bash
 screw-up --help
+screw-up metadata --help
 screw-up dump --help
 screw-up format --help
 screw-up pack --help
@@ -405,6 +409,33 @@ screw-up publish --help
 ```
 
 MEMO: While it can also be used in projects unrelated to NPM projects, such as C,C++ or other projects, in that case, you might also be interested in [screw-up-native](https://github.com/kekyo/screw-up-native/) sibling project, which is a ported native code implementation.
+
+### Metadata Command
+
+Generate TypeScript metadata file (same output as plugin `outputMetadataFile: true`):
+
+```bash
+# Generate metadata file for current directory
+screw-up metadata
+
+# Custom output path
+screw-up metadata --output-metadata-file-path ./src/generated/meta.ts
+
+# Limit keys
+screw-up metadata --output-metadata-keys "name,version"
+```
+
+The metadata command:
+
+- Generates a TypeScript metadata file with exported constants
+- Creates a `.gitignore` entry next to the metadata file if missing
+
+#### Options
+
+- `--output-metadata-file-path <path>`: Output path for metadata file (default: src/generated/packageMetadata.ts)
+- `--output-metadata-keys <list>`: Comma-separated list of metadata keys to include (default: name,version,description,author,license,repository.url,git.commit.hash)
+- `--no-wds`: Disable working directory status check for version increment
+- `--no-git-version-override`: Do not override version from Git (use package.json version)
 
 ### Dump Command
 
