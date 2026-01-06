@@ -3,7 +3,7 @@
 // Under MIT.
 // https://github.com/kekyo/screw-up/
 
-import { join, resolve } from 'path';
+import { dirname, join, resolve } from 'path';
 import { existsSync } from 'fs';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'fs/promises';
 import { spawn } from 'child_process';
@@ -15,7 +15,12 @@ import {
   getComputedPackageJsonObject,
 } from './cli-internal';
 import { getFetchGitMetadata } from './analyzer';
-import { Logger } from './internal';
+import { Logger, resolvePackageMetadata } from './internal';
+import {
+  ensureMetadataGitignore,
+  generateMetadataFileContent,
+  writeFileIfChanged,
+} from './metadata-file';
 
 // We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
 
@@ -34,6 +39,16 @@ const defaultInheritableFields = new Set([
   'readme',
 ]);
 
+const defaultOutputMetadataKeys = [
+  'name',
+  'version',
+  'description',
+  'author',
+  'license',
+  'repository.url',
+  'git.commit.hash',
+];
+
 // Parse inheritable fields from CLI option string
 const parseInheritableFields = (
   inheritableFieldsOption: string | boolean | undefined
@@ -50,6 +65,21 @@ const parseInheritableFields = (
       .map((field) => field.trim())
       .filter((field) => field.length > 0)
   );
+};
+
+const parseOutputMetadataKeys = (
+  outputMetadataKeysOption: string | boolean | undefined
+): readonly string[] => {
+  if (typeof outputMetadataKeysOption !== 'string') {
+    return defaultOutputMetadataKeys;
+  }
+  if (!outputMetadataKeysOption.trim()) {
+    return [];
+  }
+  return outputMetadataKeysOption
+    .split(',')
+    .map((key) => key.trim())
+    .filter((key) => key.length > 0);
 };
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -327,6 +357,110 @@ const dumpCommand = async (args: ParsedArgs, logger: Logger) => {
     _logger.error(`dump: Failed to dump package.json: ${error}`);
     return 1;
   }
+  return 0;
+};
+
+//////////////////////////////////////////////////////////////////////////////////
+
+const showMetadataHelp = () => {
+  console.info(`Usage: screw-up metadata [options] [directory]
+
+Generate TypeScript metadata file from package metadata
+
+Arguments:
+  directory                          Directory to resolve metadata from (default: current directory)
+
+Options:
+  --output-metadata-file-path <path> Output path for metadata file (default: src/generated/packageMetadata.ts)
+  --output-metadata-keys <list>      Comma-separated list of metadata keys to include
+  --no-wds                           Do not check working directory status to increase version
+  --no-git-version-override          Do not override version from Git (use package.json version)
+  -h, --help                         Show help for metadata command
+`);
+};
+
+const metadataCommand = async (args: ParsedArgs, logger: Logger) => {
+  if (args.options.help || args.options.h) {
+    showMetadataHelp();
+    return 1;
+  }
+
+  const directory = args.positional[0];
+  const outputMetadataFilePathOption =
+    args.options['output-metadata-file-path'];
+  const outputMetadataKeysOption = args.options['output-metadata-keys'];
+  const alwaysOverrideVersionFromGit = !args.options['no-git-version-override'];
+  const checkWorkingDirectoryStatus = args.options['no-wds'] ? false : true;
+
+  const outputMetadataFilePath =
+    typeof outputMetadataFilePathOption === 'string' &&
+    outputMetadataFilePathOption.trim()
+      ? outputMetadataFilePathOption
+      : 'src/generated/packageMetadata.ts';
+  const outputMetadataKeys = parseOutputMetadataKeys(outputMetadataKeysOption);
+
+  const targetDir = resolve(directory ?? process.cwd());
+
+  try {
+    const fetchGitMetadata = getFetchGitMetadata(
+      targetDir,
+      checkWorkingDirectoryStatus,
+      logger
+    );
+
+    const result = await resolvePackageMetadata(
+      targetDir,
+      fetchGitMetadata,
+      alwaysOverrideVersionFromGit,
+      logger
+    );
+
+    const metadataSourceContent = generateMetadataFileContent(
+      result.metadata,
+      outputMetadataKeys
+    );
+    const metadataSourcePath = join(targetDir, outputMetadataFilePath);
+    const metadataWritten = await writeFileIfChanged(
+      metadataSourcePath,
+      metadataSourceContent,
+      'metadata source file',
+      logger
+    );
+
+    if (existsSync(metadataSourcePath)) {
+      const gitignoreWritten = await ensureMetadataGitignore(
+        metadataSourcePath,
+        logger
+      );
+      if (gitignoreWritten) {
+        logger.info(
+          `metadata: .gitignore is generated: ${join(
+            dirname(outputMetadataFilePath),
+            '.gitignore'
+          )}`
+        );
+      }
+    }
+
+    if (metadataWritten) {
+      logger.info(
+        `metadata: Metadata source file is generated: ${outputMetadataFilePath}`
+      );
+    } else if (existsSync(metadataSourcePath)) {
+      logger.info(
+        `metadata: Metadata source file is unchanged: ${outputMetadataFilePath}`
+      );
+    } else {
+      logger.error(
+        `metadata: Failed to write metadata file: ${outputMetadataFilePath}`
+      );
+      return 1;
+    }
+  } catch (error) {
+    logger.error(`metadata: Failed to generate metadata file: ${error}`);
+    return 1;
+  }
+
   return 0;
 };
 
@@ -649,6 +783,7 @@ Usage: screw-up <command> [options]
 Commands:
   format [output]                 Format text by replacing metadata placeholders
   dump [directory]                 Dump computed package.json as JSON
+  metadata [directory]             Generate TypeScript metadata file
   pack [directory]                 Pack the project into a tar archive
   publish [directory|package.tgz]  Publish the project
 
@@ -658,6 +793,7 @@ Options:
 Examples:
   screw-up format output.txt               # Format stdin template and write to file
   screw-up dump                            # Dump computed package.json as JSON
+  screw-up metadata                        # Generate metadata file
   screw-up pack                            # Pack current directory
   screw-up pack --pack-destination ./dist  # Pack to specific output directory
   screw-up publish                         # Publish current directory
@@ -667,6 +803,7 @@ Examples:
 
 const argOptionMap = new Map([
   ['dump', new Set(['inheritable-fields'])],
+  ['metadata', new Set(['output-metadata-file-path', 'output-metadata-keys'])],
   [
     'pack',
     new Set([
@@ -700,6 +837,8 @@ export const cliMain = async (
       return await formatCommand(parsedArgs, logger);
     case 'dump':
       return await dumpCommand(parsedArgs, logger);
+    case 'metadata':
+      return await metadataCommand(parsedArgs, logger);
     case 'pack':
       return await packCommand(parsedArgs, logger);
     case 'publish':
