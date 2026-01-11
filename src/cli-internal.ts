@@ -47,7 +47,10 @@ const getFilesArray = (packageJson: any): string[] | undefined => {
 
 const isGlobPattern = (pattern: string): boolean => /[*?[\]{}()]/.test(pattern);
 
-const normalizeFilesPattern = (pattern: string, cwd: string): string | undefined => {
+const normalizeFilesPattern = (
+  pattern: string,
+  cwd: string
+): string | undefined => {
   const trimmed = pattern.trim();
   if (!trimmed) {
     return undefined;

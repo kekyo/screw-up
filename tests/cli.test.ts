@@ -913,10 +913,7 @@ describe('CLI tests', () => {
         join(workspaceRoot, 'shared', 'parent-only.txt'),
         'parent-only'
       );
-      writeFileSync(
-        join(workspaceRoot, 'shared', 'ignored.txt'),
-        'ignored'
-      );
+      writeFileSync(join(workspaceRoot, 'shared', 'ignored.txt'), 'ignored');
       writeFileSync(
         join(workspaceRoot, 'shared', 'common.txt'),
         'parent-common'
@@ -934,10 +931,7 @@ describe('CLI tests', () => {
         JSON.stringify(childPackageJson, null, 2)
       );
       mkdirSync(join(childDir, 'shared'), { recursive: true });
-      writeFileSync(
-        join(childDir, 'shared', 'common.txt'),
-        'child-common'
-      );
+      writeFileSync(join(childDir, 'shared', 'common.txt'), 'child-common');
       writeFileSync(join(childDir, 'child-only.txt'), 'child-only');
 
       const outputDir = join(tempDir, 'output-files-merge');
@@ -970,7 +964,9 @@ describe('CLI tests', () => {
       expect(
         readFileSync(join(packageRoot, 'shared', 'parent-only.txt'), 'utf-8')
       ).toBe('parent-only');
-      expect(existsSync(join(packageRoot, 'shared', 'ignored.txt'))).toBe(false);
+      expect(existsSync(join(packageRoot, 'shared', 'ignored.txt'))).toBe(
+        false
+      );
       expect(readFileSync(join(packageRoot, 'child-only.txt'), 'utf-8')).toBe(
         'child-only'
       );
@@ -1014,13 +1010,7 @@ describe('CLI tests', () => {
       mkdirSync(outputDir, { recursive: true });
 
       await execCliMain(
-        [
-          'pack',
-          childDir,
-          '--pack-destination',
-          outputDir,
-          '--no-merge-files',
-        ],
+        ['pack', childDir, '--pack-destination', outputDir, '--no-merge-files'],
         {
           cwd: tempDir,
         }
@@ -2063,7 +2053,10 @@ describe('CLI tests', () => {
     }, 10000);
 
     it('should skip files merge in dump output with --no-merge-files', async () => {
-      const workspaceRoot = join(tempDir, 'workspace-dump-files-merge-disabled');
+      const workspaceRoot = join(
+        tempDir,
+        'workspace-dump-files-merge-disabled'
+      );
       mkdirSync(workspaceRoot);
 
       const rootPackageJson = {
@@ -2089,12 +2082,9 @@ describe('CLI tests', () => {
         JSON.stringify(childPackageJson, null, 2)
       );
 
-      const result = await execCliMain(
-        ['dump', childDir, '--no-merge-files'],
-        {
-          cwd: tempDir,
-        }
-      );
+      const result = await execCliMain(['dump', childDir, '--no-merge-files'], {
+        cwd: tempDir,
+      });
       const packageJson = JSON.parse(result);
       expect(packageJson.files).toEqual(['**/*']);
     }, 10000);

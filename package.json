@@ -44,7 +44,7 @@
     "check-bootstrap": "[ ! -f src/generated/packageMetadata.ts ] && cp src/generated/packageMetadata-bootstrap src/generated/packageMetadata.ts"
   },
   "dependencies": {
-    "async-primitives": ">=1.2.0",
+    "async-primitives": ">=1.5.0",
     "dayjs": ">=1.11.0",
     "glob": ">=11.0.0",
     "isomorphic-git": ">=1.30.0",

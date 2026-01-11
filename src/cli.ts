@@ -541,14 +541,14 @@ const packCommand = async (args: ParsedArgs, logger: Logger) => {
       targetDir,
       outputDir,
       checkWorkingDirectoryStatus,
-            alwaysOverrideVersionFromGit,
-            inheritableFields,
-            readmeReplacementPath,
-            replacePeerDepsWildcards,
-            peerDepsVersionPrefix,
-            logger,
-            mergeFiles
-          );
+      alwaysOverrideVersionFromGit,
+      inheritableFields,
+      readmeReplacementPath,
+      replacePeerDepsWildcards,
+      peerDepsVersionPrefix,
+      logger,
+      mergeFiles
+    );
     if (result) {
       if (verbose) {
         logger.info(
@@ -747,12 +747,12 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
             checkWorkingDirectoryStatus,
             alwaysOverrideVersionFromGit,
             inheritableFields,
-          readmeReplacementPath,
-          replacePeerDepsWildcards,
-          peerDepsVersionPrefix,
-          logger,
-          mergeFiles
-        );
+            readmeReplacementPath,
+            replacePeerDepsWildcards,
+            peerDepsVersionPrefix,
+            logger,
+            mergeFiles
+          );
           if (result?.metadata) {
             if (verbose) {
               logger.info(
