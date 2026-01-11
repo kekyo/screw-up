@@ -27,6 +27,7 @@ const defaultInheritableFields = new Set([
   'homepage',
   'bugs',
   'readme',
+  'files',
 ]);
 
 describe('CLI tests', () => {
@@ -890,6 +891,157 @@ describe('CLI tests', () => {
       // Check if test-package-1.0.0.tgz was created in the relative path
       const archivePath = join(fullOutputDir, 'test-package-1.0.0.tgz');
       expect(existsSync(archivePath)).toBe(true);
+    }, 10000);
+
+    it('should merge parent files into packed workspace child', async () => {
+      const workspaceRoot = join(tempDir, 'workspace-files-merge');
+      mkdirSync(workspaceRoot);
+
+      const rootPackageJson = {
+        name: 'workspace-root',
+        version: '1.0.0',
+        workspaces: ['packages/*'],
+        files: ['shared/**', '!shared/ignored.txt'],
+      };
+      writeFileSync(
+        join(workspaceRoot, 'package.json'),
+        JSON.stringify(rootPackageJson, null, 2)
+      );
+
+      mkdirSync(join(workspaceRoot, 'shared'), { recursive: true });
+      writeFileSync(
+        join(workspaceRoot, 'shared', 'parent-only.txt'),
+        'parent-only'
+      );
+      writeFileSync(
+        join(workspaceRoot, 'shared', 'ignored.txt'),
+        'ignored'
+      );
+      writeFileSync(
+        join(workspaceRoot, 'shared', 'common.txt'),
+        'parent-common'
+      );
+
+      const childDir = join(workspaceRoot, 'packages', 'child');
+      mkdirSync(childDir, { recursive: true });
+      const childPackageJson = {
+        name: 'child-package',
+        version: '1.0.0',
+        files: ['**/*', '!shared/parent-only.txt'],
+      };
+      writeFileSync(
+        join(childDir, 'package.json'),
+        JSON.stringify(childPackageJson, null, 2)
+      );
+      mkdirSync(join(childDir, 'shared'), { recursive: true });
+      writeFileSync(
+        join(childDir, 'shared', 'common.txt'),
+        'child-common'
+      );
+      writeFileSync(join(childDir, 'child-only.txt'), 'child-only');
+
+      const outputDir = join(tempDir, 'output-files-merge');
+      mkdirSync(outputDir, { recursive: true });
+
+      const result = await packAssets(
+        childDir,
+        outputDir,
+        true,
+        true,
+        defaultInheritableFields,
+        undefined,
+        true,
+        '^',
+        createConsoleLogger(),
+        true
+      );
+      const archivePath = join(outputDir, result!.packageFileName);
+      const extractDir = join(tempDir, 'extract-files-merge');
+      mkdirSync(extractDir, { recursive: true });
+      await tar.extract({
+        file: archivePath,
+        cwd: extractDir,
+      });
+
+      const packageRoot = join(extractDir, 'package');
+      expect(
+        readFileSync(join(packageRoot, 'shared', 'common.txt'), 'utf-8')
+      ).toBe('child-common');
+      expect(
+        readFileSync(join(packageRoot, 'shared', 'parent-only.txt'), 'utf-8')
+      ).toBe('parent-only');
+      expect(existsSync(join(packageRoot, 'shared', 'ignored.txt'))).toBe(false);
+      expect(readFileSync(join(packageRoot, 'child-only.txt'), 'utf-8')).toBe(
+        'child-only'
+      );
+    }, 10000);
+
+    it('should skip files merge with --no-merge-files', async () => {
+      const workspaceRoot = join(tempDir, 'workspace-files-merge-disabled');
+      mkdirSync(workspaceRoot);
+
+      const rootPackageJson = {
+        name: 'workspace-root',
+        version: '1.0.0',
+        workspaces: ['packages/*'],
+        files: ['shared/**'],
+      };
+      writeFileSync(
+        join(workspaceRoot, 'package.json'),
+        JSON.stringify(rootPackageJson, null, 2)
+      );
+
+      mkdirSync(join(workspaceRoot, 'shared'), { recursive: true });
+      writeFileSync(
+        join(workspaceRoot, 'shared', 'parent-only.txt'),
+        'parent-only'
+      );
+
+      const childDir = join(workspaceRoot, 'packages', 'child');
+      mkdirSync(childDir, { recursive: true });
+      const childPackageJson = {
+        name: 'child-package',
+        version: '1.0.0',
+        files: ['**/*'],
+      };
+      writeFileSync(
+        join(childDir, 'package.json'),
+        JSON.stringify(childPackageJson, null, 2)
+      );
+      writeFileSync(join(childDir, 'child-only.txt'), 'child-only');
+
+      const outputDir = join(tempDir, 'output-files-merge-disabled');
+      mkdirSync(outputDir, { recursive: true });
+
+      await execCliMain(
+        [
+          'pack',
+          childDir,
+          '--pack-destination',
+          outputDir,
+          '--no-merge-files',
+        ],
+        {
+          cwd: tempDir,
+        }
+      );
+
+      const archivePath = join(outputDir, 'child-package-1.0.0.tgz');
+      const extractDir = join(tempDir, 'extract-files-merge-disabled');
+      mkdirSync(extractDir, { recursive: true });
+      await tar.extract({
+        file: archivePath,
+        cwd: extractDir,
+      });
+
+      const packageRoot = join(extractDir, 'package');
+      expect(existsSync(join(packageRoot, 'shared', 'parent-only.txt'))).toBe(
+        false
+      );
+      const extractedPackageJson = JSON.parse(
+        readFileSync(join(packageRoot, 'package.json'), 'utf-8')
+      );
+      expect(extractedPackageJson.files).toEqual(['**/*']);
     }, 10000);
 
     it('should show help for pack command', async () => {
@@ -1869,6 +2021,82 @@ describe('CLI tests', () => {
 
       // Workspace field should not be inherited
       expect(packageJson.workspaces).toBeUndefined();
+    }, 10000);
+
+    it('should merge files patterns in dump output', async () => {
+      const workspaceRoot = join(tempDir, 'workspace-dump-files-merge');
+      mkdirSync(workspaceRoot);
+
+      const rootPackageJson = {
+        name: 'workspace-root',
+        version: '1.0.0',
+        workspaces: ['packages/*'],
+        files: ['shared/**', '!shared/ignored.txt'],
+      };
+      writeFileSync(
+        join(workspaceRoot, 'package.json'),
+        JSON.stringify(rootPackageJson, null, 2)
+      );
+
+      const childDir = join(workspaceRoot, 'packages', 'child');
+      mkdirSync(childDir, { recursive: true });
+      const childPackageJson = {
+        name: 'child-package',
+        version: '1.0.0',
+        files: ['**/*', '!shared/parent-only.txt'],
+      };
+      writeFileSync(
+        join(childDir, 'package.json'),
+        JSON.stringify(childPackageJson, null, 2)
+      );
+
+      const result = await execCliMain(['dump', childDir], {
+        cwd: tempDir,
+      });
+      const packageJson = JSON.parse(result);
+      expect(packageJson.files).toEqual([
+        'shared/**',
+        '!shared/ignored.txt',
+        '**/*',
+        '!shared/parent-only.txt',
+      ]);
+    }, 10000);
+
+    it('should skip files merge in dump output with --no-merge-files', async () => {
+      const workspaceRoot = join(tempDir, 'workspace-dump-files-merge-disabled');
+      mkdirSync(workspaceRoot);
+
+      const rootPackageJson = {
+        name: 'workspace-root',
+        version: '1.0.0',
+        workspaces: ['packages/*'],
+        files: ['shared/**'],
+      };
+      writeFileSync(
+        join(workspaceRoot, 'package.json'),
+        JSON.stringify(rootPackageJson, null, 2)
+      );
+
+      const childDir = join(workspaceRoot, 'packages', 'child');
+      mkdirSync(childDir, { recursive: true });
+      const childPackageJson = {
+        name: 'child-package',
+        version: '1.0.0',
+        files: ['**/*'],
+      };
+      writeFileSync(
+        join(childDir, 'package.json'),
+        JSON.stringify(childPackageJson, null, 2)
+      );
+
+      const result = await execCliMain(
+        ['dump', childDir, '--no-merge-files'],
+        {
+          cwd: tempDir,
+        }
+      );
+      const packageJson = JSON.parse(result);
+      expect(packageJson.files).toEqual(['**/*']);
     }, 10000);
 
     it('should handle error when directory does not exist', async () => {

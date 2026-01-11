@@ -484,8 +484,9 @@ The dump command:
 
 #### Options
 
-- `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent (default: version,description,author,license,repository,keywords,homepage,bugs,readme)
+- `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent (default: version,description,author,license,repository,keywords,homepage,bugs,readme,files)
 - `--no-wds`: Disable working directory status check for version increment
+- `--no-merge-files`: Do not merge files from parent package.json
 - `-f, --force`: Allow dumping without `package.json` (Git/default metadata only)
 
 #### Generic usage
@@ -528,7 +529,7 @@ Input comes from stdin unless `-i/--input` is provided, and output always goes t
 
 - `-i, --input <path>`: Template file to format (defaults to stdin)
 - `-b, --bracket <open,close>`: Change placeholder brackets (default `{,}`)
-- `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent (default: version,description,author,license,repository,keywords,homepage,bugs,readme)
+- `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent (default: version,description,author,license,repository,keywords,homepage,bugs,readme,files)
 - `--no-wds`: Disable working directory status check for version increment
 - `--no-git-version-override`: Do not override version from Git (use package.json version)
 - `-f, --force`: Allow formatting without `package.json` (Git/default metadata only)
@@ -578,7 +579,7 @@ The pack command:
 - Supports workspace inheritance (inherits metadata from parent packages)
 - Creates a compressed `.tgz` archive with format: `{name}-{version}.tgz`
 
-The pack command uses `npm pack` internally to generate a temporary package file. It then performs operations such as replacing `package.json` and modifying README on the package file. Because it operates in this way, the handling of the `files` key and other aspects are fully compliant with the specifications assumed by `npm pack`.
+The pack command uses `npm pack` internally to generate a temporary package file. It then performs operations such as replacing `package.json` and modifying README on the package file. File selection follows `npm pack` behavior, except for the workspace files merge described below.
 
 However, to successfully pack the files, you must define the `version` key. screw-up itself can automatically determine the version to specify in the `version` key and reflect that value in the final NPM package file. When the `version` key does not exist, an error will occur during the first `npm pack` execution. To avoid this, the "Recommended configuration" section example specifies a DUMMY `version` key.
 
@@ -586,10 +587,22 @@ However, to successfully pack the files, you must define the `version` key. scre
 
 - `--pack-destination <path>`: Specify output directory for the archive
 - `--readme <path>`: Replace README.md with specified file
-- `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent (default: version,description,author,license,repository,keywords,homepage,bugs,readme)
+- `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent (default: version,description,author,license,repository,keywords,homepage,bugs,readme,files)
 - `--no-wds`: Disable working directory status check for version increment
 - `--no-replace-peer-deps`: Disable replacing "\*" in peerDependencies with actual versions
+- `--no-merge-files`: Do not merge files from parent package.json
 - `--peer-deps-prefix <prefix>`: Version prefix for replaced peerDependencies (default: "^")
+
+#### Merging "files" entires
+
+The `files` section in `package.json` merges file entries from the parent and child projects according to the “merge process”.
+This feature allows you to list common distribution files in the parent `package.json`'s `files` section, while only appending differences to the child `package.json`'s `files` section.
+
+When `files` is inherited, `screw-up pack` includes files matching the `files` in the workspace root `package.json` in the package.
+However, if a child project's `package.json` specifies a file in the same location, that specification takes precedence.
+
+- The negation patterns in the workspace root's `.npmignore` and the child project's `package.json` `files` do not apply to these merged files.
+- The `screw-up dump` command displays the combined result of the `files` patterns, so it may differ from the actual pack result.
 
 ### Publish Command
 
@@ -618,9 +631,10 @@ The publish command:
 
 #### Options
 
-- `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent (default: version,description,author,license,repository,keywords,homepage,bugs,readme)
+- `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent (default: version,description,author,license,repository,keywords,homepage,bugs,readme,files)
 - `--no-wds`: Disable working directory status check for version increment
 - `--no-replace-peer-deps`: Disable replacing "\*" in peerDependencies with actual versions
+- `--no-merge-files`: Do not merge files from parent package.json
 - `--peer-deps-prefix <prefix>`: Version prefix for replaced peerDependencies (default: "^")
 - All `npm publish` options are supported (e.g., `--dry-run`, `--tag`, `--access`, `--registry`)
 
@@ -709,7 +723,7 @@ screw-up pack --inheritable-fields ""
 screw-up publish --inheritable-fields "version,description,keywords"
 ```
 
-Default inheritable fields: `version`, `description`, `author`, `license`, `repository`, `keywords`, `homepage`, `bugs`, `readme`
+Default inheritable fields: `version`, `description`, `author`, `license`, `repository`, `keywords`, `homepage`, `bugs`, `readme`, `files`
 
 ---
 

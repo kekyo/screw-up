@@ -3,9 +3,9 @@
 // Under MIT.
 // https://github.com/kekyo/screw-up/
 
-import { join } from 'path';
-import { createReadStream, existsSync } from 'fs';
-import { mkdir, mkdtemp, writeFile, copyFile, rm } from 'fs/promises';
+import { dirname, isAbsolute, join, resolve } from 'path';
+import { createReadStream, existsSync, statSync } from 'fs';
+import { mkdir, mkdtemp, writeFile, copyFile, rm, readFile } from 'fs/promises';
 import {
   createTarPacker,
   storeReaderToFile,
@@ -15,6 +15,8 @@ import {
 } from 'tar-vern';
 import { spawn } from 'child_process';
 import { tmpdir } from 'os';
+import { glob } from 'glob';
+import JSON5 from 'json5';
 import {
   resolveRawPackageJsonObject,
   findWorkspaceRoot,
@@ -27,6 +29,149 @@ import { getFetchGitMetadata } from './analyzer';
 // We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
 
 //////////////////////////////////////////////////////////////////////////////////
+
+const readPackageJsonFile = async (packageJsonPath: string): Promise<any> => {
+  const content = await readFile(packageJsonPath, 'utf-8');
+  return JSON5.parse(content);
+};
+
+const getFilesArray = (packageJson: any): string[] | undefined => {
+  if (!packageJson || !Array.isArray(packageJson.files)) {
+    return undefined;
+  }
+  const entries = packageJson.files.filter(
+    (entry: unknown): entry is string => typeof entry === 'string'
+  );
+  return entries.length > 0 ? entries : undefined;
+};
+
+const isGlobPattern = (pattern: string): boolean => /[*?[\]{}()]/.test(pattern);
+
+const normalizeFilesPattern = (pattern: string, cwd: string): string | undefined => {
+  const trimmed = pattern.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const isNegated = trimmed.startsWith('!');
+  const raw = isNegated ? trimmed.slice(1) : trimmed;
+  if (!raw) {
+    return undefined;
+  }
+  if (isGlobPattern(raw)) {
+    return trimmed;
+  }
+  const fullPath = join(cwd, raw);
+  if (existsSync(fullPath) && statSync(fullPath).isDirectory()) {
+    const dirPattern = `${raw.replace(/\/+$/, '')}/**`;
+    return isNegated ? `!${dirPattern}` : dirPattern;
+  }
+  return trimmed;
+};
+
+const isSafeRelativePath = (value: string): boolean => {
+  if (isAbsolute(value)) {
+    return false;
+  }
+  const segments = value.split(/[\\/]+/);
+  if (segments.some((segment) => segment === '..')) {
+    return false;
+  }
+  return true;
+};
+
+const expandFilesPatterns = async (
+  patterns: string[],
+  cwd: string
+): Promise<Set<string>> => {
+  const includePatterns: string[] = [];
+  const excludePatterns: string[] = [];
+
+  for (const pattern of patterns) {
+    const normalized = normalizeFilesPattern(pattern, cwd);
+    if (!normalized) {
+      continue;
+    }
+    if (normalized.startsWith('!')) {
+      excludePatterns.push(normalized.slice(1));
+    } else {
+      includePatterns.push(normalized);
+    }
+  }
+
+  const result = new Set<string>();
+  for (const pattern of includePatterns) {
+    const matches = await glob(pattern, { cwd, nodir: true });
+    for (const match of matches) {
+      if (isSafeRelativePath(match)) {
+        result.add(match);
+      }
+    }
+  }
+
+  for (const pattern of excludePatterns) {
+    const matches = await glob(pattern, { cwd, nodir: true });
+    for (const match of matches) {
+      result.delete(match);
+    }
+  }
+
+  return result;
+};
+
+const mergeFilesPatterns = (
+  parentFiles: string[] | undefined,
+  childFiles: string[] | undefined
+): string[] | undefined => {
+  const merged: string[] = [];
+  if (parentFiles?.length) {
+    merged.push(...parentFiles);
+  }
+  if (childFiles?.length) {
+    merged.push(...childFiles);
+  }
+  return merged.length > 0 ? merged : undefined;
+};
+
+export interface WorkspaceFilesMergeResult {
+  readonly workspaceRoot: string;
+  readonly parentFiles?: string[];
+  readonly childFiles?: string[];
+  readonly mergedFiles?: string[];
+}
+
+export const resolveWorkspaceFilesMerge = async (
+  targetDir: string,
+  logger: Logger
+): Promise<WorkspaceFilesMergeResult | undefined> => {
+  const workspaceRoot = await findWorkspaceRoot(targetDir, logger);
+  if (!workspaceRoot) {
+    return undefined;
+  }
+  const rootPackagePath = join(workspaceRoot, 'package.json');
+  const targetPackagePath = join(targetDir, 'package.json');
+  if (resolve(rootPackagePath) === resolve(targetPackagePath)) {
+    return undefined;
+  }
+
+  const [rootPackageJson, childPackageJson] = await Promise.all([
+    readPackageJsonFile(rootPackagePath),
+    readPackageJsonFile(targetPackagePath),
+  ]);
+  const parentFiles = getFilesArray(rootPackageJson);
+  const childFiles = getFilesArray(childPackageJson);
+  const mergedFiles = mergeFilesPatterns(parentFiles, childFiles);
+
+  if (!parentFiles && !childFiles) {
+    return undefined;
+  }
+
+  return {
+    workspaceRoot,
+    parentFiles,
+    childFiles,
+    mergedFiles,
+  };
+};
 
 /**
  * Execute npm pack and return the generated tarball path
@@ -123,7 +268,8 @@ export const packAssets = async (
   readmeReplacementPath: string | undefined,
   replacePeerDepsWildcards: boolean,
   peerDepsVersionPrefix: string,
-  logger: Logger
+  logger: Logger,
+  mergeFiles: boolean = true
 ): Promise<PackedResult | undefined> => {
   // Check if target directory exists
   if (!existsSync(targetDir)) {
@@ -205,6 +351,14 @@ export const packAssets = async (
     }
   }
 
+  const filesMergeEnabled = mergeFiles && inheritableFields.has('files');
+  const workspaceFilesMerge = filesMergeEnabled
+    ? await resolveWorkspaceFilesMerge(targetDir, logger)
+    : undefined;
+  if (filesMergeEnabled && workspaceFilesMerge?.mergedFiles) {
+    resolvedPackageJson.files = workspaceFilesMerge.mergedFiles;
+  }
+
   // Create temporary directory for npm pack
   const baseTempDir = await mkdtemp(join(tmpdir(), 'screw-up-npm-pack-'));
   await mkdir(baseTempDir, { recursive: true });
@@ -220,9 +374,29 @@ export const packAssets = async (
     const stream = createReadStream(npmTarballPath);
     await extractTo(createTarExtractor(stream, 'gzip'), stagingDir);
 
-    // Step 3: Process extracted files (package.json/README replacement)
+    // Step 3: Process extracted files (files merge/package.json/README replacement)
+    const packageRoot = join(stagingDir, 'package');
+
+    if (filesMergeEnabled && workspaceFilesMerge?.parentFiles?.length) {
+      const parentFiles = await expandFilesPatterns(
+        workspaceFilesMerge.parentFiles,
+        workspaceFilesMerge.workspaceRoot
+      );
+      for (const parentFile of parentFiles) {
+        const destPath = join(packageRoot, parentFile);
+        if (existsSync(destPath)) {
+          continue;
+        }
+        await mkdir(dirname(destPath), { recursive: true });
+        await copyFile(
+          join(workspaceFilesMerge.workspaceRoot, parentFile),
+          destPath
+        );
+      }
+    }
+
     // Replace package.json with our processed version
-    const packageJsonPath = join(stagingDir, 'package', 'package.json');
+    const packageJsonPath = join(packageRoot, 'package.json');
     if (existsSync(packageJsonPath)) {
       await writeFile(
         packageJsonPath,
@@ -232,7 +406,7 @@ export const packAssets = async (
 
     // Replace README.md
     if (readmeReplacementCandidatePath) {
-      const readmeDestPath = join(stagingDir, 'package', 'README.md');
+      const readmeDestPath = join(packageRoot, 'README.md');
       await copyFile(readmeReplacementCandidatePath, readmeDestPath);
     }
 
