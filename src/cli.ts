@@ -13,6 +13,7 @@ import {
   parseArgs,
   ParsedArgs,
   getComputedPackageJsonObject,
+  resolveWorkspaceFilesMerge,
 } from './cli-internal';
 import { getFetchGitMetadata } from './analyzer';
 import { Logger, resolvePackageMetadata } from './internal';
@@ -37,6 +38,7 @@ const defaultInheritableFields = new Set([
   'homepage',
   'bugs',
   'readme',
+  'files',
 ]);
 
 const defaultOutputMetadataKeys = [
@@ -297,6 +299,7 @@ Options:
   --inheritable-fields <list>   Comma-separated list of fields to inherit from parent
   --no-wds                      Do not check working directory status to increase version
   --no-git-version-override     Do not override version from Git (use package.json version)
+  --no-merge-files              Do not merge files from parent package.json
   -f, --force                   Allow dumping even if package.json does not exist
   -h, --help                    Show help for dump command
 `);
@@ -312,6 +315,7 @@ const dumpCommand = async (args: ParsedArgs, logger: Logger) => {
   const inheritableFieldsOption = args.options['inheritable-fields'] as string;
   const alwaysOverrideVersionFromGit = !args.options['no-git-version-override'];
   const checkWorkingDirectoryStatus = args.options['no-wds'] ? false : true;
+  const mergeFiles = !args.options['no-merge-files'];
   const ignorePackageJsonNotExist =
     args.options['force'] || args.options['f'] ? true : false;
 
@@ -347,6 +351,19 @@ const dumpCommand = async (args: ParsedArgs, logger: Logger) => {
     );
 
     if (computedPackageJson) {
+      if (
+        mergeFiles &&
+        inheritableFields.has('files') &&
+        existsSync(join(targetDir, 'package.json'))
+      ) {
+        const workspaceFilesMerge = await resolveWorkspaceFilesMerge(
+          targetDir,
+          _logger
+        );
+        if (workspaceFilesMerge?.mergedFiles) {
+          computedPackageJson.files = workspaceFilesMerge.mergedFiles;
+        }
+      }
       // Output console directly
       console.info(JSON.stringify(computedPackageJson, null, 2));
     } else {
@@ -480,6 +497,7 @@ Options:
   --inheritable-fields <list>   Comma-separated list of fields to inherit from parent
   --no-wds                      Do not check working directory status to increase version
   --no-git-version-override     Do not override version from Git (use package.json version)
+  --no-merge-files              Do not merge files from parent package.json
   --no-replace-peer-deps        Disable replacing "*" in peerDependencies with actual versions
   --peer-deps-prefix <prefix>   Version prefix for replaced peerDependencies (default: "^")
   --verbose                     Print verbose log
@@ -499,6 +517,7 @@ const packCommand = async (args: ParsedArgs, logger: Logger) => {
   const inheritableFieldsOption = args.options['inheritable-fields'] as string;
   const checkWorkingDirectoryStatus = args.options['no-wds'] ? false : true;
   const alwaysOverrideVersionFromGit = !args.options['no-git-version-override'];
+  const mergeFiles = !args.options['no-merge-files'];
   const replacePeerDepsWildcards = !args.options['no-replace-peer-deps'];
   const peerDepsVersionPrefix =
     (args.options['peer-deps-prefix'] as string) ?? '^';
@@ -527,7 +546,8 @@ const packCommand = async (args: ParsedArgs, logger: Logger) => {
       readmeReplacementPath,
       replacePeerDepsWildcards,
       peerDepsVersionPrefix,
-      logger
+      logger,
+      mergeFiles
     );
     if (result) {
       if (verbose) {
@@ -624,6 +644,7 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
   const inheritableFieldsOption = args.options['inheritable-fields'] as string;
   const checkWorkingDirectoryStatus = args.options['no-wds'] ? false : true;
   const alwaysOverrideVersionFromGit = !args.options['no-git-version-override'];
+  const mergeFiles = !args.options['no-merge-files'];
   const replacePeerDepsWildcards = !args.options['no-replace-peer-deps'];
   const peerDepsVersionPrefix =
     (args.options['peer-deps-prefix'] as string) ?? '^';
@@ -647,6 +668,7 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
       arg === '-h' ||
       arg === '--no-wds' ||
       arg === '--no-git-version-override' ||
+      arg === '--no-merge-files' ||
       arg === '--no-replace-peer-deps'
     ) {
     } else if (
@@ -680,7 +702,8 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
           readmeReplacementPath,
           replacePeerDepsWildcards,
           peerDepsVersionPrefix,
-          logger
+          logger,
+          mergeFiles
         );
         if (result?.metadata) {
           if (verbose) {
@@ -727,7 +750,8 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
             readmeReplacementPath,
             replacePeerDepsWildcards,
             peerDepsVersionPrefix,
-            logger
+            logger,
+            mergeFiles
           );
           if (result?.metadata) {
             if (verbose) {

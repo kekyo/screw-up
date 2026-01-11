@@ -484,8 +484,9 @@ dumpコマンドの機能:
 
 #### オプション
 
-- `--inheritable-fields <list>`: 親から継承するフィールドのコンマ区切りリスト（デフォルト: version,description,author,license,repository,keywords,homepage,bugs,readme）
+- `--inheritable-fields <list>`: 親から継承するフィールドのコンマ区切りリスト（デフォルト: version,description,author,license,repository,keywords,homepage,bugs,readme,files）
 - `--no-wds`: バージョンインクリメントのワーキングディレクトリステータスチェックを無効化
+- `--no-merge-files`: 親package.jsonのfilesをマージしない
 - `-f, --force`: `package.json`が無い場合でも強制的に出力（Git/デフォルトメタデータのみ）
 
 #### 汎用的な使用方法
@@ -528,7 +529,7 @@ screw-up format -i ./template.txt -b "#{,}#"
 
 - `-i, --input <path>`: 整形するテンプレートファイル（デフォルトは標準入力）
 - `-b, --bracket <open,close>`: プレースホルダーのブラケットを変更（デフォルト `{,}`）
-- `--inheritable-fields <list>`: 親から継承するフィールドのコンマ区切りリスト（デフォルト: version,description,author,license,repository,keywords,homepage,bugs,readme）
+- `--inheritable-fields <list>`: 親から継承するフィールドのコンマ区切りリスト（デフォルト: version,description,author,license,repository,keywords,homepage,bugs,readme,files）
 - `--no-wds`: バージョンインクリメントのワーキングディレクトリステータスチェックを無効化
 - `--no-git-version-override`: Gitのバージョンによる上書きを無効化（package.jsonのversionを使用）
 - `-f, --force`: `package.json`が無くても強制的に整形（Git/デフォルトメタデータのみ）
@@ -578,18 +579,33 @@ packコマンドの機能:
 - ワークスペース継承をサポート（親パッケージからメタデータを継承）
 - `{name}-{version}.tgz`形式で圧縮された`.tgz`アーカイブを作成
 
-packコマンドは、内部で`npm pack`を使用して、仮のパッケージファイルを生成します。その後、パッケージファイルに対して`package.json`の置き換えやREADMEの変更などを行います。このように動作するため、`files`キーの取り扱いなども、`npm pack`で想定される仕様に完全に準拠します。
+packコマンドは、内部で`npm pack`を使用して、仮のパッケージファイルを生成します。
+その後、パッケージファイルに対して`package.json`の置き換えやREADMEの変更などを行います。
 
-但し、パッキングを成功させるためには、必ず`version`キーを定義する必要があります。screw-up自身は、自動的に`version`キーに指定するバージョンを特定でき、その値を最終的なNPMパッケージファイルに反映します。しかし、`version`キーが存在しないと、最初の`npm pack`実行でエラーが発生します。これを避けるため、「運用の推奨構成」の例では、ダミーの`version`キーを指定しています。
+但し、パッキングを成功させるためには、必ず`version`キーを定義する必要があります。
+screw-up自身は、自動的に`version`キーに指定するバージョンを特定でき、その値を最終的なNPMパッケージファイルに反映します。
+しかし、`version`キーが存在しないと、最初の`npm pack`実行でエラーが発生します。これを避けるため、「運用の推奨構成」の例では、ダミーの`version`キーを指定しています。
 
 #### オプション
 
 - `--pack-destination <path>`: アーカイブの出力ディレクトリを指定
 - `--readme <path>`: README.mdを指定したファイルで置換
-- `--inheritable-fields <list>`: 親から継承するフィールドのコンマ区切りリスト（デフォルト: version,description,author,license,repository,keywords,homepage,bugs,readme）
+- `--inheritable-fields <list>`: 親から継承するフィールドのコンマ区切りリスト（デフォルト: version,description,author,license,repository,keywords,homepage,bugs,readme,files）
 - `--no-wds`: バージョンインクリメントのワーキングディレクトリステータスチェックを無効化
-- `--no-replace-peer-deps`: peerDependenciesの"\*"を実際のバージョンに置き換える機能を無効化
-- `--peer-deps-prefix <prefix>`: 置き換えられるpeerDependenciesのバージョンプレフィックス（デフォルト: "^"）
+- `--no-replace-peer-deps`: `peerDependencies` の"\*"を実際のバージョンに置き換える機能を無効化
+- `--no-merge-files`: 親 `package.json` の `files` をマージせず、通常のオーバーライド規則に従う
+- `--peer-deps-prefix <prefix>`: 置き換えられる `peerDependencies` のバージョンプレフィックス（デフォルト: "^"）
+
+#### filesエントリのマージ
+
+`package.json` の `files` は「マージ処理」に従って、親プロジェクトと子プロジェクトのファイルエントリがマージされます。
+この機能により、共通の配布ファイルを親の `package.json` の `files` に記述して、子の `package.json` の `files` には差分のみを追記できます。
+
+`files` が継承対象の場合、 `screw-up pack` はワークスペースルートの `package.json` の `files` に一致するファイルをパッケージに含みます。
+ただし、子プロジェクトの `package.json` で、同じ場所に配置されるファイルが指定されている場合は、そちらが優先されます。
+
+- ワークスペースルートの `.npmignore` と子プロジェクトの `package.json` の `files` 否定パターンは、このマージ対象ファイルには適用されません。
+- `screw-up dump` コマンドでは `files` パターンの合成結果を表示するため、実際のpack結果と差が出る可能性があります。
 
 ### publishコマンド
 
@@ -618,10 +634,11 @@ publishコマンドの機能:
 
 #### オプション
 
-- `--inheritable-fields <list>`: 親から継承するフィールドのコンマ区切りリスト（デフォルト: version,description,author,license,repository,keywords,homepage,bugs,readme）
+- `--inheritable-fields <list>`: 親から継承するフィールドのコンマ区切りリスト（デフォルト: version,description,author,license,repository,keywords,homepage,bugs,readme,files）
 - `--no-wds`: バージョンインクリメントのワーキングディレクトリステータスチェックを無効化
-- `--no-replace-peer-deps`: peerDependenciesの"\*"を実際のバージョンに置き換える機能を無効化
-- `--peer-deps-prefix <prefix>`: 置き換えられるpeerDependenciesのバージョンプレフィックス（デフォルト: "^"）
+- `--no-replace-peer-deps`: `peerDependencies` の"\*"を実際のバージョンに置き換える機能を無効化
+- `--no-merge-files`: 親 `package.json` の `files` をマージせず、通常のオーバーライド規則に従う
+- `--peer-deps-prefix <prefix>`: 置き換えられる `peerDependencies` のバージョンプレフィックス（デフォルト: "^"）
 - すべての`npm publish`オプションがサポートされています（例: `--dry-run`、`--tag`、`--access`、`--registry`）
 
 ### README置換機能
