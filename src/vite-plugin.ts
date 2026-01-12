@@ -4,7 +4,12 @@
 // https://github.com/kekyo/screw-up/
 
 import type { Plugin } from 'vite';
-import type { OutputAsset, OutputOptions } from 'rollup';
+import type {
+  NormalizedOutputOptions,
+  OutputAsset,
+  OutputChunk,
+  OutputOptions,
+} from 'rollup';
 import { readFile, writeFile, readdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, dirname } from 'path';
@@ -58,6 +63,23 @@ const insertBannerHeader = (content: string, banner: string): string => {
     // Insert banner at the beginning
     return banner + '\n' + content;
   }
+};
+
+/**
+ * Split a leading shebang from content, keeping the shebang line with newline.
+ */
+const splitShebang = (content: string): { shebang: string; rest: string } => {
+  if (!content.startsWith('#!')) {
+    return { shebang: '', rest: content };
+  }
+  const newlineIndex = content.indexOf('\n');
+  if (newlineIndex === -1) {
+    return { shebang: `${content}\n`, rest: '' };
+  }
+  return {
+    shebang: content.slice(0, newlineIndex + 1),
+    rest: content.slice(newlineIndex + 1),
+  };
 };
 
 /**
@@ -155,6 +177,23 @@ const applyLineOffsetToSourceMap = (
   return original.endsWith('\n') ? `${serialized}\n` : serialized;
 };
 
+/**
+ * Prepend empty lines to sourcemap objects for chunk outputs.
+ */
+const applyLineOffsetToSourceMapObject = (
+  map: any,
+  lineOffset: number
+): void => {
+  if (!map || lineOffset <= 0 || typeof map.mappings !== 'string') {
+    return;
+  }
+  const prefix = ';'.repeat(lineOffset);
+  if (map.mappings.startsWith(prefix)) {
+    return;
+  }
+  map.mappings = prefix + map.mappings;
+};
+
 /////////////////////////////////////////////////////////////////////////////////////////
 
 /**
@@ -199,6 +238,18 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
   let metadata: any;
   let projectRoot: string;
   let fetchGitMetadata = () => Promise.resolve<any>({});
+
+  const resolveOutputBanner = async (
+    outputOptions: NormalizedOutputOptions,
+    chunk: OutputChunk
+  ): Promise<string> => {
+    const outputBanner = outputOptions.banner;
+    if (typeof outputBanner === 'function') {
+      const resolved = await outputBanner(chunk);
+      return resolved ?? banner ?? '';
+    }
+    return outputBanner ?? banner ?? '';
+  };
 
   // Generate and write metadata TypeScript file
   const generateMetadataSourceFiles = async () => {
@@ -435,32 +486,53 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
       }
     },
     // Generate bundle phase
-    generateBundle: (_options, bundle) => {
-      // Add banner to each output file if enabled
-      if (insertMetadataBanner) {
-        let count = 0;
-        for (const fileName in bundle) {
-          const chunk = bundle[fileName];
-          if (
-            // Only treat assets that match filters; JS chunks already handled via rollup banner
-            chunk.type === 'asset' &&
-            assetFiltersRegex.some((filter) => filter.test(fileName))
-          ) {
-            if (typeof chunk.source === 'string') {
-              // Assets are not covered by rollup banner injection, so prepend manually
-              const bannerBlock = `${banner}\n`;
-              // Insert banner while preserving shebang semantics and capture line delta for maps
-              chunk.source = insertBannerHeader(chunk.source, bannerBlock); // insert more blank line
-              const lineOffset = countInsertedLines(bannerBlock);
-
+    generateBundle: {
+      order: 'post',
+      handler: async (outputOptions, bundle) => {
+        // Add banner to each output file if enabled
+        if (insertMetadataBanner) {
+          let chunkCount = 0;
+          for (const fileName in bundle) {
+            const output = bundle[fileName];
+            if (output.type === 'chunk') {
+              const chunk = output as OutputChunk;
+              const resolvedBanner = await resolveOutputBanner(
+                outputOptions,
+                chunk
+              );
+              if (!resolvedBanner) {
+                continue;
+              }
+              const { shebang: bannerShebang, rest: bannerRest } =
+                splitShebang(resolvedBanner);
+              const bannerCore = bannerRest.trimEnd();
+              if (!bannerCore || chunk.code.includes(bannerCore)) {
+                continue;
+              }
+              const originalCode = chunk.code;
+              let nextCode = originalCode;
+              if (bannerShebang && !nextCode.startsWith('#!')) {
+                nextCode = `${bannerShebang}${nextCode}`;
+              }
+              const bannerBlock = ensureTrailingNewline(bannerCore, '\n');
+              nextCode = insertBannerHeader(nextCode, bannerBlock);
+              if (nextCode === originalCode) {
+                continue;
+              }
+              const lineOffset =
+                nextCode.split('\n').length - originalCode.split('\n').length;
+              chunk.code = nextCode;
+              if (lineOffset > 0 && chunk.map) {
+                applyLineOffsetToSourceMapObject(chunk.map, lineOffset);
+              }
               const mapFileName = `${fileName}.map`;
               const mapAsset = bundle[mapFileName] as OutputAsset | undefined;
               if (
+                lineOffset > 0 &&
                 mapAsset &&
                 mapAsset.type === 'asset' &&
                 mapAsset.source !== undefined
               ) {
-                // Rewrite the sourcemap mappings so declaration lines still map back correctly
                 const adjusted = applyLineOffsetToSourceMap(
                   mapAsset.source,
                   lineOffset
@@ -469,16 +541,57 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
                   mapAsset.source = adjusted;
                 }
               }
-              count++;
+              chunkCount++;
             }
           }
+          if (chunkCount >= 1) {
+            logger.debug(
+              `generateBundle: Banner header reinserted: ${chunkCount} file(s)`
+            );
+          }
+
+          let assetCount = 0;
+          for (const fileName in bundle) {
+            const chunk = bundle[fileName];
+            if (
+              // Only treat assets that match filters; JS chunks already handled via rollup banner
+              chunk.type === 'asset' &&
+              assetFiltersRegex.some((filter) => filter.test(fileName))
+            ) {
+              if (typeof chunk.source === 'string') {
+                // Assets are not covered by rollup banner injection, so prepend manually
+                const bannerBlock = `${banner}\n`;
+                // Insert banner while preserving shebang semantics and capture line delta for maps
+                chunk.source = insertBannerHeader(chunk.source, bannerBlock); // insert more blank line
+                const lineOffset = countInsertedLines(bannerBlock);
+
+                const mapFileName = `${fileName}.map`;
+                const mapAsset = bundle[mapFileName] as OutputAsset | undefined;
+                if (
+                  mapAsset &&
+                  mapAsset.type === 'asset' &&
+                  mapAsset.source !== undefined
+                ) {
+                  // Rewrite the sourcemap mappings so declaration lines still map back correctly
+                  const adjusted = applyLineOffsetToSourceMap(
+                    mapAsset.source,
+                    lineOffset
+                  );
+                  if (adjusted !== undefined) {
+                    mapAsset.source = adjusted;
+                  }
+                }
+                assetCount++;
+              }
+            }
+          }
+          if (assetCount >= 1) {
+            logger.debug(
+              `generateBundle: Banner header inserted: ${assetCount} file(s)`
+            );
+          }
         }
-        if (count >= 1) {
-          logger.debug(
-            `generateBundle: Banner header inserted: ${count} file(s)`
-          );
-        }
-      }
+      },
     },
     // Write bundle phase
     writeBundle: async (options) => {

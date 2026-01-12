@@ -161,6 +161,78 @@ export function hello(name: string): string {
     );
   }, 30000); // 30 second timeout for build
 
+  it('should keep banner when esbuild transpiles', async () => {
+    const packageJson = {
+      name: 'esbuild-banner-lib',
+      version: '3.0.0',
+      description: 'Library built with esbuild target',
+      author: 'Transpiler',
+      license: 'MIT',
+    };
+    writeFileSync(
+      join(tempDir, 'package.json'),
+      JSON.stringify(packageJson, null, 2)
+    );
+
+    const srcDir = join(tempDir, 'src');
+    mkdirSync(srcDir);
+    writeFileSync(
+      join(srcDir, 'index.ts'),
+      `export const greet = (name: string) => \`Hi \${name}\`;\n`
+    );
+
+    const tsconfig = {
+      compilerOptions: {
+        target: 'ES2020',
+        module: 'ESNext',
+        moduleResolution: 'bundler',
+        strict: true,
+        declaration: true,
+        outDir: './dist',
+      },
+      include: ['src'],
+    };
+    writeFileSync(
+      join(tempDir, 'tsconfig.json'),
+      JSON.stringify(tsconfig, null, 2)
+    );
+
+    const distDir = join(tempDir, 'dist');
+    await build({
+      root: tempDir,
+      plugins: [screwUp()],
+      esbuild: {
+        legalComments: 'none',
+      },
+      build: {
+        lib: {
+          entry: join(srcDir, 'index.ts'),
+          name: 'EsbuildBannerLib',
+          fileName: 'index',
+          formats: ['es'],
+        },
+        outDir: distDir,
+        minify: false,
+        target: 'es2018',
+      },
+    });
+
+    const outputPath = join(distDir, 'index.mjs');
+    expect(existsSync(outputPath)).toBe(true);
+
+    const output = readFileSync(outputPath, 'utf-8');
+    const expectedBanner = `/*!
+ * name: esbuild-banner-lib
+ * version: 3.0.0
+ * description: Library built with esbuild target
+ * author: Transpiler
+ * license: MIT
+ */`;
+    expect(output).toMatch(
+      new RegExp(`^${expectedBanner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
+    );
+  }, 30000);
+
   it('should include buildDate when specified in outputKeys', async () => {
     const packageJson = {
       name: 'build-date-lib',
