@@ -7,7 +7,7 @@
 
 import { cliMain } from './cli';
 import { createConsoleLogger } from './internal';
-import { name, version } from './generated/packageMetadata';
+import { name } from './generated/packageMetadata';
 
 // We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
 

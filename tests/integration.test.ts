@@ -10,7 +10,7 @@ import {
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { build } from 'vite';
-import dayjs from 'dayjs';
+import * as dayjsModule from 'dayjs';
 import { simpleGit } from 'simple-git';
 import { TraceMap, originalPositionFor } from '@jridgewell/trace-mapping';
 import {
@@ -18,8 +18,11 @@ import {
   mergePackageMetadata,
   resolvePackageMetadata,
   createConsoleLogger,
+  resolveDefaultExport,
 } from '../src/internal';
 import { screwUp, generateBanner } from '../src/vite-plugin';
+
+const dayjs = resolveDefaultExport(dayjsModule);
 
 describe('screwUp plugin integration tests', () => {
   const tempBaseDir = join(

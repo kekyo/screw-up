@@ -4,17 +4,19 @@ import {
   writeFileSync,
   readFileSync,
   existsSync,
-  readSync,
   readdirSync,
 } from 'fs';
 import { join, relative, resolve } from 'path';
 import { tmpdir } from 'os';
 import { spawn, execSync } from 'child_process';
 import * as tar from 'tar';
-import dayjs from 'dayjs';
+import * as dayjsModule from 'dayjs';
+
 import { cliMain } from '../src/cli.ts';
 import { packAssets } from '../src/cli-internal';
-import { createConsoleLogger } from '../src/internal';
+import { createConsoleLogger, resolveDefaultExport } from '../src/internal';
+
+const dayjs = resolveDefaultExport(dayjsModule);
 
 // Default inheritable fields (copied from main.ts)
 const defaultInheritableFields = new Set([
@@ -660,10 +662,10 @@ describe('CLI tests', () => {
     let info: string[] = [];
     let err: string[] = [];
     const logger = {
-      debug: (msg) => info.push(msg),
-      info: (msg) => info.push(msg),
-      warn: (msg) => err.push(msg),
-      error: (msg) => err.push(msg),
+      debug: (msg: string) => info.push(msg),
+      info: (msg: string) => info.push(msg),
+      warn: (msg: string) => err.push(msg),
+      error: (msg: string) => err.push(msg),
     };
 
     // Hook console.info to capture help messages
@@ -702,10 +704,10 @@ describe('CLI tests', () => {
     let logs: string[] = [];
     let stdoutOutput: string[] = [];
     const logger = {
-      debug: (msg) => logs.push(msg),
-      info: (msg) => logs.push(msg),
-      warn: (msg) => logs.push(msg),
-      error: (msg) => logs.push(msg),
+      debug: (msg: string) => logs.push(msg),
+      info: (msg: string) => logs.push(msg),
+      warn: (msg: string) => logs.push(msg),
+      error: (msg: string) => logs.push(msg),
     };
 
     // Hook stdout and console.info for dump/format command outputs

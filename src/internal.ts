@@ -7,11 +7,20 @@ import { existsSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { dirname, join } from 'path';
 import { glob } from 'glob';
-import JSON5 from 'json5';
-import dayjs from 'dayjs';
+import * as JSON5Module from 'json5';
+import * as dayjsModule from 'dayjs';
 import { PackageMetadata } from './types';
 
 // We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
+
+//////////////////////////////////////////////////////////////////////////////////
+
+export const resolveDefaultExport = <T>(module: T | { default?: T }): T => {
+  return (module as { default?: T }).default ?? (module as T);
+};
+
+const JSON5 = resolveDefaultExport(JSON5Module);
+const dayjs = resolveDefaultExport(dayjsModule);
 
 //////////////////////////////////////////////////////////////////////////////////
 

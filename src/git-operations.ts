@@ -3,7 +3,7 @@
 // Under MIT.
 // https://github.com/kekyo/screw-up/
 
-import fs from 'fs/promises';
+import * as fs from 'fs/promises';
 import * as git from 'isomorphic-git';
 import type { TagInfo, Version } from './analyzer';
 import type { Logger } from './internal.js';

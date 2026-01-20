@@ -14,6 +14,8 @@ import { readFile, writeFile, readdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { createMutex } from 'async-primitives';
+
+import { git_commit_hash, name, version } from './generated/packageMetadata';
 import { resolvePackageMetadata, createConsoleLogger } from './internal';
 import { ScrewUpOptions, PackageMetadata } from './types';
 import { getFetchGitMetadata } from './analyzer';
@@ -22,7 +24,6 @@ import {
   generateMetadataFileContent,
   writeFileIfChanged,
 } from './metadata-file';
-import { git_commit_hash, name, version } from './generated/packageMetadata';
 
 /**
  * Generate banner string from package.json metadata
