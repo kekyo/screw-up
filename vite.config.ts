@@ -57,6 +57,7 @@ export default defineConfig({
         'string_decoder',
         'child_process',
         'simple-git',
+        'typescript',
       ],
     },
     target: 'es2018',
