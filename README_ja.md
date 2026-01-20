@@ -110,9 +110,6 @@ export default defineConfig({
 });
 ```
 
-`outputKeys`が指定されていない場合、デフォルトで以下のメタデータキーをこの順序で使用します:
-`name`, `version`, `description`, `author`, `license`, `repository.url`, `git.commit.hash`.
-
 ### カスタム出力キー
 
 含めるメタデータフィールドとその順序を指定できます:
@@ -140,6 +137,9 @@ export default defineConfig({
  * license: Apache-2.0
  */
 ```
+
+`outputKeys`が指定されていない場合、デフォルトで以下のメタデータキーをこの順序で使用します:
+`name`, `version`, `description`, `author`, `license`, `repository.url`, `git.commit.hash`.
 
 ### ネストされたオブジェクトの操作
 
@@ -300,6 +300,31 @@ screwUp({
 `buildDate` はビルド時刻を示すメタデータで、タイムゾーン付きのISO形式で挿入します。
 `outputKeys` / `outputMetadataKeys` に指定するか、CLIの `format` コマンドで `{buildDate}` を指定すると出力されます。
 
+### CJS default importの補正
+
+CJSとして公開されているパッケージをdefault importすると、ESMビルド時に実行時エラーになる場合があります。
+screw-upは、default importをCJSと判定した場合、安全な形へ変換します。
+
+以下のコード:
+
+```typescript
+// ESM定義を公開していないCJSパッケージをdefault importする
+import dayjs from 'dayjs';
+```
+
+これがscrew-upによって、以下のように変換されます:
+
+```typescript
+// CJSパッケージのdefault importを安全な形式に変更する
+import * as __screwUpDefaultImportModule0 from 'dayjs';
+const dayjs = __resolveDefaultExport(__screwUpDefaultImportModule0);
+```
+
+判定は Node の解決規則と同様に、 `exports` (`import`/`node`/`default`) と `main`/`type` を参照します。
+変換対象はプロジェクト内のソースのみで、`node_modules` や type-only import は変更しません。
+
+無効化する場合は `fixDefaultImport: false` を指定してください。
+
 ---
 
 ## 高度な使用方法
@@ -429,6 +454,9 @@ metadataコマンドの機能:
 
 - TypeScriptのメタデータファイルを定数として出力
 - メタデータファイルと同じディレクトリに`.gitignore`が無ければ作成
+- screw-upを使用するプロジェクトがViteプラグインの場合、セルフホストのためにブートストラップ問題
+  （`packageMetadata.ts`を生成するのにViteプラグインを初期化中に、`packageMetadata.ts`が存在しない）
+  が発生するのを、NPM `package.json` `script` エントリから実行することで回避できます。
 
 #### オプション
 

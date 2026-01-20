@@ -110,9 +110,6 @@ export default defineConfig({
 });
 ```
 
-When no `outputKeys` are specified, the plugin uses these metadata keys with exact sequence:
-`name`, `version`, `description`, `author`, `license`, `repository.url` and `git.commit.hash`.
-
 ### Custom Output Keys
 
 You can specify which metadata fields to include and in what order:
@@ -140,6 +137,9 @@ This will generate a banner with only the specified fields:
  * license: Apache-2.0
  */
 ```
+
+When no `outputKeys` are specified, the plugin uses these metadata keys with exact sequence:
+`name`, `version`, `description`, `author`, `license`, `repository.url` and `git.commit.hash`.
 
 ### Working with Nested Objects
 
@@ -300,6 +300,30 @@ Results in:
 `buildDate` is metadata indicating the build time, inserted in ISO format with the time zone.
 It is output when specified in `outputKeys` / `outputMetadataKeys` or when `{buildDate}` is specified in the CLI's `format` command.
 
+### Default import fixups for CJS
+
+Importing packages published as CJS using `default import` may cause runtime errors during ESM builds.
+Screw-up converts `default import` statements to a safe form when it detects they are CJS.
+
+For example below code:
+
+```typescript
+// Importing CJS packages that do not expose ESM definitions by default
+import dayjs from 'dayjs';
+```
+
+This is converted as follows due to a screw-up:
+
+```typescript
+// Convert the default import of a CJS package to a safe format
+import * as __screwUpDefaultImportModule0 from 'dayjs';
+const dayjs = __resolveDefaultExport(__screwUpDefaultImportModule0);
+```
+
+The CJS/ESM decision follows Node-style resolution (`exports` with `import`/`node`/`default`, or `main` + `type`).
+Only project source files are transformed (not `node_modules`), and type-only imports are ignored.
+Disable this behavior with `fixDefaultImport: false`.
+
 ---
 
 ## Advanced Usage
@@ -429,10 +453,13 @@ The metadata command:
 
 - Generates a TypeScript metadata file with exported constants
 - Creates a `.gitignore` entry next to the metadata file if missing
+- If your project using screw-up is a Vite plugin, you can avoid bootstrap issues for self-hosting
+  (where `packageMetadata.ts` doesn't exist during Vite plugin initialization to generate `packageMetadata.ts`)
+  by running it as an NPM `package.json` `script` entry.
 
 #### Options
 
-- `--output-metadata-file-path <path>`: Output path for metadata file (default: src/generated/packageMetadata.ts)
+- `--output-metadata-file-path <path>`: Output path for metadata file (default: `src/generated/packageMetadata.ts`)
 - `--output-metadata-keys <list>`: Comma-separated list of metadata keys to include (default: name,version,description,author,license,repository.url,git.commit.hash)
 - `--no-wds`: Disable working directory status check for version increment
 - `--no-git-version-override`: Do not override version from Git (use package.json version)

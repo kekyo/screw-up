@@ -1,3 +1,8 @@
+// screw-up - Easy package metadata inserter on Vite plugin
+// Copyright (c) Kouji Matsui (@kekyo@mi.kekyo.net)
+// Under MIT.
+// https://github.com/kekyo/screw-up/
+
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   mkdirSync,

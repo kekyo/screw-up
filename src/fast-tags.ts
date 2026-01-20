@@ -3,9 +3,11 @@
 // Under MIT.
 // https://github.com/kekyo/screw-up/
 
-import fs from 'fs/promises';
-import path from 'path';
+import { readdir, readFile, stat } from 'fs/promises';
+import { isAbsolute, join } from 'path';
 import type { Logger } from './internal.js';
+
+//////////////////////////////////////////////////////////////////////////////////
 
 /**
  * Fast tag listing implementation that reads tags directly from filesystem
@@ -19,7 +21,7 @@ import type { Logger } from './internal.js';
  */
 const parsePackedRefs = async (packedRefsPath: string): Promise<string[]> => {
   try {
-    const content = await fs.readFile(packedRefsPath, 'utf-8');
+    const content = await readFile(packedRefsPath, 'utf-8');
     const lines = content.split('\n');
     const tags: string[] = [];
 
@@ -55,7 +57,7 @@ const parsePackedRefs = async (packedRefsPath: string): Promise<string[]> => {
  */
 const readLooseTags = async (refsTagsPath: string): Promise<string[]> => {
   try {
-    const entries = await fs.readdir(refsTagsPath, { withFileTypes: true });
+    const entries = await readdir(refsTagsPath, { withFileTypes: true });
     const tags: string[] = [];
 
     for (const entry of entries) {
@@ -80,27 +82,25 @@ const readLooseTags = async (refsTagsPath: string): Promise<string[]> => {
  * @returns Array of all tag names
  */
 export const listTagsFast = async (repoPath: string): Promise<string[]> => {
-  const gitDir = path.join(repoPath, '.git');
+  const gitDir = join(repoPath, '.git');
 
   // Check if .git is a file (submodule or worktree)
-  const gitStat = await fs.stat(gitDir).catch(() => null);
+  const gitStat = await stat(gitDir).catch(() => null);
   let actualGitDir = gitDir;
 
   if (gitStat?.isFile()) {
     // Read the actual git dir location from .git file
-    const content = await fs.readFile(gitDir, 'utf-8');
+    const content = await readFile(gitDir, 'utf-8');
     const match = content.match(/^gitdir:\s*(.+)$/m);
     if (match) {
-      actualGitDir = path.isAbsolute(match[1])
-        ? match[1]
-        : path.join(repoPath, match[1]);
+      actualGitDir = isAbsolute(match[1]) ? match[1] : join(repoPath, match[1]);
     }
   }
 
   // Read tags from both packed-refs and loose refs
   const [packedTags, looseTags] = await Promise.all([
-    parsePackedRefs(path.join(actualGitDir, 'packed-refs')),
-    readLooseTags(path.join(actualGitDir, 'refs', 'tags')),
+    parsePackedRefs(join(actualGitDir, 'packed-refs')),
+    readLooseTags(join(actualGitDir, 'refs', 'tags')),
   ]);
 
   // Combine and deduplicate tags
@@ -120,26 +120,24 @@ export const resolveTagFast = async (
   repoPath: string,
   tagName: string
 ): Promise<string | null> => {
-  const gitDir = path.join(repoPath, '.git');
+  const gitDir = join(repoPath, '.git');
 
   // Check if .git is a file (submodule or worktree)
-  const gitStat = await fs.stat(gitDir).catch(() => null);
+  const gitStat = await stat(gitDir).catch(() => null);
   let actualGitDir = gitDir;
 
   if (gitStat?.isFile()) {
-    const content = await fs.readFile(gitDir, 'utf-8');
+    const content = await readFile(gitDir, 'utf-8');
     const match = content.match(/^gitdir:\s*(.+)$/m);
     if (match) {
-      actualGitDir = path.isAbsolute(match[1])
-        ? match[1]
-        : path.join(repoPath, match[1]);
+      actualGitDir = isAbsolute(match[1]) ? match[1] : join(repoPath, match[1]);
     }
   }
 
   // First try loose ref
-  const looseRefPath = path.join(actualGitDir, 'refs', 'tags', tagName);
+  const looseRefPath = join(actualGitDir, 'refs', 'tags', tagName);
   try {
-    const hash = await fs.readFile(looseRefPath, 'utf-8');
+    const hash = await readFile(looseRefPath, 'utf-8');
     return hash.trim();
   } catch (error) {
     if ((error as any).code !== 'ENOENT') {
@@ -148,9 +146,9 @@ export const resolveTagFast = async (
   }
 
   // Then try packed-refs
-  const packedRefsPath = path.join(actualGitDir, 'packed-refs');
+  const packedRefsPath = join(actualGitDir, 'packed-refs');
   try {
-    const content = await fs.readFile(packedRefsPath, 'utf-8');
+    const content = await readFile(packedRefsPath, 'utf-8');
     const lines = content.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
@@ -190,20 +188,18 @@ export const resolveTagsBatch = async (
   repoPath: string,
   tagNames: string[]
 ): Promise<Map<string, string>> => {
-  const gitDir = path.join(repoPath, '.git');
+  const gitDir = join(repoPath, '.git');
   const result = new Map<string, string>();
 
   // Check if .git is a file (submodule or worktree)
-  const gitStat = await fs.stat(gitDir).catch(() => null);
+  const gitStat = await stat(gitDir).catch(() => null);
   let actualGitDir = gitDir;
 
   if (gitStat?.isFile()) {
-    const content = await fs.readFile(gitDir, 'utf-8');
+    const content = await readFile(gitDir, 'utf-8');
     const match = content.match(/^gitdir:\s*(.+)$/m);
     if (match) {
-      actualGitDir = path.isAbsolute(match[1])
-        ? match[1]
-        : path.join(repoPath, match[1]);
+      actualGitDir = isAbsolute(match[1]) ? match[1] : join(repoPath, match[1]);
     }
   }
 
@@ -212,10 +208,7 @@ export const resolveTagsBatch = async (
 
   // First, read all packed refs in one go
   try {
-    const content = await fs.readFile(
-      path.join(actualGitDir, 'packed-refs'),
-      'utf-8'
-    );
+    const content = await readFile(join(actualGitDir, 'packed-refs'), 'utf-8');
     const lines = content.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
@@ -245,9 +238,9 @@ export const resolveTagsBatch = async (
 
   await Promise.all(
     remainingTags.map(async (tagName) => {
-      const looseRefPath = path.join(actualGitDir, 'refs', 'tags', tagName);
+      const looseRefPath = join(actualGitDir, 'refs', 'tags', tagName);
       try {
-        const hash = await fs.readFile(looseRefPath, 'utf-8');
+        const hash = await readFile(looseRefPath, 'utf-8');
         result.set(tagName, hash.trim());
       } catch (error) {
         // Tag doesn't exist as loose ref either
@@ -274,20 +267,18 @@ export const resolveTagsBatchWithCommit = async (
 ): Promise<Map<string, { oid: string; commitOid: string }>> => {
   const startTime = Date.now();
 
-  const gitDir = path.join(repoPath, '.git');
+  const gitDir = join(repoPath, '.git');
   const result = new Map<string, { oid: string; commitOid: string }>();
 
   // Check if .git is a file (submodule or worktree)
-  const gitStat = await fs.stat(gitDir).catch(() => null);
+  const gitStat = await stat(gitDir).catch(() => null);
   let actualGitDir = gitDir;
 
   if (gitStat?.isFile()) {
-    const content = await fs.readFile(gitDir, 'utf-8');
+    const content = await readFile(gitDir, 'utf-8');
     const match = content.match(/^gitdir:\s*(.+)$/m);
     if (match) {
-      actualGitDir = path.isAbsolute(match[1])
-        ? match[1]
-        : path.join(repoPath, match[1]);
+      actualGitDir = isAbsolute(match[1]) ? match[1] : join(repoPath, match[1]);
     }
   }
 
@@ -297,10 +288,7 @@ export const resolveTagsBatchWithCommit = async (
   // First, read all packed refs in one go
   const packedRefsStart = Date.now();
   try {
-    const content = await fs.readFile(
-      path.join(actualGitDir, 'packed-refs'),
-      'utf-8'
-    );
+    const content = await readFile(join(actualGitDir, 'packed-refs'), 'utf-8');
     const lines = content.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
@@ -340,9 +328,9 @@ export const resolveTagsBatchWithCommit = async (
     const looseRefsStart = Date.now();
     await Promise.all(
       remainingTags.map(async (tagName) => {
-        const looseRefPath = path.join(actualGitDir, 'refs', 'tags', tagName);
+        const looseRefPath = join(actualGitDir, 'refs', 'tags', tagName);
         try {
-          const hash = await fs.readFile(looseRefPath, 'utf-8');
+          const hash = await readFile(looseRefPath, 'utf-8');
           const oid = hash.trim();
 
           // Check if this is an annotated tag by reading the object type

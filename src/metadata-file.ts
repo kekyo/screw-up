@@ -9,6 +9,10 @@ import { basename, dirname, join } from 'path';
 import { Logger } from './internal';
 import { PackageMetadata } from './types';
 
+// We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
+
+//////////////////////////////////////////////////////////////////////////////////
+
 /**
  * Convert string key to valid TypeScript identifier
  * @param key - The key to convert

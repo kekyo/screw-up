@@ -14,15 +14,23 @@ import { readFile, writeFile, readdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { createMutex } from 'async-primitives';
+
+import { git_commit_hash, name, version } from './generated/packageMetadata';
 import { resolvePackageMetadata, createConsoleLogger } from './internal';
 import { ScrewUpOptions, PackageMetadata } from './types';
 import { getFetchGitMetadata } from './analyzer';
+import {
+  createNodeModuleKindResolver,
+  scanHasDefaultImport,
+  transformDefaultImports,
+} from './default-import-fix';
 import {
   ensureMetadataGitignore,
   generateMetadataFileContent,
   writeFileIfChanged,
 } from './metadata-file';
-import { git_commit_hash, name, version } from './generated/packageMetadata';
+
+//////////////////////////////////////////////////////////////////////////////////
 
 /**
  * Generate banner string from package.json metadata
@@ -203,6 +211,7 @@ const applyLineOffsetToSourceMapObject = (
  */
 export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
   const {
+    fixDefaultImport = true,
     outputKeys = [
       'name',
       'version',
@@ -231,6 +240,10 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
 
   const assetFiltersRegex = assetFilters.map((filter) => new RegExp(filter));
   const generateMetadataSourceLocker = createMutex();
+  const resolveModuleKind = createNodeModuleKindResolver();
+  let typescriptPromise:
+    | Promise<typeof import('typescript') | undefined>
+    | undefined;
 
   const loggerPrefix = `${name}-vite`;
   let logger = createConsoleLogger(loggerPrefix);
@@ -238,6 +251,13 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
   let metadata: any;
   let projectRoot: string;
   let fetchGitMetadata = () => Promise.resolve<any>({});
+
+  const loadTypeScript = async () => {
+    if (!typescriptPromise) {
+      typescriptPromise = import('typescript').catch(() => undefined);
+    }
+    return typescriptPromise;
+  };
 
   const resolveOutputBanner = async (
     outputOptions: NormalizedOutputOptions,
@@ -402,6 +422,54 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
           return mergeBanners(currentBanner, existingBanner);
         };
       });
+    },
+    transform: async (code, id) => {
+      if (!fixDefaultImport || !id || id.includes('\0')) {
+        return;
+      }
+      const cleanId = id.split('?')[0];
+      if (cleanId.includes('node_modules')) {
+        return;
+      }
+      if (
+        cleanId.endsWith('.d.ts') ||
+        cleanId.endsWith('.d.mts') ||
+        cleanId.endsWith('.d.cts')
+      ) {
+        return;
+      }
+      if (!/\.(?:[cm]?[jt]sx?|[cm]js)$/.test(cleanId)) {
+        return;
+      }
+
+      const ts = await loadTypeScript();
+      if (!ts) {
+        return;
+      }
+      const hasDefaultImport = scanHasDefaultImport(ts, code);
+      if (cleanId.includes('/src/') || cleanId.includes('\\src\\')) {
+        logger.debug(
+          `[fixDefaultImport] scan ${cleanId}: ${
+            hasDefaultImport ? 'hit' : 'miss'
+          }`
+        );
+      }
+      if (!hasDefaultImport) {
+        return;
+      }
+
+      const result = await transformDefaultImports(
+        ts,
+        code,
+        cleanId,
+        resolveModuleKind
+      );
+      if (result.changed) {
+        return {
+          code: result.code,
+          map: null,
+        };
+      }
     },
     // Configuration resolved phase
     configResolved: async (config) => {

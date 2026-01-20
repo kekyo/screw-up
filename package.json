@@ -19,17 +19,17 @@
   "readme": "README_pack.md",
   "type": "module",
   "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
+  "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
+      "import": "./dist/index.mjs",
       "require": "./dist/index.cjs"
     }
   },
   "bin": {
-    "screw-up": "./dist/main.js"
+    "screw-up": "./dist/main.mjs"
   },
   "files": [
     "dist",
@@ -39,8 +39,8 @@
   "scripts": {
     "build": "npm run check-bootstrap; vite build",
     "test": "npm run build && vitest run",
-    "dump": "npm run build && node dist/main.js dump",
-    "pack": "npm run build && node dist/main.js pack --pack-destination artifacts/",
+    "dump": "npm run build && node dist/main.mjs dump",
+    "pack": "npm run build && node dist/main.mjs pack --pack-destination artifacts/",
     "check-bootstrap": "[ ! -f src/generated/packageMetadata.ts ] && cp src/generated/packageMetadata-bootstrap src/generated/packageMetadata.ts"
   },
   "dependencies": {
@@ -54,7 +54,7 @@
   },
   "devDependencies": {
     "@types/node": ">=20.0.0",
-    "prettier-max": ">=1.13.0",
+    "prettier-max": ">=1.14.0",
     "simple-git": ">=3.0.0",
     "tar": ">=7.4.0",
     "typescript": ">=5.0.0",
