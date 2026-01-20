@@ -3,8 +3,8 @@
 // Under MIT.
 // https://github.com/kekyo/screw-up/
 
-import * as fs from 'fs/promises';
-import * as git from 'isomorphic-git';
+import fs from 'fs/promises';
+import git from 'isomorphic-git';
 import type { TagInfo, Version } from './analyzer';
 import type { Logger } from './internal.js';
 import {
@@ -12,6 +12,8 @@ import {
   resolveTagsBatch,
   resolveTagsBatchWithCommit,
 } from './fast-tags.js';
+
+//////////////////////////////////////////////////////////////////////////////////
 
 /**
  * Git operations for tag management

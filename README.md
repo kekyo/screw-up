@@ -300,6 +300,30 @@ Results in:
 `buildDate` is metadata indicating the build time, inserted in ISO format with the time zone.
 It is output when specified in `outputKeys` / `outputMetadataKeys` or when `{buildDate}` is specified in the CLI's `format` command.
 
+### Default import fixups for CJS
+
+Importing packages published as CJS using `default import` may cause runtime errors during ESM builds.
+Screw-up converts `default import` statements to a safe form when it detects they are CJS.
+
+For example below code:
+
+```typescript
+// Importing CJS packages that do not expose ESM definitions by default
+import dayjs from 'dayjs';
+```
+
+This is converted as follows due to a screw-up:
+
+```typescript
+// Convert the default import of a CJS package to a safe format
+import * as __screwUpDefaultImportModule0 from 'dayjs';
+const dayjs = __resolveDefaultExport(__screwUpDefaultImportModule0);
+```
+
+The CJS/ESM decision follows Node-style resolution (`exports` with `import`/`node`/`default`, or `main` + `type`).
+Only project source files are transformed (not `node_modules`), and type-only imports are ignored.
+Disable this behavior with `fixDefaultImport: false`.
+
 ---
 
 ## Advanced Usage

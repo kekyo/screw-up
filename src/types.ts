@@ -3,6 +3,8 @@
 // Under MIT.
 // https://github.com/kekyo/screw-up/
 
+//////////////////////////////////////////////////////////////////////////////////
+
 /**
  * Package metadata (key-value flattenedpairs)
  */
@@ -27,6 +29,11 @@ export interface GitMetadata {
  * screw-up options
  */
 export interface ScrewUpOptions {
+  /**
+   * Fix default imports for CJS dependencies to avoid runtime interop issues
+   * @default true
+   */
+  fixDefaultImport?: boolean;
   /**
    * Insert metadata banner to output files
    * @default true

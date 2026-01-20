@@ -7,6 +7,8 @@ import { readdir, readFile, stat } from 'fs/promises';
 import { isAbsolute, join } from 'path';
 import type { Logger } from './internal.js';
 
+//////////////////////////////////////////////////////////////////////////////////
+
 /**
  * Fast tag listing implementation that reads tags directly from filesystem
  * instead of using isomorphic-git's `listTags`

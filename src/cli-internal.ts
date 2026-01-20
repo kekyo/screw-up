@@ -16,18 +16,15 @@ import {
 import { spawn } from 'child_process';
 import { tmpdir } from 'os';
 import { glob } from 'glob';
-import * as JSON5Module from 'json5';
+import JSON5 from 'json5';
 import {
   resolveRawPackageJsonObject,
   findWorkspaceRoot,
   collectWorkspaceSiblings,
   replacePeerDependenciesWildcards,
   Logger,
-  resolveDefaultExport,
 } from './internal';
 import { getFetchGitMetadata } from './analyzer';
-
-const JSON5 = resolveDefaultExport(JSON5Module);
 
 // We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-
 // screw-up - Easy package metadata inserter on Vite plugin
 // Copyright (c) Kouji Matsui (@kekyo@mi.kekyo.net)
 // Under MIT.

@@ -4,13 +4,13 @@
 // https://github.com/kekyo/screw-up/
 
 import * as git from 'isomorphic-git';
-import * as fs from 'fs/promises';
-import * as dayjsModule from 'dayjs';
+import fs from 'fs/promises';
+import dayjs from 'dayjs';
 import { GitMetadata } from './types.js';
-import { Logger, resolveDefaultExport } from './internal.js';
+import { Logger } from './internal.js';
 import { buildCompleteTagCache } from './git-operations.js';
 
-const dayjs = resolveDefaultExport(dayjsModule);
+//////////////////////////////////////////////////////////////////////////////////
 
 // Ported from: https://github.com/kekyo/RelaxVersioner/blob/master/RelaxVersioner.Core/Analyzer.cs
 

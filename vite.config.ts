@@ -1,3 +1,8 @@
+// screw-up - Easy package metadata inserter on Vite plugin
+// Copyright (c) Kouji Matsui (@kekyo@mi.kekyo.net)
+// Under MIT.
+// https://github.com/kekyo/screw-up/
+
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
@@ -9,7 +14,7 @@ export default defineConfig({
   logLevel: 'info',
   plugins: [
     dts({
-      insertTypesEntry: true,
+      rollupTypes: true,
     }),
     prettierMax(),
     screwUp({

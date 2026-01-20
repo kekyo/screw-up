@@ -1,3 +1,8 @@
+// screw-up - Easy package metadata inserter on Vite plugin
+// Copyright (c) Kouji Matsui (@kekyo@mi.kekyo.net)
+// Under MIT.
+// https://github.com/kekyo/screw-up/
+
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   mkdirSync,
@@ -10,7 +15,7 @@ import {
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { build } from 'vite';
-import * as dayjsModule from 'dayjs';
+import dayjs from 'dayjs';
 import { simpleGit } from 'simple-git';
 import { TraceMap, originalPositionFor } from '@jridgewell/trace-mapping';
 import {
@@ -18,11 +23,8 @@ import {
   mergePackageMetadata,
   resolvePackageMetadata,
   createConsoleLogger,
-  resolveDefaultExport,
 } from '../src/internal';
 import { screwUp, generateBanner } from '../src/vite-plugin';
-
-const dayjs = resolveDefaultExport(dayjsModule);
 
 describe('screwUp plugin integration tests', () => {
   const tempBaseDir = join(

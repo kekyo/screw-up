@@ -300,6 +300,31 @@ screwUp({
 `buildDate` はビルド時刻を示すメタデータで、タイムゾーン付きのISO形式で挿入します。
 `outputKeys` / `outputMetadataKeys` に指定するか、CLIの `format` コマンドで `{buildDate}` を指定すると出力されます。
 
+### CJS default importの補正
+
+CJSとして公開されているパッケージをdefault importすると、ESMビルド時に実行時エラーになる場合があります。
+screw-upは、default importをCJSと判定した場合、安全な形へ変換します。
+
+以下のコード:
+
+```typescript
+// ESM定義を公開していないCJSパッケージをdefault importする
+import dayjs from 'dayjs';
+```
+
+これがscrew-upによって、以下のように変換されます:
+
+```typescript
+// CJSパッケージのdefault importを安全な形式に変更する
+import * as __screwUpDefaultImportModule0 from 'dayjs';
+const dayjs = __resolveDefaultExport(__screwUpDefaultImportModule0);
+```
+
+判定は Node の解決規則と同様に、 `exports` (`import`/`node`/`default`) と `main`/`type` を参照します。
+変換対象はプロジェクト内のソースのみで、`node_modules` や type-only import は変更しません。
+
+無効化する場合は `fixDefaultImport: false` を指定してください。
+
 ---
 
 ## 高度な使用方法
