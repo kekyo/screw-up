@@ -110,9 +110,6 @@ export default defineConfig({
 });
 ```
 
-When no `outputKeys` are specified, the plugin uses these metadata keys with exact sequence:
-`name`, `version`, `description`, `author`, `license`, `repository.url` and `git.commit.hash`.
-
 ### Custom Output Keys
 
 You can specify which metadata fields to include and in what order:
@@ -140,6 +137,9 @@ This will generate a banner with only the specified fields:
  * license: Apache-2.0
  */
 ```
+
+When no `outputKeys` are specified, the plugin uses these metadata keys with exact sequence:
+`name`, `version`, `description`, `author`, `license`, `repository.url` and `git.commit.hash`.
 
 ### Working with Nested Objects
 
@@ -429,10 +429,13 @@ The metadata command:
 
 - Generates a TypeScript metadata file with exported constants
 - Creates a `.gitignore` entry next to the metadata file if missing
+- If your project using screw-up is a Vite plugin, you can avoid bootstrap issues for self-hosting
+  (where `packageMetadata.ts` doesn't exist during Vite plugin initialization to generate `packageMetadata.ts`)
+  by running it as an NPM `package.json` `script` entry.
 
 #### Options
 
-- `--output-metadata-file-path <path>`: Output path for metadata file (default: src/generated/packageMetadata.ts)
+- `--output-metadata-file-path <path>`: Output path for metadata file (default: `src/generated/packageMetadata.ts`)
 - `--output-metadata-keys <list>`: Comma-separated list of metadata keys to include (default: name,version,description,author,license,repository.url,git.commit.hash)
 - `--no-wds`: Disable working directory status check for version increment
 - `--no-git-version-override`: Do not override version from Git (use package.json version)

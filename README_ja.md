@@ -110,9 +110,6 @@ export default defineConfig({
 });
 ```
 
-`outputKeys`が指定されていない場合、デフォルトで以下のメタデータキーをこの順序で使用します:
-`name`, `version`, `description`, `author`, `license`, `repository.url`, `git.commit.hash`.
-
 ### カスタム出力キー
 
 含めるメタデータフィールドとその順序を指定できます:
@@ -140,6 +137,9 @@ export default defineConfig({
  * license: Apache-2.0
  */
 ```
+
+`outputKeys`が指定されていない場合、デフォルトで以下のメタデータキーをこの順序で使用します:
+`name`, `version`, `description`, `author`, `license`, `repository.url`, `git.commit.hash`.
 
 ### ネストされたオブジェクトの操作
 
@@ -429,6 +429,9 @@ metadataコマンドの機能:
 
 - TypeScriptのメタデータファイルを定数として出力
 - メタデータファイルと同じディレクトリに`.gitignore`が無ければ作成
+- screw-upを使用するプロジェクトがViteプラグインの場合、セルフホストのためにブートストラップ問題
+  （`packageMetadata.ts`を生成するのにViteプラグインを初期化中に、`packageMetadata.ts`が存在しない）
+  が発生するのを、NPM `package.json` `script` エントリから実行することで回避できます。
 
 #### オプション
 
