@@ -3,6 +3,7 @@
 // Under MIT.
 // https://github.com/kekyo/screw-up/
 
+import { createHash } from 'crypto';
 import { existsSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { dirname, extname, join } from 'path';
@@ -266,9 +267,67 @@ export const scanHasDefaultImport = (
   return false;
 };
 
-const helperFunctionSource = `function __resolveDefaultExport<T>(module: T | { default?: T }): T {
-  return (module as { default?: T }).default ?? (module as T);
+// This feature is implemented in a somewhat tricky two-step process:
+//
+// Vite's `transform()` is responsible for formatting the code sent to the subsequent 'rollup.'
+// While it enables various code transformations, at this stage, it does not distinguish whether the target code is intended for CJS or ESM.
+// This is because 'rollup' handles that distinction later, and `transform()` performs a single optimization to format the common code base.
+// However, the default import fixup must distinguish between CJS and ESM.
+//
+// Therefore, in Step 1, we always insert `__resolveDefaultExport` as a commonly used function.
+// Within it, we define variables starting with `__isInCJS_` that can be identified later.
+// This allows us to search for `__isInCJS_` during the `renderChunk()` in Step 2's 'rollup' process,
+// replacing string symbol with a boolean value based on whether it's CJS or ESM.
+//
+// We avoid performing all processing in the `renderChunk()` because at that stage, we would be referencing post-transpiled code.
+// This prevents the use of a simple replacement process and carries the risk of code transformation failure.
+
+const cjsInteropFlagPrefix = '__isInCJS_';
+const cjsInteropIdLength = 12;
+const cjsInteropFlagAssignmentPattern = new RegExp(
+  `\\bvar\\s+${cjsInteropFlagPrefix}[0-9a-f]+(?:\\$\\d+)?\\s*=\\s*false\\b`,
+  'g'
+);
+
+const createCjsInteropHelperId = (seed: string): string => {
+  const hash = createHash('sha256').update(seed).digest('hex');
+  return hash.slice(0, cjsInteropIdLength);
+};
+
+const buildHelperFunctionSource = (helperId: string): string => `
+function __resolveDefaultExport<T>(module: T | { default?: T }, isESM: boolean): T {
+  var ${cjsInteropFlagPrefix}${helperId}: boolean = false;
+  const maybe = module as { default?: T };
+
+  if (${cjsInteropFlagPrefix}${helperId}) {
+    return maybe && typeof maybe === 'object' && 'default' in maybe
+      ? (maybe.default ?? (module as T))
+      : (module as T);
+  }
+
+  if (isESM) {
+    if (maybe && typeof maybe === 'object' && 'default' in maybe) {
+      return maybe.default as T;
+    }
+    throw new Error('Default export not found.');
+  }
+
+  return maybe && typeof maybe === 'object' && 'default' in maybe
+    ? (maybe.default ?? (module as T))
+    : (module as T);
 }`;
+
+export const replaceCjsInteropFlag = (
+  code: string
+): { code: string; changed: boolean } => {
+  let changed = false;
+  const nextCode = code.replace(cjsInteropFlagAssignmentPattern, (match) => {
+    changed = true;
+    // Preserve length to keep sourcemaps stable without remapping.
+    return match.replace(/\bfalse\b/, 'true ');
+  });
+  return { code: nextCode, changed };
+};
 
 const hasResolveDefaultExport = (
   ts: typeof import('typescript'),
@@ -424,9 +483,10 @@ export const transformDefaultImports = async (
     }
     const moduleName = statement.moduleSpecifier.text;
     const moduleKind = await resolveModuleKind(moduleName, normalizedId);
-    if (moduleKind !== 'cjs') {
+    if (moduleKind === 'unknown' || moduleKind === 'unresolvable') {
       continue;
     }
+    const isESM = moduleKind === 'esm';
 
     const defaultName = importClause.name.text;
     const replacementImports: string[] = [];
@@ -457,7 +517,7 @@ export const transformDefaultImports = async (
 
     const replacement =
       `${replacementImports.join('\n')}\n` +
-      `const ${defaultName} = __resolveDefaultExport(${namespaceName});`;
+      `const ${defaultName} = __resolveDefaultExport(${namespaceName}, ${isESM});`;
 
     edits.push({
       start: statement.getStart(sourceFile),
@@ -478,10 +538,11 @@ export const transformDefaultImports = async (
     const lastImport = importStatements[importStatements.length - 1];
     if (lastImport) {
       const newline = code.includes('\r\n') ? '\r\n' : '\n';
+      const helperId = createCjsInteropHelperId(normalizedId);
       edits.push({
         start: lastImport.getEnd(),
         end: lastImport.getEnd(),
-        text: `${newline}${helperFunctionSource}${newline}`,
+        text: `${newline}${buildHelperFunctionSource(helperId)}${newline}`,
       });
     }
   }

@@ -300,30 +300,40 @@ screwUp({
 `buildDate` はビルド時刻を示すメタデータで、タイムゾーン付きのISO形式で挿入します。
 `outputKeys` / `outputMetadataKeys` に指定するか、CLIの `format` コマンドで `{buildDate}` を指定すると出力されます。
 
-### CJS default importの補正
+### CJS/ESM default importの補正
 
-CJSとして公開されているパッケージをdefault importすると、ESMビルド時に実行時エラーになる場合があります。
-screw-upは、default importをCJSと判定した場合、安全な形へ変換します。
+default importはESM/CJSの境界で挙動が崩れやすいので、
+screw-upはdefault importをヘルパー呼び出しに変換し、依存がESMかどうかを渡します。
 
 以下のコード:
 
 ```typescript
-// ESM定義を公開していないCJSパッケージをdefault importする
+// Default import a CJS package without ESM definitions
 import dayjs from 'dayjs';
 ```
 
 これがscrew-upによって、以下のように変換されます:
 
 ```typescript
-// CJSパッケージのdefault importを安全な形式に変更する
+// Convert the default import of a CJS package to a safe format
 import * as __screwUpDefaultImportModule0 from 'dayjs';
-const dayjs = __resolveDefaultExport(__screwUpDefaultImportModule0);
+const dayjs = __resolveDefaultExport(__screwUpDefaultImportModule0, false);
 ```
 
+出力形式と参照先によって挙動が変わります:
+
+| 出力形式 | 参照先 | 生成されるコード                                       | 実行時の挙動                   |
+| :------- | :----- | :----------------------------------------------------- | :----------------------------- |
+| ESM      | CJS    | `import * as ns` + `__resolveDefaultExport(ns, false)` | module/defaultにフォールバック |
+| ESM      | ESM    | `import * as ns` + `__resolveDefaultExport(ns, true)`  | default必須、無ければ例外      |
+| CJS      | CJS    | `require()` + `__resolveDefaultExport(ns, false)`      | module/defaultにフォールバック |
+| CJS      | ESM    | `require()` + `__resolveDefaultExport(ns, true)`       | module/defaultにフォールバック |
+
+ESM出力ではdefault欠落のエラーを隠さず、CJS出力では相互運用のミスマッチを吸収します。
 判定は Node の解決規則と同様に、 `exports` (`import`/`node`/`default`) と `main`/`type` を参照します。
 変換対象はプロジェクト内のソースのみで、`node_modules` や type-only import は変更しません。
 
-無効化する場合は `fixDefaultImport: false` を指定してください。
+なお、この機能を無効化する場合は、オプションに `fixDefaultImport: false` を指定してください。
 
 ---
 

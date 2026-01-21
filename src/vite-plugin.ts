@@ -21,6 +21,7 @@ import { ScrewUpOptions, PackageMetadata } from './types';
 import { getFetchGitMetadata } from './analyzer';
 import {
   createNodeModuleKindResolver,
+  replaceCjsInteropFlag,
   scanHasDefaultImport,
   transformDefaultImports,
 } from './default-import-fix';
@@ -552,6 +553,16 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
         logger.debug(`buildStart: Exited.`);
         l.release();
       }
+    },
+    renderChunk: (code, chunk, outputOptions) => {
+      if (!fixDefaultImport || outputOptions.format !== 'cjs') {
+        return null;
+      }
+      const result = replaceCjsInteropFlag(code);
+      if (!result.changed) {
+        return null;
+      }
+      return { code: result.code, map: null };
     },
     // Generate bundle phase
     generateBundle: {
