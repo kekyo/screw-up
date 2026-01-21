@@ -68,6 +68,13 @@ const extractCjsInteropFlagId = (source: string): string => {
   return match[1];
 };
 
+const createNamespaceObject = (value: unknown) => {
+  const namespace: Record<string, unknown> = Object.create(null);
+  Object.defineProperty(namespace, Symbol.toStringTag, { value: 'Module' });
+  Object.defineProperty(namespace, 'default', { enumerable: true, value });
+  return Object.freeze(namespace);
+};
+
 const compileResolveDefaultExport = async (
   source: string
 ): Promise<(module: unknown, isESM: boolean) => unknown> => {
@@ -319,5 +326,12 @@ describe('default import fix combination behavior', () => {
   it('handles CJS output with ESM dependencies', () => {
     const noDefault = { named: 'value' };
     expect(resolveCJSOutput(noDefault, true)).toBe(noDefault);
+  });
+
+  it('unwraps interop namespace defaults in CJS output', () => {
+    const innerDefault = { value: 'esm-default' };
+    const innerNamespace = createNamespaceObject(innerDefault);
+    const outerNamespace = createNamespaceObject(innerNamespace);
+    expect(resolveCJSOutput(outerNamespace, true)).toBe(innerDefault);
   });
 });
