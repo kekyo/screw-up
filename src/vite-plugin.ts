@@ -21,7 +21,7 @@ import { ScrewUpOptions, PackageMetadata } from './types';
 import { getFetchGitMetadata } from './analyzer';
 import {
   createNodeModuleKindResolver,
-  replaceCjsInteropFlag,
+  injectCjsInteropFlag,
   scanHasDefaultImport,
   transformDefaultImports,
 } from './default-import-fix';
@@ -558,7 +558,7 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
       if (!fixDefaultImport || outputOptions.format !== 'cjs') {
         return null;
       }
-      const result = replaceCjsInteropFlag(code);
+      const result = injectCjsInteropFlag(code);
       if (!result.changed) {
         return null;
       }

@@ -9,9 +9,11 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import {
   createNodeModuleKindResolver,
-  replaceCjsInteropFlag,
+  injectCjsInteropFlag,
   transformDefaultImports,
 } from '../src/default-import-fix';
+
+const cjsInteropGlobalFlagPrefix = '__screwUpIsInCJS_';
 
 const createTempRoot = () =>
   mkdtempSync(join(tmpdir(), 'screw-up-default-import-'));
@@ -56,20 +58,26 @@ const extractResolveDefaultExport = (
   return helper;
 };
 
+const extractCjsInteropFlagId = (source: string): string => {
+  const match = source.match(
+    new RegExp(`\\b${cjsInteropGlobalFlagPrefix}([0-9a-f]+)\\b`)
+  );
+  if (!match) {
+    throw new Error('CJS interop flag not found in helper source');
+  }
+  return match[1];
+};
+
 const compileResolveDefaultExport = async (
-  source: string,
-  options?: { applyCjsFlag?: boolean }
+  source: string
 ): Promise<(module: unknown, isESM: boolean) => unknown> => {
   const ts = await import('typescript');
-  let compiled = ts.transpileModule(source, {
+  const compiled = ts.transpileModule(source, {
     compilerOptions: {
       target: ts.ScriptTarget.ES2019,
       module: ts.ModuleKind.CommonJS,
     },
   }).outputText;
-  if (options?.applyCjsFlag) {
-    compiled = replaceCjsInteropFlag(compiled).code;
-  }
   return new Function(`${compiled}\nreturn __resolveDefaultExport;`)() as (
     module: unknown,
     isESM: boolean
@@ -99,10 +107,29 @@ const buildResolveDefaultExportPair = async (): Promise<{
   }
 
   const esmHelper = extractResolveDefaultExport(ts, result.code);
+  const helperId = extractCjsInteropFlagId(esmHelper);
+  const flagName = `${cjsInteropGlobalFlagPrefix}${helperId}`;
+  const helper = await compileResolveDefaultExport(esmHelper);
+  const globalRef = globalThis as Record<string, unknown>;
+  const withFlag =
+    (flagValue: boolean) =>
+    (moduleValue: unknown, isESM: boolean): unknown => {
+      const previous = globalRef[flagName];
+      globalRef[flagName] = flagValue;
+      try {
+        return helper(moduleValue, isESM);
+      } finally {
+        if (previous === undefined) {
+          delete globalRef[flagName];
+        } else {
+          globalRef[flagName] = previous;
+        }
+      }
+    };
 
   return {
-    esm: await compileResolveDefaultExport(esmHelper),
-    cjs: await compileResolveDefaultExport(esmHelper, { applyCjsFlag: true }),
+    esm: withFlag(false),
+    cjs: withFlag(true),
   };
 };
 
@@ -201,11 +228,14 @@ describe('default import fix helpers', () => {
       result.code.match(/__resolveDefaultExport/g)?.length
     ).toBeGreaterThan(0);
     const helperMatch = result.code.match(
-      /var (__isInCJS_[0-9a-f]+): boolean = false;/
+      new RegExp(`\\b${cjsInteropGlobalFlagPrefix}([0-9a-f]+)\\b`)
     );
     expect(helperMatch).not.toBeNull();
-    const helperName = helperMatch ? helperMatch[1] : '';
-    expect(result.code).toContain(`if (${helperName})`);
+    const helperId = helperMatch ? helperMatch[1] : '';
+    expect(result.code).toContain(
+      `globalThis.${cjsInteropGlobalFlagPrefix}${helperId} = false;`
+    );
+    expect(result.code).toContain('if (__isInCJS)');
     expect(result.code).toContain(
       "import * as __screwUpDefaultImportModule0 from 'pkg-cjs';"
     );
@@ -231,12 +261,13 @@ describe('default import fix helpers', () => {
     expect(result.code).not.toContain("import ESMDefault from 'pkg-esm';");
   });
 
-  it('rewrites the cjs interop flag for cjs outputs', () => {
-    const helperName = '__isInCJS_deadbeefcafe';
+  it('injects the cjs interop flag for cjs outputs', () => {
+    const helperId = 'deadbeefcafe';
     const code = [
-      `var ${helperName} = false;`,
+      `globalThis.${cjsInteropGlobalFlagPrefix}${helperId} = false;`,
       'function __resolveDefaultExport(module, isESM) {',
-      `  if (${helperName}) {`,
+      `  const __isInCJS = globalThis.${cjsInteropGlobalFlagPrefix}${helperId} === true;`,
+      '  if (__isInCJS) {',
       '    return module.default ?? module;',
       '  }',
       '  return module;',
@@ -244,10 +275,12 @@ describe('default import fix helpers', () => {
       'var untouched = false;',
     ].join('\n');
 
-    const result = replaceCjsInteropFlag(code);
+    const result = injectCjsInteropFlag(code);
 
     expect(result.changed).toBe(true);
-    expect(result.code).toContain(`var ${helperName} = true ;`);
+    expect(result.code).toContain(
+      `globalThis.${cjsInteropGlobalFlagPrefix}${helperId} = true ;`
+    );
     expect(result.code).toContain('var untouched = false;');
   });
 });
