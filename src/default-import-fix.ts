@@ -302,23 +302,37 @@ function __resolveDefaultExport<T>(module: T | { default?: T }, isESM: boolean):
     typeof globalThis !== 'undefined' &&
     (globalThis as any).${cjsInteropGlobalFlagPrefix}${helperId} === true;
   const maybe = module as { default?: T };
+  const hasDefault = !!(maybe && typeof maybe === 'object' && 'default' in maybe);
+  const unwrapNamespaceDefault = (value: unknown): unknown => {
+    if (!value || typeof value !== 'object') {
+      return value;
+    }
+    const inner = value as any;
+    const isModule =
+      inner.__esModule === true ||
+      (typeof Symbol !== 'undefined' &&
+        (inner as any)[Symbol.toStringTag] === 'Module');
+    if (isModule && 'default' in inner) {
+      return inner.default;
+    }
+    return value;
+  };
+  const resolvedDefault = hasDefault
+    ? unwrapNamespaceDefault((maybe as any).default)
+    : undefined;
 
   if (__isInCJS) {
-    return maybe && typeof maybe === 'object' && 'default' in maybe
-      ? (maybe.default ?? (module as T))
-      : (module as T);
+    return hasDefault ? ((resolvedDefault as T) ?? (module as T)) : (module as T);
   }
 
   if (isESM) {
-    if (maybe && typeof maybe === 'object' && 'default' in maybe) {
-      return maybe.default as T;
+    if (hasDefault) {
+      return resolvedDefault as T;
     }
     throw new Error('Default export not found.');
   }
 
-  return maybe && typeof maybe === 'object' && 'default' in maybe
-    ? (maybe.default ?? (module as T))
-    : (module as T);
+  return hasDefault ? ((resolvedDefault as T) ?? (module as T)) : (module as T);
 }`;
 
 export const injectCjsInteropFlag = (
