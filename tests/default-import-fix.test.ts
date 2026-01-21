@@ -3,12 +3,13 @@
 // Under MIT.
 // https://github.com/kekyo/screw-up/
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import {
   createNodeModuleKindResolver,
+  replaceCjsInteropFlag,
   transformDefaultImports,
 } from '../src/default-import-fix';
 
@@ -27,6 +28,82 @@ const writePackage = (
     JSON.stringify(packageJson, null, 2),
     'utf8'
   );
+};
+
+const extractResolveDefaultExport = (
+  ts: typeof import('typescript'),
+  code: string
+): string => {
+  const sourceFile = ts.createSourceFile(
+    'helper.ts',
+    code,
+    ts.ScriptTarget.ESNext,
+    false,
+    ts.ScriptKind.TS
+  );
+  let helper: string | undefined;
+  sourceFile.forEachChild((node) => {
+    if (
+      ts.isFunctionDeclaration(node) &&
+      node.name?.text === '__resolveDefaultExport'
+    ) {
+      helper = node.getText(sourceFile);
+    }
+  });
+  if (!helper) {
+    throw new Error('resolve default export helper not found');
+  }
+  return helper;
+};
+
+const compileResolveDefaultExport = async (
+  source: string,
+  options?: { applyCjsFlag?: boolean }
+): Promise<(module: unknown, isESM: boolean) => unknown> => {
+  const ts = await import('typescript');
+  let compiled = ts.transpileModule(source, {
+    compilerOptions: {
+      target: ts.ScriptTarget.ES2019,
+      module: ts.ModuleKind.CommonJS,
+    },
+  }).outputText;
+  if (options?.applyCjsFlag) {
+    compiled = replaceCjsInteropFlag(compiled).code;
+  }
+  return new Function(`${compiled}\nreturn __resolveDefaultExport;`)() as (
+    module: unknown,
+    isESM: boolean
+  ) => unknown;
+};
+
+const buildResolveDefaultExportPair = async (): Promise<{
+  esm: (module: unknown, isESM: boolean) => unknown;
+  cjs: (module: unknown, isESM: boolean) => unknown;
+}> => {
+  const root = createTempRoot();
+  const srcDir = join(root, 'src');
+  mkdirSync(srcDir, { recursive: true });
+  const importer = join(srcDir, 'index.ts');
+
+  writePackage(root, 'pkg-cjs', {
+    main: 'index.js',
+  });
+
+  const code = ["import Foo from 'pkg-cjs';", 'console.log(Foo);'].join('\n');
+
+  const ts = await import('typescript');
+  const resolveKind = createNodeModuleKindResolver();
+  const result = await transformDefaultImports(ts, code, importer, resolveKind);
+  if (!result.changed) {
+    throw new Error('helper was not injected');
+  }
+
+  const esmHelper = extractResolveDefaultExport(ts, result.code);
+
+  return {
+    esm: await compileResolveDefaultExport(esmHelper),
+    cjs: await compileResolveDefaultExport(esmHelper, { applyCjsFlag: true }),
+  };
 };
 
 describe('default import fix helpers', () => {
@@ -81,7 +158,7 @@ describe('default import fix helpers', () => {
     await expect(resolveKind('exports-dot', importer)).resolves.toBe('esm');
   });
 
-  it('transforms default imports only for cjs targets', async () => {
+  it('transforms default imports for cjs and esm targets', async () => {
     const root = createTempRoot();
     const srcDir = join(root, 'src');
     mkdirSync(srcDir, { recursive: true });
@@ -123,18 +200,91 @@ describe('default import fix helpers', () => {
     expect(
       result.code.match(/__resolveDefaultExport/g)?.length
     ).toBeGreaterThan(0);
+    const helperMatch = result.code.match(
+      /var (__isInCJS_[0-9a-f]+): boolean = false;/
+    );
+    expect(helperMatch).not.toBeNull();
+    const helperName = helperMatch ? helperMatch[1] : '';
+    expect(result.code).toContain(`if (${helperName})`);
     expect(result.code).toContain(
       "import * as __screwUpDefaultImportModule0 from 'pkg-cjs';"
     );
     expect(result.code).toContain("import { baz } from 'pkg-cjs';");
-    expect(result.code).toContain('const Foo = __resolveDefaultExport(');
-    expect(result.code).toContain('const Bar = __resolveDefaultExport(');
+    expect(result.code).toContain(
+      'const Foo = __resolveDefaultExport(__screwUpDefaultImportModule0, false);'
+    );
+    expect(result.code).toContain(
+      'const Bar = __resolveDefaultExport(__screwUpDefaultImportModule1, false);'
+    );
+    expect(result.code).toContain(
+      "import * as __screwUpDefaultImportModule2 from 'pkg-esm';"
+    );
+    expect(result.code).toContain(
+      'const ESMDefault = __resolveDefaultExport(__screwUpDefaultImportModule2, true);'
+    );
     expect(result.code).toContain("import type TypeOnly from 'pkg-cjs';");
-    expect(result.code).toContain("import ESMDefault from 'pkg-esm';");
     expect(result.code).toContain(
       "import Unresolvable from 'pkg-require-only';"
     );
     expect(result.code).not.toContain("import Foo from 'pkg-cjs';");
     expect(result.code).not.toContain("import Bar, { baz } from 'pkg-cjs';");
+    expect(result.code).not.toContain("import ESMDefault from 'pkg-esm';");
+  });
+
+  it('rewrites the cjs interop flag for cjs outputs', () => {
+    const helperName = '__isInCJS_deadbeefcafe';
+    const code = [
+      `var ${helperName} = false;`,
+      'function __resolveDefaultExport(module, isESM) {',
+      `  if (${helperName}) {`,
+      '    return module.default ?? module;',
+      '  }',
+      '  return module;',
+      '}',
+      'var untouched = false;',
+    ].join('\n');
+
+    const result = replaceCjsInteropFlag(code);
+
+    expect(result.changed).toBe(true);
+    expect(result.code).toContain(`var ${helperName} = true ;`);
+    expect(result.code).toContain('var untouched = false;');
+  });
+});
+
+describe('default import fix combination behavior', () => {
+  let resolveESMOutput: (module: unknown, isESM: boolean) => unknown;
+  let resolveCJSOutput: (module: unknown, isESM: boolean) => unknown;
+
+  beforeAll(async () => {
+    const helpers = await buildResolveDefaultExportPair();
+    resolveESMOutput = helpers.esm;
+    resolveCJSOutput = helpers.cjs;
+  });
+
+  it('handles ESM output with CJS dependencies', () => {
+    const moduleValue = { named: 'value' };
+    const resolved = resolveESMOutput(moduleValue, false);
+    expect(resolved).toBe(moduleValue);
+  });
+
+  it('handles ESM output with ESM dependencies', () => {
+    const moduleValue = { default: 'esm-default' };
+    expect(resolveESMOutput(moduleValue, true)).toBe('esm-default');
+    expect(() => resolveESMOutput({ named: 'value' }, true)).toThrow(
+      'Default export not found.'
+    );
+  });
+
+  it('handles CJS output with CJS dependencies', () => {
+    const moduleValue = { default: 'cjs-default' };
+    expect(resolveCJSOutput(moduleValue, false)).toBe('cjs-default');
+    const noDefault = { named: 'value' };
+    expect(resolveCJSOutput(noDefault, false)).toBe(noDefault);
+  });
+
+  it('handles CJS output with ESM dependencies', () => {
+    const noDefault = { named: 'value' };
+    expect(resolveCJSOutput(noDefault, true)).toBe(noDefault);
   });
 });

@@ -300,10 +300,10 @@ Results in:
 `buildDate` is metadata indicating the build time, inserted in ISO format with the time zone.
 It is output when specified in `outputKeys` / `outputMetadataKeys` or when `{buildDate}` is specified in the CLI's `format` command.
 
-### Default import fixups for CJS
+### Default import fixups for CJS/ESM
 
-Importing packages published as CJS using `default import` may cause runtime errors during ESM builds.
-Screw-up converts `default import` statements to a safe form when it detects they are CJS.
+Default imports can behave inconsistently across ESM/CJS boundaries.
+Screw-up rewrites `default import` statements into a helper call and passes whether the dependency is ESM.
 
 For example below code:
 
@@ -317,12 +317,23 @@ This is converted as follows due to a screw-up:
 ```typescript
 // Convert the default import of a CJS package to a safe format
 import * as __screwUpDefaultImportModule0 from 'dayjs';
-const dayjs = __resolveDefaultExport(__screwUpDefaultImportModule0);
+const dayjs = __resolveDefaultExport(__screwUpDefaultImportModule0, false);
 ```
 
-The CJS/ESM decision follows Node-style resolution (`exports` with `import`/`node`/`default`, or `main` + `type`).
+Behavior depends on the output format and dependency kind:
+
+| Output | Dependency | Generated code fragment                                | Runtime behavior                    |
+| :----- | :--------- | :----------------------------------------------------- | :---------------------------------- |
+| ESM    | CJS        | `import * as ns` + `__resolveDefaultExport(ns, false)` | fallback to module/default          |
+| ESM    | ESM        | `import * as ns` + `__resolveDefaultExport(ns, true)`  | requires default, throws if missing |
+| CJS    | CJS        | `require()` + `__resolveDefaultExport(ns, false)`      | fallback to module/default          |
+| CJS    | ESM        | `require()` + `__resolveDefaultExport(ns, true)`       | fallback to module/default          |
+
+This keeps ESM default-missing errors visible in ESM output while allowing CJS output to recover from common interop mismatches.
+The dependency kind follows Node-style resolution (`exports` with `import`/`node`/`default`, or `main` + `type`).
 Only project source files are transformed (not `node_modules`), and type-only imports are ignored.
-Disable this behavior with `fixDefaultImport: false`.
+
+If you need to disable this behavior, apply option with `fixDefaultImport: false`.
 
 ---
 
