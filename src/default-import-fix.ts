@@ -275,17 +275,18 @@ export const scanHasDefaultImport = (
 // However, the default import fixup must distinguish between CJS and ESM.
 //
 // Therefore, in Step 1, we always insert `__resolveDefaultExport` as a commonly used function.
-// Within it, we define variables starting with `__isInCJS_` that can be identified later.
-// This allows us to search for `__isInCJS_` during the `renderChunk()` in Step 2's 'rollup' process,
-// replacing string symbol with a boolean value based on whether it's CJS or ESM.
+// Within it, we reference a global flag name derived from the source file path and
+// insert `globalThis.__screwUpIsInCJS_<id> = false;` as a placeholder.
+// This allows `renderChunk()` (Step 2) to flip it to `true` only for CJS output chunks,
+// while keeping the code length stable.
 //
 // We avoid performing all processing in the `renderChunk()` because at that stage, we would be referencing post-transpiled code.
 // This prevents the use of a simple replacement process and carries the risk of code transformation failure.
 
-const cjsInteropFlagPrefix = '__isInCJS_';
+const cjsInteropGlobalFlagPrefix = '__screwUpIsInCJS_';
 const cjsInteropIdLength = 12;
-const cjsInteropFlagAssignmentPattern = new RegExp(
-  `\\bvar\\s+${cjsInteropFlagPrefix}[0-9a-f]+(?:\\$\\d+)?\\s*=\\s*false\\b`,
+const cjsInteropGlobalFlagAssignmentPattern = new RegExp(
+  `\\bglobalThis\\.${cjsInteropGlobalFlagPrefix}[0-9a-f]+\\s*=\\s*false\\b`,
   'g'
 );
 
@@ -295,11 +296,14 @@ const createCjsInteropHelperId = (seed: string): string => {
 };
 
 const buildHelperFunctionSource = (helperId: string): string => `
+globalThis.${cjsInteropGlobalFlagPrefix}${helperId} = false;
 function __resolveDefaultExport<T>(module: T | { default?: T }, isESM: boolean): T {
-  var ${cjsInteropFlagPrefix}${helperId}: boolean = false;
+  const __isInCJS =
+    typeof globalThis !== 'undefined' &&
+    (globalThis as any).${cjsInteropGlobalFlagPrefix}${helperId} === true;
   const maybe = module as { default?: T };
 
-  if (${cjsInteropFlagPrefix}${helperId}) {
+  if (__isInCJS) {
     return maybe && typeof maybe === 'object' && 'default' in maybe
       ? (maybe.default ?? (module as T))
       : (module as T);
@@ -317,15 +321,18 @@ function __resolveDefaultExport<T>(module: T | { default?: T }, isESM: boolean):
     : (module as T);
 }`;
 
-export const replaceCjsInteropFlag = (
+export const injectCjsInteropFlag = (
   code: string
 ): { code: string; changed: boolean } => {
   let changed = false;
-  const nextCode = code.replace(cjsInteropFlagAssignmentPattern, (match) => {
-    changed = true;
-    // Preserve length to keep sourcemaps stable without remapping.
-    return match.replace(/\bfalse\b/, 'true ');
-  });
+  const nextCode = code.replace(
+    cjsInteropGlobalFlagAssignmentPattern,
+    (match) => {
+      changed = true;
+      // Preserve length to keep sourcemaps stable without remapping.
+      return match.replace(/\bfalse\b/, 'true ');
+    }
+  );
   return { code: nextCode, changed };
 };
 
