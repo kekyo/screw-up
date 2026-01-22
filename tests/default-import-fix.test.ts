@@ -244,7 +244,7 @@ describe('default import fix helpers', () => {
     );
     expect(result.code).toContain('if (__isInCJS)');
     expect(result.code).toContain(
-      "import * as __screwUpDefaultImportModule0 from 'pkg-cjs';"
+      "import __screwUpDefaultImportModule0 from 'pkg-cjs';"
     );
     expect(result.code).toContain("import { baz } from 'pkg-cjs';");
     expect(result.code).toContain(
@@ -252,6 +252,9 @@ describe('default import fix helpers', () => {
     );
     expect(result.code).toContain(
       'const Bar = __resolveDefaultExport(__screwUpDefaultImportModule1, false);'
+    );
+    expect(result.code).toContain(
+      "import __screwUpDefaultImportModule1 from 'pkg-cjs';"
     );
     expect(result.code).toContain(
       "import * as __screwUpDefaultImportModule2 from 'pkg-esm';"

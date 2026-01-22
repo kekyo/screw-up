@@ -316,18 +316,18 @@ This is converted as follows due to a screw-up:
 
 ```typescript
 // Convert the default import of a CJS package to a safe format
-import * as __screwUpDefaultImportModule0 from 'dayjs';
+import __screwUpDefaultImportModule0 from 'dayjs';
 const dayjs = __resolveDefaultExport(__screwUpDefaultImportModule0, false);
 ```
 
 Behavior depends on the output format and dependency kind:
 
-| Output | Dependency | Generated code fragment                                | Runtime behavior                    |
-| :----- | :--------- | :----------------------------------------------------- | :---------------------------------- |
-| ESM    | CJS        | `import * as ns` + `__resolveDefaultExport(ns, false)` | fallback to module/default          |
-| ESM    | ESM        | `import * as ns` + `__resolveDefaultExport(ns, true)`  | requires default, throws if missing |
-| CJS    | CJS        | `require()` + `__resolveDefaultExport(ns, false)`      | fallback to module/default          |
-| CJS    | ESM        | `require()` + `__resolveDefaultExport(ns, true)`       | fallback to module/default          |
+| Output | Dependency | Generated code fragment                                     | Runtime behavior                    |
+| :----- | :--------- | :---------------------------------------------------------- | :---------------------------------- |
+| ESM    | CJS        | `import default` + `__resolveDefaultExport(default, false)` | fallback to module/default          |
+| ESM    | ESM        | `import * as ns` + `__resolveDefaultExport(ns, true)`       | requires default, throws if missing |
+| CJS    | CJS        | `require()` + `__resolveDefaultExport(default, false)`      | fallback to module/default          |
+| CJS    | ESM        | `require()` + `__resolveDefaultExport(ns, true)`            | fallback to module/default          |
 
 This keeps ESM default-missing errors visible in ESM output while allowing CJS output to recover from common interop mismatches.
 The dependency kind follows Node-style resolution (`exports` with `import`/`node`/`default`, or `main` + `type`).
