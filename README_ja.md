@@ -316,18 +316,18 @@ import dayjs from 'dayjs';
 
 ```typescript
 // Convert the default import of a CJS package to a safe format
-import * as __screwUpDefaultImportModule0 from 'dayjs';
+import __screwUpDefaultImportModule0 from 'dayjs';
 const dayjs = __resolveDefaultExport(__screwUpDefaultImportModule0, false);
 ```
 
 出力形式と参照先によって挙動が変わります:
 
-| 出力形式 | 参照先 | 生成されるコード                                       | 実行時の挙動                   |
-| :------- | :----- | :----------------------------------------------------- | :----------------------------- |
-| ESM      | CJS    | `import * as ns` + `__resolveDefaultExport(ns, false)` | module/defaultにフォールバック |
-| ESM      | ESM    | `import * as ns` + `__resolveDefaultExport(ns, true)`  | default必須、無ければ例外      |
-| CJS      | CJS    | `require()` + `__resolveDefaultExport(ns, false)`      | module/defaultにフォールバック |
-| CJS      | ESM    | `require()` + `__resolveDefaultExport(ns, true)`       | module/defaultにフォールバック |
+| 出力形式 | 参照先 | 生成されるコード                                            | 実行時の挙動                   |
+| :------- | :----- | :---------------------------------------------------------- | :----------------------------- |
+| ESM      | CJS    | `import default` + `__resolveDefaultExport(default, false)` | module/defaultにフォールバック |
+| ESM      | ESM    | `import * as ns` + `__resolveDefaultExport(ns, true)`       | default必須、無ければ例外      |
+| CJS      | CJS    | `require()` + `__resolveDefaultExport(default, false)`      | module/defaultにフォールバック |
+| CJS      | ESM    | `require()` + `__resolveDefaultExport(ns, true)`            | module/defaultにフォールバック |
 
 ESM出力ではdefault欠落のエラーを隠さず、CJS出力では相互運用のミスマッチを吸収します。
 判定は Node の解決規則と同様に、 `exports` (`import`/`node`/`default`) と `main`/`type` を参照します。

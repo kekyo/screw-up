@@ -508,10 +508,12 @@ export const transformDefaultImports = async (
       continue;
     }
     const isESM = moduleKind === 'esm';
+    const isCJS = moduleKind === 'cjs';
 
     const defaultName = importClause.name.text;
     const replacementImports: string[] = [];
-    let namespaceName: string;
+    let namespaceName: string | undefined;
+    let defaultImportName: string | undefined;
 
     if (
       importClause.namedBindings &&
@@ -521,6 +523,19 @@ export const transformDefaultImports = async (
       replacementImports.push(
         `import * as ${namespaceName} from ${formatModuleSpecifier(moduleName)};`
       );
+    } else if (isCJS) {
+      defaultImportName = usedNamespace('__screwUpDefaultImportModule');
+      replacementImports.push(
+        `import ${defaultImportName} from ${formatModuleSpecifier(moduleName)};`
+      );
+      if (
+        importClause.namedBindings &&
+        ts.isNamedImports(importClause.namedBindings)
+      ) {
+        replacementImports.push(
+          buildNamedImport(moduleName, importClause.namedBindings)
+        );
+      }
     } else {
       namespaceName = usedNamespace('__screwUpDefaultImportModule');
       replacementImports.push(
@@ -536,9 +551,10 @@ export const transformDefaultImports = async (
       }
     }
 
+    const interopSource = namespaceName ?? defaultImportName;
     const replacement =
       `${replacementImports.join('\n')}\n` +
-      `const ${defaultName} = __resolveDefaultExport(${namespaceName}, ${isESM});`;
+      `const ${defaultName} = __resolveDefaultExport(${interopSource}, ${isESM});`;
 
     edits.push({
       start: statement.getStart(sourceFile),
