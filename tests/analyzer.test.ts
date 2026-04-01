@@ -785,6 +785,81 @@ describe('git-metadata', () => {
         );
       }
     );
+
+    it('should detect staged additions', async () => {
+      // Setup: Create repository with a tagged commit
+      await testRepo.createFile('README.md', '# Test Project');
+      await testRepo.commit('Initial commit');
+      await testRepo.createTag('v1.0.0');
+
+      // Stage a new file without committing it
+      await testRepo.createFile('staged.txt', 'staged content');
+      await testRepo.git.add('staged.txt');
+
+      // Test: Extract git metadata
+      const logger = createConsoleLogger();
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
+
+      // Verify: Staged additions should bump the version
+      expect(metadata.git.version).toBe('1.0.1');
+    });
+
+    it('should detect staged modifications', async () => {
+      // Setup: Create repository with a tagged commit
+      await testRepo.createFile('README.md', '# Test Project');
+      await testRepo.commit('Initial commit');
+      await testRepo.createTag('v1.0.0');
+
+      // Modify and stage an existing tracked file
+      await testRepo.createFile('README.md', '# Updated Project');
+      await testRepo.git.add('README.md');
+
+      // Test: Extract git metadata
+      const logger = createConsoleLogger();
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
+
+      // Verify: Staged modifications should bump the version
+      expect(metadata.git.version).toBe('1.0.1');
+    });
+
+    it('should detect staged deletions', async () => {
+      // Setup: Create repository with a tagged commit
+      await testRepo.createFile('README.md', '# Test Project');
+      await testRepo.commit('Initial commit');
+      await testRepo.createTag('v1.0.0');
+
+      // Delete and stage removal of an existing tracked file
+      await rm(join(testRepo.path, 'README.md'));
+      await testRepo.git.raw(['add', '-u']);
+
+      // Test: Extract git metadata
+      const logger = createConsoleLogger();
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
+
+      // Verify: Staged deletions should bump the version
+      expect(metadata.git.version).toBe('1.0.1');
+    });
+
+    it('should detect tracked file deletions in the working tree', async () => {
+      // Setup: Create repository with a tagged commit
+      await testRepo.createFile('README.md', '# Test Project');
+      await testRepo.commit('Initial commit');
+      await testRepo.createTag('v1.0.0');
+
+      // Delete a tracked file without staging it
+      await rm(join(testRepo.path, 'README.md'));
+
+      // Test: Extract git metadata
+      const logger = createConsoleLogger();
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
+
+      // Verify: Unstaged deletions should bump the version
+      expect(metadata.git.version).toBe('1.0.1');
+    });
   });
 
   describe('.gitignore handling', () => {
