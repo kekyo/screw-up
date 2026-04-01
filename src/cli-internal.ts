@@ -23,6 +23,7 @@ import {
   collectWorkspaceSiblings,
   replacePeerDependenciesWildcards,
   Logger,
+  WorkspaceSibling,
 } from './internal';
 import { getFetchGitMetadata } from './analyzer';
 
@@ -62,6 +63,147 @@ const mergeResolvedPackageJson = (
   }
 
   return mergedPackageJson;
+};
+
+const workspaceProtocolPrefix = 'workspace:';
+
+interface WorkspaceProtocolDependencyReference {
+  readonly targetPackageName: string;
+  readonly alias: boolean;
+}
+
+const inferVersionPrefix = (dependencySpec: string): string => {
+  if (dependencySpec.startsWith('^')) {
+    return '^';
+  }
+  if (dependencySpec.startsWith('~')) {
+    return '~';
+  }
+  return '';
+};
+
+const looksLikeWorkspaceProtocolAlias = (rawSpecifier: string): boolean => {
+  if (!rawSpecifier) {
+    return false;
+  }
+  if (
+    rawSpecifier === '*' ||
+    rawSpecifier === '^' ||
+    rawSpecifier === '~' ||
+    rawSpecifier.startsWith('^') ||
+    rawSpecifier.startsWith('~') ||
+    /^[0-9]/.test(rawSpecifier)
+  ) {
+    return false;
+  }
+  return true;
+};
+
+const parseWorkspaceProtocolDependencyReference = (
+  dependencyName: string,
+  workspaceProtocolSpecifier: string
+): WorkspaceProtocolDependencyReference | undefined => {
+  if (!workspaceProtocolSpecifier.startsWith(workspaceProtocolPrefix)) {
+    return undefined;
+  }
+
+  const rawSpecifier = workspaceProtocolSpecifier
+    .slice(workspaceProtocolPrefix.length)
+    .trim();
+
+  if (!looksLikeWorkspaceProtocolAlias(rawSpecifier)) {
+    return {
+      targetPackageName: dependencyName,
+      alias: false,
+    };
+  }
+
+  if (rawSpecifier.startsWith('@')) {
+    const secondAt = rawSpecifier.indexOf('@', 1);
+    const targetPackageName =
+      secondAt >= 0 ? rawSpecifier.slice(0, secondAt) : rawSpecifier;
+    return {
+      targetPackageName,
+      alias: targetPackageName !== dependencyName,
+    };
+  }
+
+  const atIndex = rawSpecifier.indexOf('@');
+  const targetPackageName =
+    atIndex >= 0 ? rawSpecifier.slice(0, atIndex) : rawSpecifier;
+  return {
+    targetPackageName,
+    alias: targetPackageName !== dependencyName,
+  };
+};
+
+const formatResolvedWorkspaceDependency = (
+  packedDependencySpecifier: string,
+  reference: WorkspaceProtocolDependencyReference,
+  sibling: WorkspaceSibling
+): string => {
+  const aliasPrefix = `npm:${reference.targetPackageName}@`;
+  if (packedDependencySpecifier.startsWith(aliasPrefix)) {
+    const packedVersionSpecifier = packedDependencySpecifier.slice(
+      aliasPrefix.length
+    );
+    return `${aliasPrefix}${inferVersionPrefix(packedVersionSpecifier)}${sibling.version}`;
+  }
+
+  return `${inferVersionPrefix(packedDependencySpecifier)}${sibling.version}`;
+};
+
+const replaceWorkspaceProtocolDependencies = (
+  packageJson: any,
+  resolvedPackageJson: any,
+  siblings: Map<string, WorkspaceSibling>
+): any => {
+  const modifiedPackageJson = clonePackageJson(packageJson);
+
+  for (const sectionKey of dependencySectionKeys) {
+    const modifiedSection = modifiedPackageJson[sectionKey];
+    const resolvedSection = resolvedPackageJson?.[sectionKey];
+
+    if (
+      !modifiedSection ||
+      typeof modifiedSection !== 'object' ||
+      !resolvedSection ||
+      typeof resolvedSection !== 'object'
+    ) {
+      continue;
+    }
+
+    for (const [dependencyName, dependencySpecifier] of Object.entries(
+      resolvedSection
+    )) {
+      if (typeof dependencySpecifier !== 'string') {
+        continue;
+      }
+
+      const reference = parseWorkspaceProtocolDependencyReference(
+        dependencyName,
+        dependencySpecifier
+      );
+      if (!reference) {
+        continue;
+      }
+
+      const sibling = siblings.get(reference.targetPackageName);
+      const packedDependencySpecifier = modifiedSection[dependencyName];
+
+      if (!sibling || typeof packedDependencySpecifier !== 'string') {
+        continue;
+      }
+
+      modifiedSection[dependencyName] = formatResolvedWorkspaceDependency(
+        packedDependencySpecifier,
+        reference,
+        sibling
+      );
+    }
+  }
+
+  return modifiedPackageJson;
 };
 
 const getFilesArray = (packageJson: any): string[] | undefined => {
@@ -395,7 +537,9 @@ export const packAssets = async (
     delete resolvedPackageJson.readme;
   }
 
-  const workspaceRoot = replacePeerDepsWildcards
+  const requiresWorkspaceSiblings =
+    replacePeerDepsWildcards || packageManager === 'pnpm';
+  const workspaceRoot = requiresWorkspaceSiblings
     ? await findWorkspaceRoot(targetDir, logger)
     : undefined;
   const workspaceSiblings = workspaceRoot
@@ -465,6 +609,13 @@ export const packAssets = async (
         packedPackageJson,
         resolvedPackageJson
       );
+      if (packageManager === 'pnpm' && workspaceSiblings?.size) {
+        finalPackageJson = replaceWorkspaceProtocolDependencies(
+          finalPackageJson,
+          resolvedPackageJson,
+          workspaceSiblings
+        );
+      }
       if (workspaceSiblings && workspaceSiblings.size > 0) {
         finalPackageJson = replacePeerDependenciesWildcards(
           finalPackageJson,
