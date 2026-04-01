@@ -617,7 +617,7 @@ The pack command:
 - Supports workspace inheritance (inherits metadata from parent packages)
 - Creates a compressed `.tgz` archive with format: `{name}-{version}.tgz`
 
-The pack command uses `npm pack` internally to generate a temporary package file. It then performs operations such as replacing `package.json` and modifying README on the package file. File selection follows `npm pack` behavior, except for the workspace files merge described below.
+The pack command uses `npm pack` by default to generate a temporary package file. When `--use-pnpm` is specified, it uses `pnpm pack` instead and preserves pnpm workspace protocol resolution in the packed manifest. It then performs operations such as replacing `package.json` metadata and modifying README on the package file. File selection follows the selected package manager's pack behavior, except for the workspace files merge described below.
 
 However, to successfully pack the files, you must define the `version` key. screw-up itself can automatically determine the version to specify in the `version` key and reflect that value in the final NPM package file. When the `version` key does not exist, an error will occur during the first `npm pack` execution. To avoid this, the "Recommended configuration" section example specifies a DUMMY `version` key.
 
@@ -625,6 +625,7 @@ However, to successfully pack the files, you must define the `version` key. scre
 
 - `--pack-destination <path>`: Specify output directory for the archive
 - `--readme <path>`: Replace README.md with specified file
+- `--use-pnpm`: Use `pnpm pack` and preserve workspace protocol resolution in the generated tarball
 - `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent (default: version,description,author,license,repository,keywords,homepage,bugs,readme,files)
 - `--no-wds`: Disable working directory status check for version increment
 - `--no-replace-peer-deps`: Disable replacing "\*" in peerDependencies with actual versions
@@ -663,12 +664,14 @@ screw-up publish --dry-run --tag beta --access public
 The publish command:
 
 - Supports all `npm publish` options transparently. This command creates an archive and then executes the actual publishing by calling `npm publish`.
+- When `--use-pnpm` is specified, archive generation uses `pnpm pack`, while registry publication still uses the npm-compatible publish flow.
 - Can publish from directory (automatically creates archive) or existing tarball
 - Handles workspace packages with proper metadata inheritance
 - Uses the same packaging logic as the pack command
 
 #### Options
 
+- `--use-pnpm`: Use `pnpm pack` before publish when creating a tarball from a directory
 - `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent (default: version,description,author,license,repository,keywords,homepage,bugs,readme,files)
 - `--no-wds`: Disable working directory status check for version increment
 - `--no-replace-peer-deps`: Disable replacing "\*" in peerDependencies with actual versions
@@ -741,10 +744,16 @@ screw-up pack --peer-deps-prefix ""
 
 This feature:
 
-- Only works in workspace environments (requires workspace root with `workspaces` field)
+- Only works in workspace environments (requires workspace root with `workspaces` field or `pnpm-workspace.yaml`)
 - Only replaces "\*" values that match workspace sibling package names
 - Leaves non-workspace dependencies unchanged
 - Is enabled by default for pack and publish commands
+
+### pnpm workspace protocol
+
+When your monorepo uses pnpm workspaces, you can reference sibling packages using `workspace:*`, `workspace:^`, or `workspace:~` in `dependencies`, `peerDependencies`, and `optionalDependencies`.
+
+Run `pnpm install` first, then use `screw-up pack --use-pnpm` or `screw-up publish --use-pnpm`. screw-up uses `pnpm pack` as the pack backend and keeps the packed manifest's dependency sections, so the generated tarball contains npm-compatible package names and version ranges instead of `workspace:` references.
 
 ### Workspace Field Inheritance
 

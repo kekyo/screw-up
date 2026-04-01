@@ -35,6 +35,35 @@ const readPackageJsonFile = async (packageJsonPath: string): Promise<any> => {
   return JSON5.parse(content);
 };
 
+export type PackageManagerName = 'npm' | 'pnpm';
+
+const dependencySectionKeys = new Set([
+  'dependencies',
+  'devDependencies',
+  'peerDependencies',
+  'optionalDependencies',
+]);
+
+const clonePackageJson = (packageJson: any): any =>
+  JSON5.parse(JSON.stringify(packageJson));
+
+const mergeResolvedPackageJson = (
+  packedPackageJson: any,
+  resolvedPackageJson: any
+): any => {
+  const mergedPackageJson = clonePackageJson(packedPackageJson);
+
+  for (const [key, value] of Object.entries(resolvedPackageJson ?? {})) {
+    if (dependencySectionKeys.has(key)) {
+      continue;
+    }
+
+    mergedPackageJson[key] = value;
+  }
+
+  return mergedPackageJson;
+};
+
 const getFilesArray = (packageJson: any): string[] | undefined => {
   if (!packageJson || !Array.isArray(packageJson.files)) {
     return undefined;
@@ -176,53 +205,77 @@ export const resolveWorkspaceFilesMerge = async (
   };
 };
 
+const readPackResultPath = (
+  packageManager: PackageManagerName,
+  packDestDir: string,
+  stdout: string
+): string => {
+  if (packageManager === 'pnpm') {
+    const parsed = JSON5.parse(stdout);
+    const packResult = Array.isArray(parsed) ? parsed[0] : parsed;
+    if (!packResult?.filename || typeof packResult.filename !== 'string') {
+      throw new Error('pnpm pack did not output a valid filename');
+    }
+
+    return isAbsolute(packResult.filename)
+      ? packResult.filename
+      : join(packDestDir, packResult.filename);
+  }
+
+  const lines = stdout.trim().split('\n');
+  const filename =
+    lines.find((line) => line.trim().endsWith('.tgz')) ||
+    lines[lines.length - 1];
+  if (!filename || !filename.trim().endsWith('.tgz')) {
+    throw new Error('npm pack did not output a valid .tgz filename');
+  }
+
+  return join(packDestDir, filename.trim());
+};
+
 /**
- * Execute npm pack and return the generated tarball path
+ * Execute package manager pack and return the generated tarball path
+ * @param packageManager - Package manager to use
  * @param targetDir - Target directory to pack
  * @param packDestDir - Directory to store the generated tarball (must exist)
  * @returns Path to generated tarball
  */
-const runNpmPack = async (
+const runPack = async (
+  packageManager: PackageManagerName,
   targetDir: string,
   packDestDir: string
 ): Promise<string> => {
+  const packArgs =
+    packageManager === 'pnpm'
+      ? ['pack', '--json', '--pack-destination', packDestDir]
+      : ['pack', '--pack-destination', packDestDir];
+
   return new Promise((res, rej) => {
-    const npmProcess = spawn(
-      'npm',
-      ['pack', '--pack-destination', packDestDir],
-      {
-        cwd: targetDir,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      }
-    );
+    const packProcess = spawn(packageManager, packArgs, {
+      cwd: targetDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
 
     let stdout = '';
     let stderr = '';
 
-    npmProcess.stdout.on('data', (data) => {
+    packProcess.stdout.on('data', (data) => {
       stdout += data.toString();
     });
 
-    npmProcess.stderr.on('data', (data) => {
+    packProcess.stderr.on('data', (data) => {
       stderr += data.toString();
     });
 
-    npmProcess.on('close', (code) => {
+    packProcess.on('close', (code) => {
       if (code === 0) {
-        // npm pack outputs the filename on stdout (last line or line ending with .tgz)
-        const lines = stdout.trim().split('\n');
-        // Find the line that ends with .tgz (actual filename) or use the last line
-        const filename =
-          lines.find((line) => line.trim().endsWith('.tgz')) ||
-          lines[lines.length - 1];
-        if (filename && filename.trim().endsWith('.tgz')) {
-          const fullPath = join(packDestDir, filename.trim());
-          res(fullPath);
-        } else {
-          rej(new Error('npm pack did not output a valid .tgz filename'));
+        try {
+          res(readPackResultPath(packageManager, packDestDir, stdout.trim()));
+        } catch (error: any) {
+          rej(error);
         }
       } else {
-        const errorMessage = `npm pack failed with exit code ${code}`;
+        const errorMessage = `${packageManager} pack failed with exit code ${code}`;
         const fullError = stderr
           ? `${errorMessage}\nstderr: ${stderr}`
           : errorMessage;
@@ -234,8 +287,10 @@ const runNpmPack = async (
       }
     });
 
-    npmProcess.on('error', (error) => {
-      rej(new Error(`Failed to spawn npm pack: ${error.message}`));
+    packProcess.on('error', (error) => {
+      rej(
+        new Error(`Failed to spawn ${packageManager} pack: ${error.message}`)
+      );
     });
   });
 };
@@ -260,6 +315,7 @@ export interface PackedResult {
  * @param replacePeerDepsWildcards - Replace "*" in peerDependencies with actual versions
  * @param peerDepsVersionPrefix - Version prefix for replaced peerDependencies
  * @param alwaysOverrideVersionFromGit - Always override version from Git (default: true)
+ * @param packageManager - Package manager backend used for the initial pack
  * @returns Package metadata (package.json) or undefined if failed
  */
 export const packAssets = async (
@@ -272,7 +328,8 @@ export const packAssets = async (
   replacePeerDepsWildcards: boolean,
   peerDepsVersionPrefix: string,
   logger: Logger,
-  mergeFiles: boolean = true
+  mergeFiles: boolean = true,
+  packageManager: PackageManagerName = 'npm'
 ): Promise<PackedResult | undefined> => {
   // Check if target directory exists
   if (!existsSync(targetDir)) {
@@ -318,6 +375,11 @@ export const packAssets = async (
     // When does not override by parameter (CLI)
     if (!readmeReplacementCandidatePath) {
       const packageJsonReadmeDir = result.sourceMap.get('readme');
+      if (!packageJsonReadmeDir) {
+        throw new Error(
+          `README replacement source directory is unknown: ${packageJsonReadme}`
+        );
+      }
       const packageJsonReadmePath = join(
         packageJsonReadmeDir,
         packageJsonReadme
@@ -333,26 +395,18 @@ export const packAssets = async (
     delete resolvedPackageJson.readme;
   }
 
-  // Replace peerDependencies wildcards if enabled and in workspace
-  if (replacePeerDepsWildcards) {
-    const workspaceRoot = await findWorkspaceRoot(targetDir, logger);
-    if (workspaceRoot) {
-      const siblings = await collectWorkspaceSiblings(
+  const workspaceRoot = replacePeerDepsWildcards
+    ? await findWorkspaceRoot(targetDir, logger)
+    : undefined;
+  const workspaceSiblings = workspaceRoot
+    ? await collectWorkspaceSiblings(
         workspaceRoot,
         fetchGitMetadata,
         alwaysOverrideVersionFromGit,
         inheritableFields,
         logger
-      );
-      if (siblings.size > 0) {
-        resolvedPackageJson = replacePeerDependenciesWildcards(
-          resolvedPackageJson,
-          siblings,
-          peerDepsVersionPrefix
-        );
-      }
-    }
-  }
+      )
+    : undefined;
 
   const filesMergeEnabled = mergeFiles && inheritableFields.has('files');
   const workspaceFilesMerge = filesMergeEnabled
@@ -362,19 +416,23 @@ export const packAssets = async (
     resolvedPackageJson.files = workspaceFilesMerge.mergedFiles;
   }
 
-  // Create temporary directory for npm pack
+  // Create temporary directory for package manager pack
   const baseTempDir = await mkdtemp(join(tmpdir(), 'screw-up-npm-pack-'));
   await mkdir(baseTempDir, { recursive: true });
 
   try {
-    // Step 1: Execute npm pack to generate initial tarball
-    const npmTarballPath = await runNpmPack(targetDir, baseTempDir);
+    // Step 1: Execute package manager pack to generate initial tarball
+    const packedTarballPath = await runPack(
+      packageManager,
+      targetDir,
+      baseTempDir
+    );
 
-    // Step 2: Extract the npm-generated tarball into staging directory
+    // Step 2: Extract the package manager generated tarball into staging directory
     const stagingDir = join(baseTempDir, 'staging');
     await mkdir(stagingDir, { recursive: true });
 
-    const stream = createReadStream(npmTarballPath);
+    const stream = createReadStream(packedTarballPath);
     await extractTo(createTarExtractor(stream, 'gzip'), stagingDir);
 
     // Step 3: Process extracted files (files merge/package.json/README replacement)
@@ -400,10 +458,27 @@ export const packAssets = async (
 
     // Replace package.json with our processed version
     const packageJsonPath = join(packageRoot, 'package.json');
+    let finalPackageJson = resolvedPackageJson;
     if (existsSync(packageJsonPath)) {
+      const packedPackageJson = await readPackageJsonFile(packageJsonPath);
+      finalPackageJson = mergeResolvedPackageJson(
+        packedPackageJson,
+        resolvedPackageJson
+      );
+      if (workspaceSiblings && workspaceSiblings.size > 0) {
+        finalPackageJson = replacePeerDependenciesWildcards(
+          finalPackageJson,
+          workspaceSiblings,
+          peerDepsVersionPrefix
+        );
+      }
+      if (packageJsonReadme) {
+        delete finalPackageJson.readme;
+      }
+
       await writeFile(
         packageJsonPath,
-        JSON.stringify(resolvedPackageJson, null, 2)
+        JSON.stringify(finalPackageJson, null, 2)
       );
     }
 
@@ -414,7 +489,7 @@ export const packAssets = async (
     }
 
     // Step 4: Re-create tarball with modified files
-    const outputFileName = `${resolvedPackageJson?.name?.replace('/', '-') ?? 'package'}-${resolvedPackageJson?.version ?? '0.0.0'}.tgz`;
+    const outputFileName = `${finalPackageJson?.name?.replace('/', '-') ?? 'package'}-${finalPackageJson?.version ?? '0.0.0'}.tgz`;
     await mkdir(outputDir, { recursive: true });
     const outputFile = join(outputDir, outputFileName);
 
@@ -426,7 +501,7 @@ export const packAssets = async (
     // PackedResult
     return {
       packageFileName: outputFileName,
-      metadata: resolvedPackageJson,
+      metadata: finalPackageJson,
     };
   } finally {
     // Clean up temporary directory

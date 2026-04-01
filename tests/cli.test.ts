@@ -35,6 +35,32 @@ const defaultInheritableFields = new Set([
   'files',
 ]);
 
+const pnpmAvailable = (() => {
+  try {
+    execSync('pnpm --version', { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
+const describeIfPnpm = pnpmAvailable ? describe : describe.skip;
+
+const extractArchivePackageJson = async (
+  archivePath: string,
+  extractDir: string
+) => {
+  mkdirSync(extractDir, { recursive: true });
+  await tar.extract({
+    file: archivePath,
+    cwd: extractDir,
+  });
+
+  return JSON.parse(
+    readFileSync(join(extractDir, 'package', 'package.json'), 'utf-8')
+  );
+};
+
 describe('CLI tests', () => {
   const tempBaseDir = join(
     tmpdir(),
@@ -3559,6 +3585,200 @@ describe('CLI tests', () => {
       // Verify Git tag version is used in peerDependencies (not the 0.0.1 from package.json)
       expect(extractedPackageJson.peerDependencies['@git-test/core']).toBe(
         '^3.5.0'
+      );
+    }, 15000);
+  });
+
+  describe('pnpm workspace member resolution', () => {
+    it('should replace peerDependencies wildcards using pnpm-workspace.yaml members', async () => {
+      const workspaceRoot = join(tempDir, 'workspace-pnpm-members');
+      mkdirSync(workspaceRoot, { recursive: true });
+
+      writeFileSync(
+        join(workspaceRoot, 'package.json'),
+        JSON.stringify(
+          {
+            name: 'workspace-root',
+            version: '1.0.0',
+            private: true,
+          },
+          null,
+          2
+        )
+      );
+      writeFileSync(
+        join(workspaceRoot, 'pnpm-workspace.yaml'),
+        ['packages:', '  - packages/*'].join('\n')
+      );
+
+      const coreDir = join(workspaceRoot, 'packages', 'core');
+      mkdirSync(coreDir, { recursive: true });
+      writeFileSync(
+        join(coreDir, 'package.json'),
+        JSON.stringify(
+          {
+            name: '@pnpm-test/core',
+            version: '2.4.6',
+          },
+          null,
+          2
+        )
+      );
+      writeFileSync(join(coreDir, 'index.js'), 'module.exports = {};');
+
+      const appDir = join(workspaceRoot, 'packages', 'app');
+      mkdirSync(appDir, { recursive: true });
+      writeFileSync(
+        join(appDir, 'package.json'),
+        JSON.stringify(
+          {
+            name: '@pnpm-test/app',
+            version: '1.0.0',
+            peerDependencies: {
+              '@pnpm-test/core': '*',
+            },
+          },
+          null,
+          2
+        )
+      );
+      writeFileSync(join(appDir, 'index.js'), 'module.exports = {};');
+
+      const outputDir = join(tempDir, 'output');
+      mkdirSync(outputDir, { recursive: true });
+
+      const result = await packAssets(
+        appDir,
+        outputDir,
+        true,
+        true,
+        defaultInheritableFields,
+        undefined,
+        true,
+        '^',
+        createConsoleLogger()
+      );
+
+      expect(result).toBeDefined();
+
+      const extractedPackageJson = await extractArchivePackageJson(
+        join(outputDir, result!.packageFileName),
+        join(tempDir, 'extract-pnpm-members')
+      );
+
+      expect(extractedPackageJson.peerDependencies['@pnpm-test/core']).toBe(
+        '^2.4.6'
+      );
+    }, 10000);
+  });
+
+  describeIfPnpm('pnpm workspace protocol pack', () => {
+    it('should preserve pnpm workspace protocol resolution when packing', async () => {
+      const workspaceRoot = join(tempDir, 'workspace-pnpm-pack');
+      mkdirSync(workspaceRoot, { recursive: true });
+
+      writeFileSync(
+        join(workspaceRoot, 'package.json'),
+        JSON.stringify(
+          {
+            name: 'workspace-root',
+            version: '1.0.0',
+            private: true,
+            author: 'Workspace Author',
+          },
+          null,
+          2
+        )
+      );
+      writeFileSync(
+        join(workspaceRoot, 'pnpm-workspace.yaml'),
+        ['packages:', '  - packages/*'].join('\n')
+      );
+
+      const coreDir = join(workspaceRoot, 'packages', 'core');
+      mkdirSync(coreDir, { recursive: true });
+      writeFileSync(
+        join(coreDir, 'package.json'),
+        JSON.stringify(
+          {
+            name: '@pnpm-test/core',
+            version: '1.2.3',
+          },
+          null,
+          2
+        )
+      );
+      writeFileSync(join(coreDir, 'index.js'), 'module.exports = {};');
+
+      const appDir = join(workspaceRoot, 'packages', 'app');
+      mkdirSync(appDir, { recursive: true });
+      writeFileSync(
+        join(appDir, 'package.json'),
+        JSON.stringify(
+          {
+            name: '@pnpm-test/app',
+            version: '0.4.0',
+            dependencies: {
+              '@pnpm-test/core': 'workspace:*',
+            },
+            peerDependencies: {
+              '@pnpm-test/core': 'workspace:^',
+            },
+            optionalDependencies: {
+              '@pnpm-test/core': 'workspace:~',
+            },
+          },
+          null,
+          2
+        )
+      );
+      writeFileSync(join(appDir, 'index.js'), 'module.exports = {};');
+
+      execSync('pnpm install', {
+        cwd: workspaceRoot,
+        stdio: 'ignore',
+      });
+
+      const outputDir = join(tempDir, 'output');
+      mkdirSync(outputDir, { recursive: true });
+
+      const result = await packAssets(
+        appDir,
+        outputDir,
+        true,
+        true,
+        defaultInheritableFields,
+        undefined,
+        true,
+        '^',
+        createConsoleLogger(),
+        true,
+        'pnpm'
+      );
+
+      expect(result).toBeDefined();
+      expect(result!.metadata.author).toBe('Workspace Author');
+
+      const archivePath = join(outputDir, result!.packageFileName);
+      const extractedPackageJson = await extractArchivePackageJson(
+        archivePath,
+        join(tempDir, 'extract-pnpm-pack')
+      );
+
+      const packedManifestText = readFileSync(
+        join(tempDir, 'extract-pnpm-pack', 'package', 'package.json'),
+        'utf-8'
+      );
+      expect(packedManifestText).not.toContain('workspace:');
+      expect(extractedPackageJson.author).toBe('Workspace Author');
+      expect(extractedPackageJson.dependencies['@pnpm-test/core']).toBe(
+        '1.2.3'
+      );
+      expect(extractedPackageJson.peerDependencies['@pnpm-test/core']).toBe(
+        '^1.2.3'
+      );
+      expect(extractedPackageJson.optionalDependencies['@pnpm-test/core']).toBe(
+        '~1.2.3'
       );
     }, 15000);
   });

@@ -6,62 +6,112 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
-import dts from 'vite-plugin-dts';
+import dts from 'unplugin-dts/vite';
 import prettierMax from 'prettier-max';
 import { screwUp } from './src/vite-plugin'; // Self-hosted
 
-export default defineConfig({
-  logLevel: 'info',
-  plugins: [
-    dts({
-      rollupTypes: true,
-    }),
-    prettierMax(),
+type BuildTarget = 'es' | 'cjs-index' | 'cjs-main';
+
+const projectRoot = fileURLToPath(new URL('.', import.meta.url));
+const entries = {
+  index: resolve(projectRoot, 'src/index.ts'),
+  main: resolve(projectRoot, 'src/main.ts'),
+};
+
+const external = [
+  'fs',
+  'os',
+  'path',
+  'fs/promises',
+  'vite',
+  'crypto',
+  'tar',
+  'zlib',
+  'events',
+  'stream',
+  'stream/promises',
+  'isomorphic-git',
+  'tar-stream',
+  'glob',
+  'string_decoder',
+  'child_process',
+  'simple-git',
+  'typescript',
+];
+
+const resolveBuildTarget = (): BuildTarget => {
+  const buildTarget = process.env.SCREW_UP_BUILD_TARGET;
+  if (
+    buildTarget === 'es' ||
+    buildTarget === 'cjs-index' ||
+    buildTarget === 'cjs-main'
+  ) {
+    return buildTarget;
+  }
+  return 'es';
+};
+
+export default defineConfig(() => {
+  const buildTarget = resolveBuildTarget();
+
+  const plugins = [];
+  if (buildTarget === 'es') {
+    plugins.push(
+      dts({
+        entryRoot: 'src',
+      }),
+      prettierMax()
+    );
+  }
+  plugins.push(
     screwUp({
-      outputMetadataFile: true,
-    }),
-  ],
-  build: {
-    lib: {
-      entry: {
-        index: resolve(
-          fileURLToPath(new URL('.', import.meta.url)),
-          'src/index.ts'
-        ),
-        main: resolve(
-          fileURLToPath(new URL('.', import.meta.url)),
-          'src/main.ts'
-        ),
+      outputMetadataFile: buildTarget === 'es',
+    })
+  );
+
+  // Rolldown currently panics on multi-entry CJS library builds, so split CJS
+  // output into separate single-entry builds while keeping the ES build batched.
+  const lib =
+    buildTarget === 'cjs-index'
+      ? {
+          entry: {
+            index: entries.index,
+          },
+          name: 'screw-up',
+          fileName: (format: string, entryName: string) =>
+            `${entryName}.${format === 'es' ? 'mjs' : 'cjs'}`,
+          formats: ['cjs'],
+        }
+      : buildTarget === 'cjs-main'
+        ? {
+            entry: {
+              main: entries.main,
+            },
+            name: 'screw-up',
+            fileName: (format: string, entryName: string) =>
+              `${entryName}.${format === 'es' ? 'mjs' : 'cjs'}`,
+            formats: ['cjs'],
+          }
+        : {
+            entry: entries,
+            name: 'screw-up',
+            fileName: (format: string, entryName: string) =>
+              `${entryName}.${format === 'es' ? 'mjs' : 'cjs'}`,
+            formats: ['es'],
+          };
+
+  return {
+    logLevel: 'info',
+    plugins,
+    build: {
+      emptyOutDir: buildTarget === 'es',
+      lib,
+      rolldownOptions: {
+        external,
       },
-      name: 'screw-up',
-      fileName: (format, entryName) =>
-        `${entryName}.${format === 'es' ? 'mjs' : 'cjs'}`,
-      formats: ['es', 'cjs'],
+      target: 'es2018',
+      minify: false,
+      sourcemap: true,
     },
-    rollupOptions: {
-      external: [
-        'fs',
-        'os',
-        'path',
-        'fs/promises',
-        'vite',
-        'crypto',
-        'tar',
-        'zlib',
-        'events',
-        'stream',
-        'stream/promises',
-        'isomorphic-git',
-        'tar-stream',
-        'glob',
-        'string_decoder',
-        'child_process',
-        'simple-git',
-        'typescript',
-      ],
-    },
-    target: 'es2018',
-    minify: false,
-    sourcemap: true,
-  },
+  };
 });
