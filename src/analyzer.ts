@@ -313,24 +313,120 @@ const getRelatedBranches = async (
  * @param repositoryPath - Local Git repository directory
  * @returns Modified files
  */
+const isModifiedFile = ([, head, workdir, stage]: git.StatusRow): boolean => {
+  return (
+    workdir === 2 || // modified in working directory (unstaged)
+    stage === 2 || // modified in stage (staged)
+    stage === 3 || // added to stage (staged)
+    (head === 1 && workdir === 0) || // deleted from working directory
+    (head === 0 && workdir === 1) // untracked files (respecting .gitignore)
+  );
+};
+
+const getStatusRow = async (
+  filepath: string,
+  entries: Array<git.WalkerEntry | null>
+): Promise<git.StatusRow | undefined> => {
+  const [head, workdir, stage] = entries;
+  const [headType, workdirType, stageType] = await Promise.all([
+    head ? head.type() : undefined,
+    workdir ? workdir.type() : undefined,
+    stage ? stage.type() : undefined,
+  ]);
+
+  const isBlob = [headType, workdirType, stageType].includes('blob');
+
+  if ((headType === 'tree' || headType === 'special') && !isBlob) {
+    return undefined;
+  }
+  if (headType === 'commit') {
+    return undefined;
+  }
+  if ((workdirType === 'tree' || workdirType === 'special') && !isBlob) {
+    return undefined;
+  }
+  if (stageType === 'commit') {
+    return undefined;
+  }
+  if ((stageType === 'tree' || stageType === 'special') && !isBlob) {
+    return undefined;
+  }
+
+  const headOid = headType === 'blob' ? await head!.oid() : undefined;
+  const stageOid = stageType === 'blob' ? await stage!.oid() : undefined;
+
+  let workdirOid: string | undefined;
+  if (headType !== 'blob' && workdirType === 'blob' && stageType !== 'blob') {
+    // Any unique marker works here as long as it differs from HEAD and STAGE.
+    workdirOid = '42';
+  } else if (workdirType === 'blob') {
+    workdirOid = await workdir!.oid();
+  }
+
+  const entry = [undefined, headOid, workdirOid, stageOid];
+  const statusValues = entry.map((value) => entry.indexOf(value));
+
+  return [
+    filepath,
+    statusValues[1] as git.StatusRow[1],
+    statusValues[2] as git.StatusRow[2],
+    statusValues[3] as git.StatusRow[3],
+  ];
+};
+
+const reduceModifiedFiles = async (
+  parent: git.StatusRow | undefined,
+  children: git.StatusRow[][]
+): Promise<git.StatusRow[]> => {
+  const modifiedFiles = parent ? [parent] : [];
+  for (const child of children) {
+    modifiedFiles.push(...child);
+  }
+  return modifiedFiles;
+};
+
+const iterateSequentially: git.WalkerIterate = async (walk, children) => {
+  const results = [];
+  // Avoid the default unbounded Promise fan-out on large packed repositories.
+  for (const child of children) {
+    results.push(await walk(child));
+  }
+  return results;
+};
+
 const getModifiedFiles = async (
   repositoryPath: string
 ): Promise<git.StatusRow[]> => {
   try {
-    const status = await git.statusMatrix({ fs, dir: repositoryPath });
-    // statusMatrix returns [filepath, headStatus, workdirStatus, stageStatus]
-    // headStatus: 0=absent, 1=present
-    // workdirStatus: 0=absent, 1=present, 2=modified
-    // stageStatus: 0=absent, 1=present, 2=modified, 3=added
-    // By default, ignored files are excluded (ignored: false)
-    return status.filter(
-      ([, head, workdir, stage]) =>
-        workdir === 2 || // modified in working directory (unstaged)
-        stage === 2 || // modified in stage (staged)
-        stage === 3 || // added to stage (staged)
-        (head === 1 && workdir === 0) || // deleted from working directory
-        (head === 0 && workdir === 1) // untracked files (respecting .gitignore)
-    );
+    return (await git.walk({
+      fs,
+      dir: repositoryPath,
+      trees: [git.TREE({ ref: 'HEAD' }), git.WORKDIR(), git.STAGE()],
+      map: async (
+        filepath,
+        entries
+      ): Promise<git.StatusRow | null | undefined> => {
+        const [head, workdir, stage] = entries;
+        if (!head && !stage && workdir) {
+          const ignored = await git.isIgnored({
+            fs,
+            dir: repositoryPath,
+            filepath,
+          });
+          if (ignored) {
+            return null;
+          }
+        }
+
+        const statusRow = await getStatusRow(filepath, entries);
+        if (!statusRow || !isModifiedFile(statusRow)) {
+          return undefined;
+        }
+        return statusRow;
+      },
+      reduce: reduceModifiedFiles,
+      iterate: iterateSequentially,
+    })) as git.StatusRow[];
   } catch {
     return [];
   }
