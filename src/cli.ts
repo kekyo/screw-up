@@ -625,16 +625,28 @@ const runNpmPublish = async (
   const npmProcess = spawn('npm', publishArgs, { stdio: 'inherit' });
 
   return new Promise<number>((resolve, reject) => {
-    npmProcess.on('close', (code) => {
+    npmProcess.on('close', (code, signal) => {
       if (code === 0) {
         if (verbose) {
           logger.info(`publish: Successfully published ${tarballPath}`);
         }
-        resolve(code);
-      } else {
-        logger.error(`publish: npm publish failed: ${tarballPath}`);
-        resolve(code);
+        resolve(0);
+        return;
       }
+
+      if (signal) {
+        logger.error(
+          `publish: npm publish terminated by signal ${signal}: ${tarballPath}`
+        );
+        resolve(1);
+        return;
+      }
+
+      const exitCode = code ?? 1;
+      logger.error(
+        `publish: npm publish failed with exit code ${exitCode}: ${tarballPath}`
+      );
+      resolve(exitCode);
     });
     npmProcess.on('error', reject);
   });
@@ -668,6 +680,7 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
 
   // Aggregate npm options, except screw-up options.
   const npmOptions: string[] = [];
+  let pathSkipped = false;
   for (let i = 0; i < args.argv.length; i++) {
     const arg = args.argv[i];
     if (arg === 'publish') {
@@ -688,6 +701,8 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
       arg === '--peer-deps-prefix'
     ) {
       i++;
+    } else if (!pathSkipped && path && arg === path) {
+      pathSkipped = true;
     } else {
       npmOptions.push(arg);
     }

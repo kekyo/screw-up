@@ -375,6 +375,11 @@ export const packAssets = async (
     // When does not override by parameter (CLI)
     if (!readmeReplacementCandidatePath) {
       const packageJsonReadmeDir = result.sourceMap.get('readme');
+      if (!packageJsonReadmeDir) {
+        throw new Error(
+          `README replacement source directory is unknown: ${packageJsonReadme}`
+        );
+      }
       const packageJsonReadmePath = join(
         packageJsonReadmeDir,
         packageJsonReadme

@@ -26,6 +26,22 @@ import {
 } from '../src/internal';
 import { screwUp, generateBanner } from '../src/vite-plugin';
 
+const escapeRegExp = (value: string): string =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const createBannerOutputPattern = (banner: string): RegExp => {
+  const pattern = banner
+    .split('\n')
+    .map((line, index) => {
+      if (index > 0 && line.startsWith(' *')) {
+        return ` ?\\*${escapeRegExp(line.slice(2))}`;
+      }
+      return escapeRegExp(line);
+    })
+    .join('\\n');
+  return new RegExp(`^${pattern}`);
+};
+
 describe('screwUp plugin integration tests', () => {
   const tempBaseDir = join(
     tmpdir(),
@@ -161,9 +177,7 @@ export function hello(name: string): string {
  * author: Integration Tester
  * license: Apache-2.0
  */`;
-    expect(output).toMatch(
-      new RegExp(`^${expectedBanner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
-    );
+    expect(output).toMatch(createBannerOutputPattern(expectedBanner));
   }, 30000); // 30 second timeout for build
 
   it('should keep banner when esbuild transpiles', async () => {
@@ -233,9 +247,7 @@ export function hello(name: string): string {
  * author: Transpiler
  * license: MIT
  */`;
-    expect(output).toMatch(
-      new RegExp(`^${expectedBanner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
-    );
+    expect(output).toMatch(createBannerOutputPattern(expectedBanner));
   }, 30000);
 
   it('should include buildDate when specified in outputKeys', async () => {
@@ -352,17 +364,17 @@ export function hello(name: string): string {
 
     const output = readFileSync(outputPath, 'utf-8');
     const expectedBanner = `/*!\n * name: sourcemap-lib\n * version: 1.0.0\n * description: Sourcemap test library\n * author: Source Mapper\n * license: MIT\n */`;
-    expect(output).toMatch(
-      new RegExp(`^${expectedBanner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
-    );
+    expect(output).toMatch(createBannerOutputPattern(expectedBanner));
 
     const map = JSON.parse(readFileSync(mapPath, 'utf-8'));
     const traceMap = new TraceMap(map);
 
     const generatedLines = output.split('\n');
     // Find the rendered line that contains our return statement after banner insertion
-    const returnLineIndex = generatedLines.findIndex((line) =>
-      line.includes('return `${salutation}, ${name}!`;')
+    const returnLineIndex = generatedLines.findIndex(
+      (line) =>
+        line.includes('return `Hello, ${name}!`;') ||
+        line.includes('return `${salutation}, ${name}!`;')
     );
     expect(returnLineIndex).toBeGreaterThan(-1);
     const column = generatedLines[returnLineIndex].indexOf('return');
@@ -514,9 +526,7 @@ run();
  * version: 1.0.0
  * license: MIT
  */`;
-    expect(output).toMatch(
-      new RegExp(`^${expectedBanner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
-    );
+    expect(output).toMatch(createBannerOutputPattern(expectedBanner));
   }, 30000);
 
   it('should add banner to .d.ts files using default assetFilters', async () => {
@@ -595,9 +605,7 @@ export declare function createTest(name: string): TestInterface;
  * author: Test Author
  * license: MIT
  */`;
-    expect(dtsContent).toMatch(
-      new RegExp(`^${expectedBanner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
-    );
+    expect(dtsContent).toMatch(createBannerOutputPattern(expectedBanner));
     expect(dtsContent).toContain('export interface TestInterface');
   }, 30000);
 
@@ -675,17 +683,13 @@ export declare function createTest(name: string): TestInterface;
     const dtsPath = join(distDir, 'types.d.ts');
     expect(existsSync(dtsPath)).toBe(true);
     const dtsContent = readFileSync(dtsPath, 'utf-8');
-    expect(dtsContent).toMatch(
-      new RegExp(`^${expectedBanner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
-    );
+    expect(dtsContent).toMatch(createBannerOutputPattern(expectedBanner));
 
     // Check .json file has banner
     const jsonPath = join(distDir, 'metadata.json');
     expect(existsSync(jsonPath)).toBe(true);
     const jsonContent = readFileSync(jsonPath, 'utf-8');
-    expect(jsonContent).toMatch(
-      new RegExp(`^${expectedBanner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
-    );
+    expect(jsonContent).toMatch(createBannerOutputPattern(expectedBanner));
 
     // Check .txt file does NOT have banner
     const txtPath = join(distDir, 'readme.txt');

@@ -9,7 +9,7 @@ import type {
   OutputAsset,
   OutputChunk,
   OutputOptions,
-} from 'rollup';
+} from 'rolldown';
 import { readFile, writeFile, readdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, dirname } from 'path';
@@ -371,12 +371,12 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
       }
 
       config.build ??= {};
-      const rollupOptions = (config.build.rollupOptions ??= {});
+      const rolldownOptions = (config.build.rolldownOptions ??= {});
       // Normalize rollup outputs to an array so we can inject a banner even when empty
       const ensureOutputs = (): OutputOptions[] => {
         // Consumer already supplied an array of outputs (possibly empty)
-        if (Array.isArray(rollupOptions.output)) {
-          const outputs = rollupOptions.output as OutputOptions[];
+        if (Array.isArray(rolldownOptions.output)) {
+          const outputs = rolldownOptions.output as OutputOptions[];
           // Array exists but contains no entry yet; create one lazily
           if (outputs.length === 0) {
             const output: OutputOptions = {};
@@ -393,13 +393,13 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
         }
 
         // Single output object was provided; wrap it to unify processing
-        if (rollupOptions.output) {
-          return [rollupOptions.output as OutputOptions];
+        if (rolldownOptions.output) {
+          return [rolldownOptions.output as OutputOptions];
         }
 
         // No output specified at all; create placeholder so banner hook can run
         const output: OutputOptions = {};
-        rollupOptions.output = output;
+        rolldownOptions.output = output;
         return [output];
       };
 
@@ -567,68 +567,10 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
     // Generate bundle phase
     generateBundle: {
       order: 'post',
-      handler: async (outputOptions, bundle) => {
-        // Add banner to each output file if enabled
+      handler: async (_outputOptions, bundle) => {
+        // Rolldown applies JS chunk banners natively, so only patch assets that
+        // are emitted outside that path (for example declaration files).
         if (insertMetadataBanner) {
-          let chunkCount = 0;
-          for (const fileName in bundle) {
-            const output = bundle[fileName];
-            if (output.type === 'chunk') {
-              const chunk = output as OutputChunk;
-              const resolvedBanner = await resolveOutputBanner(
-                outputOptions,
-                chunk
-              );
-              if (!resolvedBanner) {
-                continue;
-              }
-              const { shebang: bannerShebang, rest: bannerRest } =
-                splitShebang(resolvedBanner);
-              const bannerCore = bannerRest.trimEnd();
-              if (!bannerCore || chunk.code.includes(bannerCore)) {
-                continue;
-              }
-              const originalCode = chunk.code;
-              let nextCode = originalCode;
-              if (bannerShebang && !nextCode.startsWith('#!')) {
-                nextCode = `${bannerShebang}${nextCode}`;
-              }
-              const bannerBlock = ensureTrailingNewline(bannerCore, '\n');
-              nextCode = insertBannerHeader(nextCode, bannerBlock);
-              if (nextCode === originalCode) {
-                continue;
-              }
-              const lineOffset =
-                nextCode.split('\n').length - originalCode.split('\n').length;
-              chunk.code = nextCode;
-              if (lineOffset > 0 && chunk.map) {
-                applyLineOffsetToSourceMapObject(chunk.map, lineOffset);
-              }
-              const mapFileName = `${fileName}.map`;
-              const mapAsset = bundle[mapFileName] as OutputAsset | undefined;
-              if (
-                lineOffset > 0 &&
-                mapAsset &&
-                mapAsset.type === 'asset' &&
-                mapAsset.source !== undefined
-              ) {
-                const adjusted = applyLineOffsetToSourceMap(
-                  mapAsset.source,
-                  lineOffset
-                );
-                if (adjusted !== undefined) {
-                  mapAsset.source = adjusted;
-                }
-              }
-              chunkCount++;
-            }
-          }
-          if (chunkCount >= 1) {
-            logger.debug(
-              `generateBundle: Banner header reinserted: ${chunkCount} file(s)`
-            );
-          }
-
           let assetCount = 0;
           for (const fileName in bundle) {
             const chunk = bundle[fileName];
