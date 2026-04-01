@@ -3781,5 +3781,122 @@ describe('CLI tests', () => {
         '~1.2.3'
       );
     }, 15000);
+
+    it('should align workspace dependency versions with resolved git version when using pnpm pack', async () => {
+      const workspaceRoot = join(tempDir, 'workspace-pnpm-git-version');
+      mkdirSync(workspaceRoot, { recursive: true });
+
+      execSync('git init', { cwd: workspaceRoot });
+      execSync('git config user.email "test@example.com"', {
+        cwd: workspaceRoot,
+      });
+      execSync('git config user.name "Test User"', { cwd: workspaceRoot });
+
+      writeFileSync(join(workspaceRoot, '.gitignore'), 'node_modules\n');
+      writeFileSync(
+        join(workspaceRoot, 'package.json'),
+        JSON.stringify(
+          {
+            name: 'workspace-root',
+            version: '1.0.0',
+            private: true,
+          },
+          null,
+          2
+        )
+      );
+      writeFileSync(
+        join(workspaceRoot, 'pnpm-workspace.yaml'),
+        ['packages:', '  - packages/*'].join('\n')
+      );
+
+      const coreDir = join(workspaceRoot, 'packages', 'core');
+      mkdirSync(coreDir, { recursive: true });
+      writeFileSync(
+        join(coreDir, 'package.json'),
+        JSON.stringify(
+          {
+            name: '@pnpm-git/core',
+            version: '0.0.1',
+          },
+          null,
+          2
+        )
+      );
+      writeFileSync(join(coreDir, 'index.js'), 'module.exports = {};');
+
+      const appDir = join(workspaceRoot, 'packages', 'app');
+      mkdirSync(appDir, { recursive: true });
+      writeFileSync(
+        join(appDir, 'package.json'),
+        JSON.stringify(
+          {
+            name: '@pnpm-git/app',
+            version: '0.0.1',
+            dependencies: {
+              '@pnpm-git/core': 'workspace:*',
+            },
+            peerDependencies: {
+              '@pnpm-git/core': 'workspace:^',
+            },
+            optionalDependencies: {
+              '@pnpm-git/core': 'workspace:~',
+            },
+          },
+          null,
+          2
+        )
+      );
+      writeFileSync(join(appDir, 'index.js'), 'module.exports = {};');
+
+      execSync('pnpm install', {
+        cwd: workspaceRoot,
+        stdio: 'ignore',
+      });
+
+      execSync('git add .', { cwd: workspaceRoot });
+      execSync('git commit -m "Initial commit"', { cwd: workspaceRoot });
+      execSync('git tag 2.0.0', { cwd: workspaceRoot });
+
+      const outputDir = join(tempDir, 'output-git-version');
+      mkdirSync(outputDir, { recursive: true });
+
+      const result = await packAssets(
+        appDir,
+        outputDir,
+        true,
+        true,
+        defaultInheritableFields,
+        undefined,
+        true,
+        '^',
+        createConsoleLogger(),
+        true,
+        'pnpm'
+      );
+
+      expect(result).toBeDefined();
+      expect(result!.metadata.version).toBe('2.0.0');
+
+      const archivePath = join(outputDir, result!.packageFileName);
+      const extractedPackageJson = await extractArchivePackageJson(
+        archivePath,
+        join(tempDir, 'extract-pnpm-git-version')
+      );
+
+      const packedManifestText = readFileSync(
+        join(tempDir, 'extract-pnpm-git-version', 'package', 'package.json'),
+        'utf-8'
+      );
+      expect(packedManifestText).not.toContain('workspace:');
+      expect(extractedPackageJson.version).toBe('2.0.0');
+      expect(extractedPackageJson.dependencies['@pnpm-git/core']).toBe('2.0.0');
+      expect(extractedPackageJson.peerDependencies['@pnpm-git/core']).toBe(
+        '^2.0.0'
+      );
+      expect(extractedPackageJson.optionalDependencies['@pnpm-git/core']).toBe(
+        '~2.0.0'
+      );
+    }, 15000);
   });
 });
