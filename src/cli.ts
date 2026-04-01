@@ -14,6 +14,7 @@ import {
   ParsedArgs,
   getComputedPackageJsonObject,
   resolveWorkspaceFilesMerge,
+  PackageManagerName,
 } from './cli-internal';
 import { getFetchGitMetadata } from './analyzer';
 import { Logger, resolvePackageMetadata } from './internal';
@@ -494,6 +495,7 @@ Arguments:
 Options:
   --pack-destination <path>     Directory to write the tarball
   --readme <path>               Replace README.md with specified file
+  --use-pnpm                    Use pnpm pack and preserve workspace protocol resolution
   --inheritable-fields <list>   Comma-separated list of fields to inherit from parent
   --no-wds                      Do not check working directory status to increase version
   --no-git-version-override     Do not override version from Git (use package.json version)
@@ -521,6 +523,9 @@ const packCommand = async (args: ParsedArgs, logger: Logger) => {
   const replacePeerDepsWildcards = !args.options['no-replace-peer-deps'];
   const peerDepsVersionPrefix =
     (args.options['peer-deps-prefix'] as string) ?? '^';
+  const packageManager: PackageManagerName = args.options['use-pnpm']
+    ? 'pnpm'
+    : 'npm';
   const verbose = args.options['verbose'] ? true : false;
 
   const targetDir = resolve(directory ?? process.cwd());
@@ -547,7 +552,8 @@ const packCommand = async (args: ParsedArgs, logger: Logger) => {
       replacePeerDepsWildcards,
       peerDepsVersionPrefix,
       logger,
-      mergeFiles
+      mergeFiles,
+      packageManager
     );
     if (result) {
       if (verbose) {
@@ -579,6 +585,7 @@ Arguments:
   directory|package.tgz         Directory to pack and publish, or existing tarball to publish
 
 Options:
+  --use-pnpm                    Use pnpm pack before publish; final publish still targets npm-compatible registries
   All npm publish options are supported, including:
   --dry-run                     Perform a dry run
   --tag <tag>                   Tag for the published version
@@ -648,6 +655,9 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
   const replacePeerDepsWildcards = !args.options['no-replace-peer-deps'];
   const peerDepsVersionPrefix =
     (args.options['peer-deps-prefix'] as string) ?? '^';
+  const packageManager: PackageManagerName = args.options['use-pnpm']
+    ? 'pnpm'
+    : 'npm';
   const verbose = args.options['verbose'] ? true : false;
 
   // Parse inheritable fields from CLI option or use defaults
@@ -665,6 +675,7 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
     } else if (
       arg === '--help' ||
       arg === '--verbose' ||
+      arg === '--use-pnpm' ||
       arg === '-h' ||
       arg === '--no-wds' ||
       arg === '--no-git-version-override' ||
@@ -703,7 +714,8 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
           replacePeerDepsWildcards,
           peerDepsVersionPrefix,
           logger,
-          mergeFiles
+          mergeFiles,
+          packageManager
         );
         if (result?.metadata) {
           if (verbose) {
@@ -751,7 +763,8 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
             replacePeerDepsWildcards,
             peerDepsVersionPrefix,
             logger,
-            mergeFiles
+            mergeFiles,
+            packageManager
           );
           if (result?.metadata) {
             if (verbose) {

@@ -617,8 +617,8 @@ packコマンドの機能:
 - ワークスペース継承をサポート（親パッケージからメタデータを継承）
 - `{name}-{version}.tgz`形式で圧縮された`.tgz`アーカイブを作成
 
-packコマンドは、内部で`npm pack`を使用して、仮のパッケージファイルを生成します。
-その後、パッケージファイルに対して`package.json`の置き換えやREADMEの変更などを行います。
+packコマンドは、デフォルトでは内部で`npm pack`を使用して仮のパッケージファイルを生成します。`--use-pnpm` を指定した場合は `pnpm pack` を使用し、pnpm の workspace protocol 解決結果をそのままパッケージ manifest に反映します。
+その後、パッケージファイルに対して`package.json`メタデータの反映やREADMEの変更などを行います。
 
 但し、パッキングを成功させるためには、必ず`version`キーを定義する必要があります。
 screw-up自身は、自動的に`version`キーに指定するバージョンを特定でき、その値を最終的なNPMパッケージファイルに反映します。
@@ -628,6 +628,7 @@ screw-up自身は、自動的に`version`キーに指定するバージョンを
 
 - `--pack-destination <path>`: アーカイブの出力ディレクトリを指定
 - `--readme <path>`: README.mdを指定したファイルで置換
+- `--use-pnpm`: `pnpm pack` を使用し、生成される tarball で workspace protocol 解決結果を保持
 - `--inheritable-fields <list>`: 親から継承するフィールドのコンマ区切りリスト（デフォルト: version,description,author,license,repository,keywords,homepage,bugs,readme,files）
 - `--no-wds`: バージョンインクリメントのワーキングディレクトリステータスチェックを無効化
 - `--no-replace-peer-deps`: `peerDependencies` の"\*"を実際のバージョンに置き換える機能を無効化
@@ -666,12 +667,14 @@ screw-up publish --dry-run --tag beta --access public
 publishコマンドの機能:
 
 - すべての`npm publish`オプションを透過的にサポート。このコマンドは、アーカイブ生成を行った後、実際の発行処理を`npm publish`を呼び出すことで実行します。
+- `--use-pnpm` 指定時はアーカイブ生成に `pnpm pack` を使用しますが、レジストリへの発行は引き続き npm 互換の publish フローで行います。
 - ディレクトリから公開（自動的にアーカイブを作成）または既存のtarballから公開可能
 - 適切なメタデータ継承でワークスペースパッケージを処理
 - packコマンドと同じパッケージ化ロジックを使用
 
 #### オプション
 
+- `--use-pnpm`: ディレクトリから tarball を作成して公開する際に `pnpm pack` を使用
 - `--inheritable-fields <list>`: 親から継承するフィールドのコンマ区切りリスト（デフォルト: version,description,author,license,repository,keywords,homepage,bugs,readme,files）
 - `--no-wds`: バージョンインクリメントのワーキングディレクトリステータスチェックを無効化
 - `--no-replace-peer-deps`: `peerDependencies` の"\*"を実際のバージョンに置き換える機能を無効化
@@ -745,10 +748,16 @@ screw-up pack --peer-deps-prefix ""
 
 この機能の特徴：
 
-- ワークスペース環境でのみ動作（`workspaces`フィールドを持つワークスペースルートが必要）
+- ワークスペース環境でのみ動作（`workspaces`フィールドまたは`pnpm-workspace.yaml`を持つワークスペースルートが必要）
 - ワークスペース兄弟パッケージ名と一致する"\*"値のみを置き換え
 - 非ワークスペース依存関係は変更されません
 - packおよびpublishコマンドでデフォルトで有効
+
+### pnpm workspace protocol
+
+pnpm ワークスペースを使う場合は、`dependencies`、`peerDependencies`、`optionalDependencies` で兄弟パッケージを `workspace:*`、`workspace:^`、`workspace:~` のように参照できます。
+
+この場合は、先に `pnpm install` を実行した上で `screw-up pack --use-pnpm` または `screw-up publish --use-pnpm` を使用してください。screw-up は pack backend として `pnpm pack` を使い、その packed manifest の依存セクションを保持するため、生成される tarball には `workspace:` ではなく npm 互換のパッケージ名とバージョン範囲が書き込まれます。
 
 ### ワークスペースフィールド継承
 

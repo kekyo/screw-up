@@ -88,6 +88,133 @@ export interface WorkspaceSibling {
   readonly path: string;
 }
 
+const collectStringArray = (value: unknown): string[] | undefined => {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const entries = value.filter(
+    (entry: unknown): entry is string => typeof entry === 'string'
+  );
+
+  return entries.length > 0 ? entries : undefined;
+};
+
+const resolveWorkspacePatternsFromPackageJson = (
+  packageJson: any
+): string[] | undefined => {
+  const directPatterns = collectStringArray(packageJson?.workspaces);
+  if (directPatterns) {
+    return directPatterns;
+  }
+
+  return collectStringArray(packageJson?.workspaces?.packages);
+};
+
+const parseYamlScalar = (value: string): string | undefined => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON5.parse(trimmed);
+    return typeof parsed === 'string' ? parsed : undefined;
+  } catch {
+    const commentIndex = trimmed.indexOf(' #');
+    const withoutComment =
+      commentIndex >= 0 ? trimmed.slice(0, commentIndex).trim() : trimmed;
+    return withoutComment || undefined;
+  }
+};
+
+const parsePnpmWorkspacePatterns = (content: string): string[] => {
+  const patterns: string[] = [];
+  const lines = content.split(/\r?\n/);
+
+  let inPackagesSection = false;
+  let packagesIndent = -1;
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\t/g, '  ');
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) {
+      continue;
+    }
+
+    const indent = line.length - line.trimStart().length;
+    if (!inPackagesSection) {
+      const match = trimmed.match(/^packages\s*:\s*(.*)$/);
+      if (!match) {
+        continue;
+      }
+
+      const remaining = match[1].trim();
+      if (remaining) {
+        const parsed = JSON5.parse(remaining);
+        if (Array.isArray(parsed)) {
+          const inlinePatterns = parsed.filter(
+            (entry: unknown): entry is string => typeof entry === 'string'
+          );
+          patterns.push(...inlinePatterns);
+        }
+        break;
+      }
+
+      inPackagesSection = true;
+      packagesIndent = indent;
+      continue;
+    }
+
+    if (indent <= packagesIndent && !trimmed.startsWith('-')) {
+      break;
+    }
+
+    const match = trimmed.match(/^-\s*(.+)$/);
+    if (!match) {
+      continue;
+    }
+
+    const pattern = parseYamlScalar(match[1]);
+    if (pattern) {
+      patterns.push(pattern);
+    }
+  }
+
+  return patterns;
+};
+
+const resolveWorkspacePatterns = async (
+  workspaceRoot: string,
+  logger: Logger
+): Promise<string[]> => {
+  try {
+    const rootPackageJsonPath = join(workspaceRoot, 'package.json');
+    if (existsSync(rootPackageJsonPath)) {
+      const content = await readFile(rootPackageJsonPath, 'utf-8');
+      const rootPackageJson = JSON5.parse(content);
+      const workspacePatterns =
+        resolveWorkspacePatternsFromPackageJson(rootPackageJson);
+      if (workspacePatterns?.length) {
+        return workspacePatterns;
+      }
+    }
+
+    const pnpmWorkspacePath = join(workspaceRoot, 'pnpm-workspace.yaml');
+    if (!existsSync(pnpmWorkspacePath)) {
+      return [];
+    }
+
+    const pnpmWorkspaceContent = await readFile(pnpmWorkspacePath, 'utf-8');
+    return parsePnpmWorkspacePatterns(pnpmWorkspaceContent);
+  } catch (error) {
+    logger.warn(
+      `Failed to resolve workspace patterns from ${workspaceRoot}: ${error}`
+    );
+    return [];
+  }
+};
+
 /**
  * Recursively flatten an object into dot-notation key-value pairs
  * @param obj - Object to flatten
@@ -172,13 +299,11 @@ export const collectWorkspaceSiblings = async (
   const siblings = new Map<string, WorkspaceSibling>();
 
   try {
-    const rootPackageJsonPath = join(workspaceRoot, 'package.json');
-    const content = await readFile(rootPackageJsonPath, 'utf-8');
-    const rootPackageJson = JSON5.parse(content);
-
-    // Get workspace patterns
-    const workspacePatterns = rootPackageJson.workspaces;
-    if (!workspacePatterns || !Array.isArray(workspacePatterns)) {
+    const workspacePatterns = await resolveWorkspacePatterns(
+      workspaceRoot,
+      logger
+    );
+    if (workspacePatterns.length <= 0) {
       return siblings;
     }
 
