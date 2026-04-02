@@ -40,6 +40,11 @@ export interface ScrewUpOptions {
    */
   insertMetadataBanner?: boolean;
   /**
+   * Fix relative declaration imports for NodeNext-compatible consumers
+   * @default true
+   */
+  fixDeclarationImportExtensions?: boolean;
+  /**
    * Array of keys to output in banner in the specified order
    * @default ['name', 'version', 'description', 'author', 'license', 'repository.url', 'git.commit.hash']
    */

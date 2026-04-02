@@ -8,6 +8,8 @@ import { existsSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { dirname, extname, join } from 'path';
 
+import { applyTextEdits, detectPreferredNewline, TextEdit } from './text-edits';
+
 // We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -295,45 +297,47 @@ const createCjsInteropHelperId = (seed: string): string => {
   return hash.slice(0, cjsInteropIdLength);
 };
 
-const buildHelperFunctionSource = (helperId: string): string => `
-globalThis.${cjsInteropGlobalFlagPrefix}${helperId} = false;
-function __resolveDefaultExport<T>(module: T | { default?: T }, isESM: boolean): T {
-  const __isInCJS =
-    typeof globalThis !== 'undefined' &&
-    (globalThis as any).${cjsInteropGlobalFlagPrefix}${helperId} === true;
-  const maybe = module as { default?: T };
-  const hasDefault = !!(maybe && typeof maybe === 'object' && 'default' in maybe);
-  const unwrapNamespaceDefault = (value: unknown): unknown => {
-    if (!value || typeof value !== 'object') {
-      return value;
-    }
-    const inner = value as any;
-    const isModule =
-      inner.__esModule === true ||
-      (typeof Symbol !== 'undefined' &&
-        (inner as any)[Symbol.toStringTag] === 'Module');
-    if (isModule && 'default' in inner) {
-      return inner.default;
-    }
-    return value;
-  };
-  const resolvedDefault = hasDefault
-    ? unwrapNamespaceDefault((maybe as any).default)
-    : undefined;
-
-  if (__isInCJS) {
-    return hasDefault ? ((resolvedDefault as T) ?? (module as T)) : (module as T);
-  }
-
-  if (isESM) {
-    if (hasDefault) {
-      return resolvedDefault as T;
-    }
-    throw new Error('Default export not found.');
-  }
-
-  return hasDefault ? ((resolvedDefault as T) ?? (module as T)) : (module as T);
-}`;
+const buildHelperFunctionSource = (helperId: string, newline: string): string =>
+  [
+    `globalThis.${cjsInteropGlobalFlagPrefix}${helperId} = false;`,
+    'function __resolveDefaultExport<T>(module: T | { default?: T }, isESM: boolean): T {',
+    '  const __isInCJS =',
+    "    typeof globalThis !== 'undefined' &&",
+    `    (globalThis as any).${cjsInteropGlobalFlagPrefix}${helperId} === true;`,
+    '  const maybe = module as { default?: T };',
+    "  const hasDefault = !!(maybe && typeof maybe === 'object' && 'default' in maybe);",
+    '  const unwrapNamespaceDefault = (value: unknown): unknown => {',
+    "    if (!value || typeof value !== 'object') {",
+    '      return value;',
+    '    }',
+    '    const inner = value as any;',
+    '    const isModule =',
+    '      inner.__esModule === true ||',
+    "      (typeof Symbol !== 'undefined' &&",
+    "        (inner as any)[Symbol.toStringTag] === 'Module');",
+    "    if (isModule && 'default' in inner) {",
+    '      return inner.default;',
+    '    }',
+    '    return value;',
+    '  };',
+    '  const resolvedDefault = hasDefault',
+    '    ? unwrapNamespaceDefault((maybe as any).default)',
+    '    : undefined;',
+    '',
+    '  if (__isInCJS) {',
+    '    return hasDefault ? ((resolvedDefault as T) ?? (module as T)) : (module as T);',
+    '  }',
+    '',
+    '  if (isESM) {',
+    '    if (hasDefault) {',
+    '      return resolvedDefault as T;',
+    '    }',
+    "    throw new Error('Default export not found.');",
+    '  }',
+    '',
+    '  return hasDefault ? ((resolvedDefault as T) ?? (module as T)) : (module as T);',
+    '}',
+  ].join(newline);
 
 export const injectCjsInteropFlag = (
   code: string
@@ -473,7 +477,7 @@ export const transformDefaultImports = async (
     getScriptKind(ts, normalizedId)
   );
 
-  const edits: Array<{ start: number; end: number; text: string }> = [];
+  const edits: TextEdit[] = [];
   let needsHelper = false;
   const helperPresent = hasResolveDefaultExport(ts, sourceFile);
   let namespaceIndex = 0;
@@ -552,8 +556,13 @@ export const transformDefaultImports = async (
     }
 
     const interopSource = namespaceName ?? defaultImportName;
+    const newline = detectPreferredNewline(
+      code,
+      statement.getStart(sourceFile),
+      statement.getEnd()
+    );
     const replacement =
-      `${replacementImports.join('\n')}\n` +
+      `${replacementImports.join(newline)}${newline}` +
       `const ${defaultName} = __resolveDefaultExport(${interopSource}, ${isESM});`;
 
     edits.push({
@@ -574,22 +583,19 @@ export const transformDefaultImports = async (
     );
     const lastImport = importStatements[importStatements.length - 1];
     if (lastImport) {
-      const newline = code.includes('\r\n') ? '\r\n' : '\n';
+      const newline = detectPreferredNewline(
+        code,
+        lastImport.getStart(sourceFile),
+        lastImport.getEnd()
+      );
       const helperId = createCjsInteropHelperId(normalizedId);
       edits.push({
         start: lastImport.getEnd(),
         end: lastImport.getEnd(),
-        text: `${newline}${buildHelperFunctionSource(helperId)}${newline}`,
+        text: `${newline}${buildHelperFunctionSource(helperId, newline)}${newline}`,
       });
     }
   }
 
-  edits.sort((a, b) => b.start - a.start);
-  let nextCode = code;
-  for (const edit of edits) {
-    nextCode =
-      nextCode.slice(0, edit.start) + edit.text + nextCode.slice(edit.end);
-  }
-
-  return { code: nextCode, changed: true };
+  return { code: applyTextEdits(code, edits), changed: true };
 };

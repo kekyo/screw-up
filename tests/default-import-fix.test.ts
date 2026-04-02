@@ -18,6 +18,15 @@ const cjsInteropGlobalFlagPrefix = '__screwUpIsInCJS_';
 const createTempRoot = () =>
   mkdtempSync(join(tmpdir(), 'screw-up-default-import-'));
 
+const hasBareLf = (value: string): boolean => {
+  for (let index = 0; index < value.length; index++) {
+    if (value[index] === '\n' && value[index - 1] !== '\r') {
+      return true;
+    }
+  }
+  return false;
+};
+
 const writePackage = (
   root: string,
   name: string,
@@ -269,6 +278,57 @@ describe('default import fix helpers', () => {
     expect(result.code).not.toContain("import Foo from 'pkg-cjs';");
     expect(result.code).not.toContain("import Bar, { baz } from 'pkg-cjs';");
     expect(result.code).not.toContain("import ESMDefault from 'pkg-esm';");
+  });
+
+  it('preserves local newline style in mixed-newline sources', async () => {
+    const root = createTempRoot();
+    const srcDir = join(root, 'src');
+    mkdirSync(srcDir, { recursive: true });
+    const importer = join(srcDir, 'index.ts');
+
+    writePackage(root, 'pkg-cjs', {
+      main: 'index.js',
+    });
+
+    const crlf = '\r\n';
+    const lf = '\n';
+    const code =
+      "import Foo from 'pkg-cjs';" +
+      crlf +
+      'const local = Foo;' +
+      lf +
+      'console.log(local);' +
+      crlf;
+
+    const ts = await import('typescript');
+    const resolveKind = createNodeModuleKindResolver();
+    const result = await transformDefaultImports(
+      ts,
+      code,
+      importer,
+      resolveKind
+    );
+
+    expect(result.changed).toBe(true);
+    expect(result.code).toContain(
+      "import __screwUpDefaultImportModule0 from 'pkg-cjs';" +
+        crlf +
+        'const Foo = __resolveDefaultExport(__screwUpDefaultImportModule0, false);'
+    );
+
+    const helperStart = result.code.indexOf(
+      `globalThis.${cjsInteropGlobalFlagPrefix}`
+    );
+    const localLineStart = result.code.indexOf('const local = Foo;');
+    expect(helperStart).toBeGreaterThan(-1);
+    expect(localLineStart).toBeGreaterThan(helperStart);
+
+    const helperBlock = result.code.slice(helperStart, localLineStart);
+    expect(hasBareLf(helperBlock)).toBe(false);
+    expect(helperBlock.includes(crlf)).toBe(true);
+    expect(result.code).toContain(
+      `const local = Foo;${lf}console.log(local);${crlf}`
+    );
   });
 
   it('injects the cjs interop flag for cjs outputs', () => {
