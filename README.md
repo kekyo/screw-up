@@ -70,6 +70,7 @@ my-awesome-library-2.1.0.tgz
 - Workspace support: Works with monorepos and automatically inherits metadata from parent packages.
 - Flexible output: Specify exactly which metadata to include and in what order.
 - TypeScript metadata generation: Can automatically generates TypeScript files with metadata constants for use in your source code.
+- Declaration import normalization: Rewrites emitted declaration imports for NodeNext-compatible package consumers and adjusts `.d.ts.map` mappings.
 - Git metadata extraction: Automatically extracts Git commit hash, tags, branches, and version information from local Git repository.
 - Supported pack/publish CLI interface: When publishing using this feature, the package is generated after applying the above processing to `package.json`.
 
@@ -334,6 +335,38 @@ The dependency kind follows Node-style resolution (`exports` with `import`/`node
 Only project source files are transformed (not `node_modules`), and type-only imports are ignored.
 
 If you need to disable this behavior, apply option with `fixDefaultImport: false`.
+
+### Declaration import fixups for published types
+
+Many projects prefer extensionless relative imports in source code and rely on bundlers to resolve them.
+However, published declaration files are consumed directly by TypeScript, and `moduleResolution: "node16"` / `"nodenext"` expect the specifier to match the final JavaScript module name.
+
+When enabled, screw-up rewrites emitted relative imports in `.d.ts`, `.d.mts`, and `.d.cts` files to the correct runtime suffix:
+
+| Declaration output | Rewritten suffix |
+| :----------------- | :--------------- |
+| `.d.ts`            | `.js`            |
+| `.d.mts`           | `.mjs`           |
+| `.d.cts`           | `.cjs`           |
+
+For example, an emitted declaration like:
+
+```typescript
+export { screwUp } from './vite-plugin';
+export type { ScrewUpOptions } from './types';
+```
+
+is normalized to:
+
+```typescript
+export { screwUp } from './vite-plugin.js';
+export type { ScrewUpOptions } from './types.js';
+```
+
+Directory-style imports are also resolved against the actual emitted declaration files, so `./nested` can become `./nested/index.js` when appropriate.
+Bare specifiers such as package names are left unchanged, and related `.d.ts.map` files are adjusted to keep generated-column mappings aligned after the rewrite.
+
+If you need to disable this behavior, apply option with `fixDeclarationImportExtensions: false`.
 
 ---
 

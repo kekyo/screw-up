@@ -6,12 +6,12 @@
 import fs from 'fs/promises';
 import git from 'isomorphic-git';
 import type { TagInfo, Version } from './analyzer';
-import type { Logger } from './internal.js';
+import type { Logger } from './internal';
 import {
   listTagsFast,
   resolveTagsBatch,
   resolveTagsBatchWithCommit,
-} from './fast-tags.js';
+} from './fast-tags';
 
 //////////////////////////////////////////////////////////////////////////////////
 

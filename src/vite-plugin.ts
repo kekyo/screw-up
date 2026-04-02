@@ -12,13 +12,18 @@ import type {
 } from 'rolldown';
 import { readFile, writeFile, readdir } from 'fs/promises';
 import { existsSync } from 'fs';
-import { join, dirname } from 'path';
+import { join, dirname, resolve } from 'path';
 import { createMutex } from 'async-primitives';
 
 import { git_commit_hash, name, version } from './generated/packageMetadata';
 import { resolvePackageMetadata, createConsoleLogger } from './internal';
 import { ScrewUpOptions, PackageMetadata } from './types';
 import { getFetchGitMetadata } from './analyzer';
+import {
+  adjustSourceMapForDeclarationEdits,
+  fixDeclarationImportSpecifiers,
+  isDeclarationFilePath,
+} from './declaration-import-fix';
 import {
   createNodeModuleKindResolver,
   injectCjsInteropFlag,
@@ -237,6 +242,7 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
     checkWorkingDirectoryStatus = true,
     alwaysOverrideVersionFromGit = true,
     insertMetadataBanner = true,
+    fixDeclarationImportExtensions = true,
   } = options;
 
   const assetFiltersRegex = assetFilters.map((filter) => new RegExp(filter));
@@ -616,59 +622,126 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
     },
     // Write bundle phase
     writeBundle: async (options) => {
-      // Handle files written by other plugins (like vite-plugin-dts) if banner insertion is enabled
-      if (!insertMetadataBanner || !options.dir) return;
+      if (!options.dir) return;
 
       try {
-        // Read all files in the output directory
         const files = await readdir(options.dir, { recursive: true });
+        const declarationFiles = new Set(
+          files
+            .filter((file) => isDeclarationFilePath(file))
+            .map((file) => resolve(options.dir!, file))
+        );
+        const ts = fixDeclarationImportExtensions
+          ? await loadTypeScript()
+          : undefined;
 
-        // Iterate over all files
-        let count = 0;
+        let bannerCount = 0;
+        let declarationCount = 0;
         for (const file of files) {
           const filePath = join(options.dir, file);
+          const isAssetTarget = assetFiltersRegex.some((filter) =>
+            filter.test(file)
+          );
+          const isDeclarationTarget =
+            fixDeclarationImportExtensions &&
+            !!ts &&
+            isDeclarationFilePath(filePath);
 
-          // Check if the file is target asset file
-          // Apply banner only to filtered assets in post-write stage
-          if (assetFiltersRegex.some((filter) => filter.test(file))) {
-            try {
-              // Read the asset file
-              const content = await readFile(filePath, 'utf-8');
-              // Append banner to the asset file if it doesn't already contain it
-              if (!content.includes(banner)) {
-                // Backfill banners onto assets emitted by other plugins as well
-                const bannerBlock = `${banner}\n`;
-                await writeFile(
-                  filePath,
-                  insertBannerHeader(content, bannerBlock)
-                );
+          if (!isAssetTarget && !isDeclarationTarget) {
+            continue;
+          }
 
+          try {
+            let content = await readFile(filePath, 'utf-8');
+            let contentChanged = false;
+            let mapLoaded = false;
+            let mapContent: string | undefined;
+            const mapPath = `${filePath}.map`;
+
+            const loadMapContent = async (): Promise<string | undefined> => {
+              if (mapLoaded) {
+                return mapContent;
+              }
+              mapLoaded = true;
+              try {
+                mapContent = await readFile(mapPath, 'utf-8');
+              } catch {
+                mapContent = undefined;
+              }
+              return mapContent;
+            };
+
+            if (
+              insertMetadataBanner &&
+              isAssetTarget &&
+              !content.includes(banner)
+            ) {
+              const bannerBlock = `${banner}\n`;
+              content = insertBannerHeader(content, bannerBlock);
+              contentChanged = true;
+
+              const currentMapContent = await loadMapContent();
+              if (currentMapContent !== undefined) {
                 const lineOffset = countInsertedLines(bannerBlock);
-                const mapPath = `${filePath}.map`;
-                try {
-                  const mapContent = await readFile(mapPath, 'utf-8');
-                  // Align existing .d.ts.map files so consumer toolchains see accurate positions
-                  const adjusted = applyLineOffsetToSourceMap(
-                    mapContent,
-                    lineOffset
+                const adjusted = applyLineOffsetToSourceMap(
+                  currentMapContent,
+                  lineOffset
+                );
+                if (adjusted !== undefined) {
+                  mapContent = adjusted;
+                }
+              }
+              bannerCount++;
+            }
+
+            if (isDeclarationTarget) {
+              const declarationResult = fixDeclarationImportSpecifiers(
+                ts!,
+                content,
+                filePath,
+                declarationFiles,
+                logger
+              );
+              if (declarationResult.changed) {
+                const currentMapContent = await loadMapContent();
+                if (currentMapContent !== undefined) {
+                  const adjusted = adjustSourceMapForDeclarationEdits(
+                    currentMapContent,
+                    content,
+                    declarationResult.edits
                   );
                   if (adjusted !== undefined) {
-                    await writeFile(mapPath, adjusted);
+                    mapContent = adjusted;
                   }
-                } catch {
-                  // Declarations without sourcemap can be safely ignored
                 }
-                count++;
+
+                content = declarationResult.code;
+                contentChanged = true;
+                declarationCount++;
               }
-            } catch (error) {
-              // Skip files that can't be read/written
             }
+
+            if (contentChanged) {
+              await writeFile(filePath, content);
+            }
+            if (mapLoaded && mapContent !== undefined) {
+              await writeFile(mapPath, mapContent);
+            }
+          } catch {
+            // Skip files that can't be read/written
           }
         }
-        if (count >= 1) {
-          logger.debug(`writeBundle: Banner header inserted: ${count} file(s)`);
+        if (bannerCount >= 1) {
+          logger.debug(
+            `writeBundle: Banner header inserted: ${bannerCount} file(s)`
+          );
         }
-      } catch (error) {
+        if (declarationCount >= 1) {
+          logger.debug(
+            `writeBundle: Declaration imports fixed: ${declarationCount} file(s)`
+          );
+        }
+      } catch {
         // Skip files that can't be read/written
       }
     },

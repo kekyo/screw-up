@@ -5,7 +5,7 @@
 
 import { readdir, readFile, stat } from 'fs/promises';
 import { isAbsolute, join } from 'path';
-import type { Logger } from './internal.js';
+import type { Logger } from './internal';
 
 //////////////////////////////////////////////////////////////////////////////////
 

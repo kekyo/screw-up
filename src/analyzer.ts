@@ -6,9 +6,9 @@
 import * as git from 'isomorphic-git';
 import fs from 'fs/promises';
 import dayjs from 'dayjs';
-import { GitMetadata } from './types.js';
-import { Logger } from './internal.js';
-import { buildCompleteTagCache } from './git-operations.js';
+import { GitMetadata } from './types';
+import { Logger } from './internal';
+import { buildCompleteTagCache } from './git-operations';
 
 //////////////////////////////////////////////////////////////////////////////////
 
