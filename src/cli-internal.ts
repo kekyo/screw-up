@@ -5,7 +5,15 @@
 
 import { dirname, isAbsolute, join, resolve } from 'path';
 import { createReadStream, existsSync, statSync } from 'fs';
-import { mkdir, mkdtemp, writeFile, copyFile, rm, readFile } from 'fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  writeFile,
+  copyFile,
+  rm,
+  readFile,
+  readdir,
+} from 'fs/promises';
 import {
   createTarPacker,
   storeReaderToFile,
@@ -34,6 +42,34 @@ import { getFetchGitMetadata } from './analyzer';
 const readPackageJsonFile = async (packageJsonPath: string): Promise<any> => {
   const content = await readFile(packageJsonPath, 'utf-8');
   return JSON5.parse(content);
+};
+
+const readGeneratedTarballPaths = async (
+  packDestDir: string
+): Promise<string[]> => {
+  const entries = await readdir(packDestDir, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.tgz'))
+    .map((entry) => join(packDestDir, entry.name))
+    .sort();
+};
+
+const resolveGeneratedTarballPath = async (packDestDir: string): Promise<string> => {
+  const tarballPaths = await readGeneratedTarballPaths(packDestDir);
+
+  if (tarballPaths.length === 1) {
+    return tarballPaths[0];
+  }
+
+  if (tarballPaths.length === 0) {
+    throw new Error(
+      `package pack did not produce a .tgz file in ${packDestDir}`
+    );
+  }
+
+  throw new Error(
+    `package pack produced multiple .tgz files in ${packDestDir}: ${tarballPaths.join(', ')}`
+  );
 };
 
 export type PackageManagerName = 'npm' | 'pnpm';
@@ -347,41 +383,6 @@ export const resolveWorkspaceFilesMerge = async (
   };
 };
 
-const readPackResultPath = (
-  packageManager: PackageManagerName,
-  packDestDir: string,
-  stdout: string
-): string => {
-  if (packageManager === 'pnpm') {
-    const parsed = JSON5.parse(stdout);
-    const packResult = Array.isArray(parsed) ? parsed[0] : parsed;
-    if (!packResult?.filename || typeof packResult.filename !== 'string') {
-      throw new Error('pnpm pack did not output a valid filename');
-    }
-
-    return isAbsolute(packResult.filename)
-      ? packResult.filename
-      : join(packDestDir, packResult.filename);
-  }
-
-  const lines = stdout.trim().split('\n');
-  const filename =
-    lines.find((line) => line.trim().endsWith('.tgz')) ||
-    lines[lines.length - 1];
-  if (!filename || !filename.trim().endsWith('.tgz')) {
-    throw new Error('npm pack did not output a valid .tgz filename');
-  }
-
-  return join(packDestDir, filename.trim());
-};
-
-/**
- * Execute package manager pack and return the generated tarball path
- * @param packageManager - Package manager to use
- * @param targetDir - Target directory to pack
- * @param packDestDir - Directory to store the generated tarball (must exist)
- * @returns Path to generated tarball
- */
 const runPack = async (
   packageManager: PackageManagerName,
   targetDir: string,
@@ -389,7 +390,13 @@ const runPack = async (
 ): Promise<string> => {
   const packArgs =
     packageManager === 'pnpm'
-      ? ['pack', '--json', '--pack-destination', packDestDir]
+      ? [
+          '--reporter=ndjson',
+          'pack',
+          '--json',
+          '--pack-destination',
+          packDestDir,
+        ]
       : ['pack', '--pack-destination', packDestDir];
 
   return new Promise((res, rej) => {
@@ -411,11 +418,7 @@ const runPack = async (
 
     packProcess.on('close', (code) => {
       if (code === 0) {
-        try {
-          res(readPackResultPath(packageManager, packDestDir, stdout.trim()));
-        } catch (error: any) {
-          rej(error);
-        }
+        resolveGeneratedTarballPath(packDestDir).then(res).catch(rej);
       } else {
         const errorMessage = `${packageManager} pack failed with exit code ${code}`;
         const fullError = stderr
