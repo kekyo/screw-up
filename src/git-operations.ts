@@ -7,6 +7,7 @@ import fs from 'fs/promises';
 import git from 'isomorphic-git';
 import type { TagInfo, Version } from './analyzer';
 import type { Logger } from './internal';
+import { resolveTagOidToCommit } from './git-ref-utils';
 import {
   listTagsFast,
   resolveTagsBatch,
@@ -57,26 +58,7 @@ export const getAllTagsWithOids = async (
 export const resolveTagToCommit = async (
   repoPath: string,
   tagOid: string
-): Promise<string> => {
-  try {
-    // Try to read as annotated tag
-    const tagObject = await git.readTag({
-      fs,
-      dir: repoPath,
-      oid: tagOid,
-    });
-
-    if (tagObject?.tag?.object) {
-      // Annotated tag - return the commit it points to
-      return tagObject.tag.object;
-    }
-  } catch {
-    // Not an annotated tag, must be lightweight
-  }
-
-  // Lightweight tag - OID is the commit
-  return tagOid;
-};
+): Promise<string> => resolveTagOidToCommit(repoPath, tagOid);
 
 /**
  * Get tag information for specific tags
