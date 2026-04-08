@@ -4,6 +4,7 @@
 // https://github.com/kekyo/screw-up/
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { existsSync } from 'fs';
 import { mkdtemp, rm, mkdir } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -169,6 +170,31 @@ describe('git-metadata', () => {
       const metadata = await getGitMetadata();
 
       // Verify: Should find the annotated tag immediately
+      expect(metadata.git.version).toBe('1.2.3');
+      expect(metadata.git.tags).toEqual(['v1.2.3']);
+      expect(metadata.git.commit.hash).toBe(commitHash);
+    });
+
+    it('should find loose annotated tag immediately on current commit without packed-refs', async () => {
+      // Setup: Create a commit with an annotated tag that remains as a loose ref
+      await testRepo.createFile('README.md', '# Test Project');
+      const commitHash = await testRepo.commit('Initial commit');
+      await testRepo.createAnnotatedTag('v1.2.3', 'Release version 1.2.3');
+
+      // Verify the repository shape matches the problematic Actions checkout case
+      expect(existsSync(join(testRepo.path, '.git', 'packed-refs'))).toBe(
+        false
+      );
+      expect(
+        existsSync(join(testRepo.path, '.git', 'refs', 'tags', 'v1.2.3'))
+      ).toBe(true);
+
+      // Test: Extract git metadata
+      const logger = createConsoleLogger();
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
+
+      // Verify: Loose annotated tags should resolve to the tagged commit
       expect(metadata.git.version).toBe('1.2.3');
       expect(metadata.git.tags).toEqual(['v1.2.3']);
       expect(metadata.git.commit.hash).toBe(commitHash);
