@@ -1982,6 +1982,51 @@ describe('CLI tests', () => {
       expect(packageJson.version).toBe('1.0.0');
     }, 10000);
 
+    it('should dump git tag version from built cli for loose annotated tags', async () => {
+      const builtCliPath = resolve(process.cwd(), 'dist', 'main.mjs');
+
+      writeFileSync(
+        join(testSourceDir, 'package.json'),
+        JSON.stringify(
+          {
+            name: 'test-package',
+            version: '0.0.1',
+            type: 'module',
+          },
+          null,
+          2
+        )
+      );
+
+      execSync('git init', { cwd: testSourceDir });
+      execSync('git config user.email "test@example.com"', {
+        cwd: testSourceDir,
+      });
+      execSync('git config user.name "Test User"', { cwd: testSourceDir });
+      execSync('git checkout -b main', { cwd: testSourceDir });
+      execSync('git add .', { cwd: testSourceDir });
+      execSync('git commit -m "Initial commit"', { cwd: testSourceDir });
+      execSync('git tag -a v1.2.3 -m "Release version 1.2.3"', {
+        cwd: testSourceDir,
+      });
+
+      expect(existsSync(join(testSourceDir, '.git', 'packed-refs'))).toBe(
+        false
+      );
+
+      const result = await runCLI('node', [
+        builtCliPath,
+        'dump',
+        testSourceDir,
+      ]);
+
+      expect(result.exitCode).toBe(0);
+      const packageJson = JSON.parse(result.stdout);
+      expect(packageJson.version).toBe('1.2.3');
+      expect(packageJson.git?.version).toBe('1.2.3');
+      expect(packageJson.git?.tags).toEqual(['v1.2.3']);
+    }, 10000);
+
     it('should show help for dump command', async () => {
       const result = await execCliMainWithLogging(['dump', '--help'], {});
 
