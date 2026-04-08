@@ -5,7 +5,7 @@
 
 import { readdir, readFile } from 'fs/promises';
 import { join } from 'path';
-import { getActualGitDir } from './git-ref-utils';
+import { getActualGitDir, resolveTagOidToCommit } from './git-ref-utils';
 import type { Logger } from './internal';
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -283,34 +283,7 @@ export const resolveTagsBatchWithCommit = async (
         try {
           const hash = await readFile(looseRefPath, 'utf-8');
           const oid = hash.trim();
-
-          // Check if this is an annotated tag by reading the object type
-          let commitOid = oid;
-          try {
-            // Use git cat-file to check object type
-            const { execSync } = require('child_process');
-            const objectType = execSync(
-              `git -C "${repoPath}" cat-file -t ${oid}`,
-              { encoding: 'utf-8' }
-            ).trim();
-
-            if (objectType === 'tag') {
-              // It's an annotated tag, extract the commit it points to
-              const tagContent = execSync(
-                `git -C "${repoPath}" cat-file -p ${oid}`,
-                { encoding: 'utf-8' }
-              );
-              const objectMatch = tagContent.match(/^object ([0-9a-f]{40})$/m);
-              if (objectMatch) {
-                commitOid = objectMatch[1];
-              }
-            }
-          } catch (error) {
-            // If git cat-file fails, assume it's a lightweight tag
-            logger.debug(
-              `[fast-tags] Could not determine object type for ${tagName}: ${error}`
-            );
-          }
+          const commitOid = await resolveTagOidToCommit(repoPath, oid);
 
           result.set(tagName, { oid, commitOid });
         } catch (error) {
