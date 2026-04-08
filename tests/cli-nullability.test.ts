@@ -251,13 +251,7 @@ describe('CLI nullability regressions', () => {
     expect(spawnMock).toHaveBeenCalledTimes(1);
     const [command, args, options] = spawnMock.mock.calls[0];
     expect(command).toBe('pnpm');
-    expect(args).toEqual([
-      '--reporter=ndjson',
-      'pack',
-      '--json',
-      '--pack-destination',
-      expect.any(String),
-    ]);
+    expect(args).toEqual(['pack', '--pack-destination', expect.any(String)]);
     const packDestDir = args[args.length - 1];
     expect(options).toMatchObject({
       cwd: targetDir,

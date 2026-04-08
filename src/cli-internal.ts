@@ -54,7 +54,9 @@ const readGeneratedTarballPaths = async (
     .sort();
 };
 
-const resolveGeneratedTarballPath = async (packDestDir: string): Promise<string> => {
+const resolveGeneratedTarballPath = async (
+  packDestDir: string
+): Promise<string> => {
   const tarballPaths = await readGeneratedTarballPaths(packDestDir);
 
   if (tarballPaths.length === 1) {
@@ -390,13 +392,7 @@ const runPack = async (
 ): Promise<string> => {
   const packArgs =
     packageManager === 'pnpm'
-      ? [
-          '--reporter=ndjson',
-          'pack',
-          '--json',
-          '--pack-destination',
-          packDestDir,
-        ]
+      ? ['pack', '--pack-destination', packDestDir]
       : ['pack', '--pack-destination', packDestDir];
 
   return new Promise((res, rej) => {
