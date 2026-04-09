@@ -4,10 +4,11 @@
 // https://github.com/kekyo/screw-up/
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { existsSync } from 'fs';
+import { existsSync, readdirSync, readFileSync } from 'fs';
 import { mkdtemp, rm, mkdir } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { execSync } from 'child_process';
 import { simpleGit } from 'simple-git';
 import { getFetchGitMetadata } from '../src/analyzer';
 import { createConsoleLogger } from '../src/internal';
@@ -110,6 +111,62 @@ class GitTestRepository {
         : [],
     };
   };
+
+  readonly repackAndPrune = async (
+    aggressive: boolean = false
+  ): Promise<void> => {
+    const repackArgs = aggressive
+      ? ['repack', '-adf', '--depth=50', '--window=250']
+      : ['repack', '-ad'];
+    await this.git.raw(repackArgs);
+    await this.git.raw(['prune-packed']);
+  };
+
+  readonly readLooseTagOid = (tagName: string): string =>
+    readFileSync(
+      join(this.path, '.git', 'refs', 'tags', tagName),
+      'utf-8'
+    ).trim();
+
+  readonly hasLooseObject = (oid: string): boolean =>
+    existsSync(
+      join(this.path, '.git', 'objects', oid.slice(0, 2), oid.slice(2))
+    );
+
+  readonly getPackedObjectInfo = async (
+    oid: string
+  ): Promise<{ type: string; isDelta: boolean } | null> => {
+    const packDir = join(this.path, '.git', 'objects', 'pack');
+    if (!existsSync(packDir)) {
+      return null;
+    }
+
+    for (const idxName of readdirSync(packDir).filter((name) =>
+      name.endsWith('.idx')
+    )) {
+      const output = execSync(
+        `git verify-pack -v ${join('.git', 'objects', 'pack', idxName)}`,
+        {
+          cwd: this.path,
+          encoding: 'utf-8',
+        }
+      );
+      const line = output
+        .split('\n')
+        .find((entry) => entry.startsWith(`${oid} `));
+      if (!line) {
+        continue;
+      }
+
+      const columns = line.trim().split(/\s+/);
+      return {
+        type: columns[1],
+        isDelta: columns.length >= 7,
+      };
+    }
+
+    return null;
+  };
 }
 
 // Helper function to create a temporary test repository
@@ -198,6 +255,93 @@ describe('git-metadata', () => {
       expect(metadata.git.version).toBe('1.2.3');
       expect(metadata.git.tags).toEqual(['v1.2.3']);
       expect(metadata.git.commit.hash).toBe(commitHash);
+    });
+
+    it('should find loose lightweight tag when commit object is packed', async () => {
+      await testRepo.createFile('README.md', '# Test Project');
+      const commitHash = await testRepo.commit('Initial commit');
+      await testRepo.createTag('v1.2.3');
+      await testRepo.repackAndPrune();
+
+      expect(
+        existsSync(join(testRepo.path, '.git', 'refs', 'tags', 'v1.2.3'))
+      ).toBe(true);
+      expect(testRepo.hasLooseObject(commitHash)).toBe(false);
+      expect(await testRepo.getPackedObjectInfo(commitHash)).toEqual({
+        type: 'commit',
+        isDelta: false,
+      });
+
+      const logger = createConsoleLogger();
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
+
+      expect(metadata.git.version).toBe('1.2.3');
+      expect(metadata.git.tags).toEqual(['v1.2.3']);
+      expect(metadata.git.commit.hash).toBe(commitHash);
+    });
+
+    it('should find loose annotated tag when tag object is packed', async () => {
+      await testRepo.createFile('README.md', '# Test Project');
+      const commitHash = await testRepo.commit('Initial commit');
+      await testRepo.createAnnotatedTag('v1.2.3', 'Release version 1.2.3');
+      const tagOid = testRepo.readLooseTagOid('v1.2.3');
+      await testRepo.repackAndPrune();
+
+      expect(
+        existsSync(join(testRepo.path, '.git', 'refs', 'tags', 'v1.2.3'))
+      ).toBe(true);
+      expect(testRepo.hasLooseObject(tagOid)).toBe(false);
+      expect(await testRepo.getPackedObjectInfo(tagOid)).toEqual({
+        type: 'tag',
+        isDelta: false,
+      });
+
+      const logger = createConsoleLogger();
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
+
+      expect(metadata.git.version).toBe('1.2.3');
+      expect(metadata.git.tags).toEqual(['v1.2.3']);
+      expect(metadata.git.commit.hash).toBe(commitHash);
+    });
+
+    it('should find loose annotated tags when tag objects are stored as pack deltas', async () => {
+      const annotatedTagNames: string[] = [];
+      const tagMessageBase = 'Release message '.repeat(400);
+      let currentCommitHash = '';
+
+      for (let index = 0; index < 25; index++) {
+        await testRepo.createFile(
+          'README.md',
+          `# Test Project\n${'release payload\n'.repeat(128)}${index}\n`
+        );
+        currentCommitHash = await testRepo.commit(`Commit ${index}`);
+
+        const tagName = `v1.2.${index}`;
+        annotatedTagNames.push(tagName);
+        await testRepo.createAnnotatedTag(tagName, `${tagMessageBase}${index}`);
+      }
+
+      await testRepo.repackAndPrune(true);
+
+      let deltaTagCount = 0;
+      for (const tagName of annotatedTagNames) {
+        const tagOid = testRepo.readLooseTagOid(tagName);
+        const packedInfo = await testRepo.getPackedObjectInfo(tagOid);
+        if (packedInfo?.type === 'tag' && packedInfo.isDelta) {
+          deltaTagCount += 1;
+        }
+      }
+      expect(deltaTagCount).toBeGreaterThan(0);
+
+      const logger = createConsoleLogger();
+      const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+      const metadata = await getGitMetadata();
+
+      expect(metadata.git.version).toBe('1.2.24');
+      expect(metadata.git.tags).toEqual(['v1.2.24']);
+      expect(metadata.git.commit.hash).toBe(currentCommitHash);
     });
 
     it('should find tag in parent commit (depth 1)', async () => {

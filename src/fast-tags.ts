@@ -5,7 +5,7 @@
 
 import { readdir, readFile } from 'fs/promises';
 import { join } from 'path';
-import { getActualGitDir, resolveTagOidToCommit } from './git-ref-utils';
+import { getActualGitDir, resolveTagOidsToCommits } from './git-ref-utils';
 import type { Logger } from './internal';
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -277,23 +277,47 @@ export const resolveTagsBatchWithCommit = async (
 
   if (remainingTags.length > 0) {
     const looseRefsStart = Date.now();
-    await Promise.all(
-      remainingTags.map(async (tagName) => {
-        const looseRefPath = join(actualGitDir, 'refs', 'tags', tagName);
-        try {
-          const hash = await readFile(looseRefPath, 'utf-8');
-          const oid = hash.trim();
-          const commitOid = await resolveTagOidToCommit(repoPath, oid);
-
-          result.set(tagName, { oid, commitOid });
-        } catch (error) {
-          // Tag doesn't exist as loose ref either
-          if ((error as any).code !== 'ENOENT') {
-            throw error;
+    const looseTagEntries = (
+      await Promise.all(
+        remainingTags.map(async (tagName) => {
+          const looseRefPath = join(actualGitDir, 'refs', 'tags', tagName);
+          try {
+            const hash = await readFile(looseRefPath, 'utf-8');
+            return {
+              tagName,
+              oid: hash.trim(),
+            };
+          } catch (error) {
+            // Tag doesn't exist as loose ref either
+            if ((error as any).code !== 'ENOENT') {
+              throw error;
+            }
+            return undefined;
           }
-        }
-      })
+        })
+      )
+    ).filter(
+      (
+        entry
+      ): entry is {
+        tagName: string;
+        oid: string;
+      } => entry !== undefined
     );
+
+    if (looseTagEntries.length > 0) {
+      const commitOids = await resolveTagOidsToCommits(
+        repoPath,
+        looseTagEntries.map((entry) => entry.oid)
+      );
+      for (const { tagName, oid } of looseTagEntries) {
+        result.set(tagName, {
+          oid,
+          commitOid: commitOids.get(oid) ?? oid,
+        });
+      }
+    }
+
     logger.debug(
       `[fast-tags] read loose refs: ${Date.now() - looseRefsStart}ms`
     );

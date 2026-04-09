@@ -5,10 +5,13 @@
 
 import * as git from 'isomorphic-git';
 import fs from 'fs/promises';
+import { createHash } from 'crypto';
 import dayjs from 'dayjs';
+import { join } from 'path';
 import { GitMetadata } from './types';
 import { Logger } from './internal';
 import { buildCompleteTagCache } from './git-operations';
+import { getActualGitDir, listTreeFiles } from './git-ref-utils';
 
 //////////////////////////////////////////////////////////////////////////////////
 
@@ -34,6 +37,7 @@ interface CommitInfo {
   date: string;
   message: string;
   parents: string[];
+  tree: string;
 }
 
 /**
@@ -218,6 +222,7 @@ const getCommit = async (
       date: new Date(commit.commit.author.timestamp * 1000).toISOString(),
       message: commit.commit.message.trim(),
       parents: commit.commit.parent || [],
+      tree: commit.commit.tree,
     };
   } catch {
     return undefined;
@@ -250,6 +255,7 @@ const getCurrentCommit = async (
       date: new Date(commit.commit.author.timestamp * 1000).toISOString(),
       message: commit.commit.message.trim(),
       parents: commit.commit.parent || [],
+      tree: commit.commit.tree,
     };
   } catch {
     return undefined;
@@ -307,134 +313,247 @@ const getRelatedBranches = async (
   }
 };
 
-/**
- * Check if the repository has modified files (following RelaxVersioner logic).
- * Checks for staged files, unstaged files, and untracked files (respecting .gitignore).
- * @param repositoryPath - Local Git repository directory
- * @returns Modified files
- */
-const isModifiedFile = ([, head, workdir, stage]: git.StatusRow): boolean => {
-  return (
-    workdir === 2 || // modified in working directory (unstaged)
-    stage === 2 || // modified in stage (staged)
-    stage === 3 || // added to stage (staged)
-    (head === 1 && workdir === 0) || // deleted from working directory
-    (head === 0 && workdir === 1) // untracked files (respecting .gitignore)
-  );
+interface GitIndexEntry {
+  path: string;
+  oid: string;
+  size: number;
+  stage: number;
+}
+
+interface ModifiedFileInfo {
+  path: string;
+  reason: 'staged' | 'worktree' | 'untracked';
+}
+
+const parseGitIndex = async (
+  gitDir: string
+): Promise<Map<string, GitIndexEntry>> => {
+  try {
+    const buffer = await fs.readFile(join(gitDir, 'index'));
+    if (buffer.subarray(0, 4).toString('ascii') !== 'DIRC') {
+      throw new Error('Unsupported git index signature');
+    }
+
+    const version = buffer.readUInt32BE(4);
+    if (version !== 2 && version !== 3) {
+      throw new Error(`Unsupported git index version: ${version}`);
+    }
+
+    const entryCount = buffer.readUInt32BE(8);
+    let offset = 12;
+    const entries = new Map<string, GitIndexEntry>();
+
+    for (let index = 0; index < entryCount; index++) {
+      const entryStart = offset;
+      const size = buffer.readUInt32BE(entryStart + 36);
+      const oid = buffer
+        .subarray(entryStart + 40, entryStart + 60)
+        .toString('hex');
+      const flags = buffer.readUInt16BE(entryStart + 60);
+      const stage = (flags >> 12) & 0x3;
+
+      offset = entryStart + 62;
+      if (version >= 3 && (flags & 0x4000) !== 0) {
+        offset += 2;
+      }
+
+      const pathEnd = buffer.indexOf(0x00, offset);
+      if (pathEnd < 0) {
+        throw new Error('Invalid git index path entry');
+      }
+
+      const path = buffer.subarray(offset, pathEnd).toString('utf-8');
+      offset = pathEnd + 1;
+      while ((offset - entryStart) % 8 !== 0) {
+        offset += 1;
+      }
+
+      entries.set(path, {
+        path,
+        oid,
+        size,
+        stage,
+      });
+    }
+
+    return entries;
+  } catch (error) {
+    if ((error as any).code === 'ENOENT') {
+      return new Map<string, GitIndexEntry>();
+    }
+    throw error;
+  }
 };
 
-const getStatusRow = async (
-  filepath: string,
-  entries: Array<git.WalkerEntry | null>
-): Promise<git.StatusRow | undefined> => {
-  const [head, workdir, stage] = entries;
-  const [headType, workdirType, stageType] = await Promise.all([
-    head ? head.type() : undefined,
-    workdir ? workdir.type() : undefined,
-    stage ? stage.type() : undefined,
-  ]);
+const listTrackedDirectories = (
+  indexEntries: Map<string, GitIndexEntry>
+): Set<string> => {
+  const directories = new Set<string>(['']);
 
-  const isBlob = [headType, workdirType, stageType].includes('blob');
-
-  if ((headType === 'tree' || headType === 'special') && !isBlob) {
-    return undefined;
-  }
-  if (headType === 'commit') {
-    return undefined;
-  }
-  if ((workdirType === 'tree' || workdirType === 'special') && !isBlob) {
-    return undefined;
-  }
-  if (stageType === 'commit') {
-    return undefined;
-  }
-  if ((stageType === 'tree' || stageType === 'special') && !isBlob) {
-    return undefined;
+  for (const path of indexEntries.keys()) {
+    const segments = path.split('/');
+    let currentPath = '';
+    for (let index = 0; index < segments.length - 1; index++) {
+      currentPath = currentPath
+        ? `${currentPath}/${segments[index]}`
+        : segments[index];
+      directories.add(currentPath);
+    }
   }
 
-  const headOid = headType === 'blob' ? await head!.oid() : undefined;
-  const stageOid = stageType === 'blob' ? await stage!.oid() : undefined;
-
-  let workdirOid: string | undefined;
-  if (headType !== 'blob' && workdirType === 'blob' && stageType !== 'blob') {
-    // Any unique marker works here as long as it differs from HEAD and STAGE.
-    workdirOid = '42';
-  } else if (workdirType === 'blob') {
-    workdirOid = await workdir!.oid();
-  }
-
-  const entry = [undefined, headOid, workdirOid, stageOid];
-  const statusValues = entry.map((value) => entry.indexOf(value));
-
-  return [
-    filepath,
-    statusValues[1] as git.StatusRow[1],
-    statusValues[2] as git.StatusRow[2],
-    statusValues[3] as git.StatusRow[3],
-  ];
+  return directories;
 };
 
-const reduceModifiedFiles = async (
-  parent: git.StatusRow | undefined,
-  children: git.StatusRow[][]
-): Promise<git.StatusRow[]> => {
-  const modifiedFiles = parent ? [parent] : [];
-  for (const child of children) {
-    modifiedFiles.push(...child);
+const listWorkingDirectoryFiles = async (
+  repositoryPath: string,
+  trackedDirectories: Set<string>,
+  relativePath: string = ''
+): Promise<string[]> => {
+  const directoryPath = relativePath
+    ? join(repositoryPath, relativePath)
+    : repositoryPath;
+  const entries = await fs.readdir(directoryPath, { withFileTypes: true });
+  const files: string[] = [];
+
+  for (const entry of entries) {
+    if (entry.name === '.git') {
+      continue;
+    }
+
+    const entryPath = relativePath
+      ? `${relativePath}/${entry.name}`
+      : entry.name;
+
+    if (entry.isDirectory()) {
+      if (!trackedDirectories.has(entryPath)) {
+        const ignored = await git.isIgnored({
+          fs,
+          dir: repositoryPath,
+          filepath: entryPath,
+        });
+        if (ignored) {
+          continue;
+        }
+      }
+
+      files.push(
+        ...(await listWorkingDirectoryFiles(
+          repositoryPath,
+          trackedDirectories,
+          entryPath
+        ))
+      );
+      continue;
+    }
+
+    if (entry.isFile() || entry.isSymbolicLink()) {
+      files.push(entryPath);
+    }
   }
-  return modifiedFiles;
+
+  return files;
 };
 
-const iterateSequentially: git.WalkerIterate = async (walk, children) => {
-  const results = [];
-  // Avoid the default unbounded Promise fan-out on large packed repositories.
-  for (const child of children) {
-    results.push(await walk(child));
-  }
-  return results;
+const calculateBlobOid = async (filePath: string): Promise<string> => {
+  const content = await fs.readFile(filePath);
+  return createHash('sha1')
+    .update(`blob ${content.length}\0`)
+    .update(content)
+    .digest('hex');
 };
 
 const getModifiedFiles = async (
-  repositoryPath: string
-): Promise<git.StatusRow[]> => {
+  repositoryPath: string,
+  headTreeOid: string
+): Promise<ModifiedFileInfo[]> => {
   try {
-    return (await git.walk({
-      fs,
-      dir: repositoryPath,
-      trees: [git.TREE({ ref: 'HEAD' }), git.WORKDIR(), git.STAGE()],
-      map: async (
-        filepath,
-        entries
-      ): Promise<git.StatusRow | null | undefined> => {
-        const [head, workdir, stage] = entries;
-        if (!head && !stage && workdir) {
-          const ignored = await git.isIgnored({
-            fs,
-            dir: repositoryPath,
-            filepath,
-          });
-          if (ignored) {
-            return null;
-          }
+    const gitDir = await getActualGitDir(repositoryPath);
+    const [headFiles, indexEntries] = await Promise.all([
+      listTreeFiles(repositoryPath, headTreeOid),
+      parseGitIndex(gitDir),
+    ]);
+    const trackedDirectories = listTrackedDirectories(indexEntries);
+    const workdirFiles = await listWorkingDirectoryFiles(
+      repositoryPath,
+      trackedDirectories
+    );
+    const modifiedFiles = new Map<string, ModifiedFileInfo>();
+
+    const rememberModifiedFile = (
+      path: string,
+      reason: ModifiedFileInfo['reason']
+    ) => {
+      if (!modifiedFiles.has(path)) {
+        modifiedFiles.set(path, { path, reason });
+      }
+    };
+
+    for (const [path, headOid] of headFiles.entries()) {
+      const indexEntry = indexEntries.get(path);
+      if (!indexEntry) {
+        rememberModifiedFile(path, 'staged');
+      } else if (indexEntry.stage !== 0 || indexEntry.oid !== headOid) {
+        rememberModifiedFile(path, 'staged');
+      }
+    }
+
+    for (const indexEntry of indexEntries.values()) {
+      if (!headFiles.has(indexEntry.path)) {
+        rememberModifiedFile(indexEntry.path, 'staged');
+      }
+
+      const absolutePath = join(repositoryPath, indexEntry.path);
+      try {
+        const stats = await fs.lstat(absolutePath);
+        if (!stats.isFile() && !stats.isSymbolicLink()) {
+          rememberModifiedFile(indexEntry.path, 'worktree');
+          continue;
         }
 
-        const statusRow = await getStatusRow(filepath, entries);
-        if (!statusRow || !isModifiedFile(statusRow)) {
-          return undefined;
+        if (indexEntry.stage !== 0) {
+          rememberModifiedFile(indexEntry.path, 'staged');
+          continue;
         }
-        return statusRow;
-      },
-      reduce: reduceModifiedFiles,
-      iterate: iterateSequentially,
-    })) as git.StatusRow[];
+
+        if (
+          indexEntry.size !== stats.size ||
+          (await calculateBlobOid(absolutePath)) !== indexEntry.oid
+        ) {
+          rememberModifiedFile(indexEntry.path, 'worktree');
+        }
+      } catch (error) {
+        if ((error as any).code === 'ENOENT') {
+          rememberModifiedFile(indexEntry.path, 'worktree');
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    const trackedPaths = new Set(indexEntries.keys());
+    for (const filepath of workdirFiles) {
+      if (trackedPaths.has(filepath)) {
+        continue;
+      }
+
+      const ignored = await git.isIgnored({
+        fs,
+        dir: repositoryPath,
+        filepath,
+      });
+      if (!ignored) {
+        rememberModifiedFile(filepath, 'untracked');
+      }
+    }
+
+    return Array.from(modifiedFiles.values());
   } catch {
     return [];
   }
 };
 
-const formatModifiedFile = (modifiedFile: git.StatusRow) => {
-  return `'${modifiedFile[0]}':${modifiedFile[1]}:${modifiedFile[2]}:${modifiedFile[3]}`;
-};
+const formatModifiedFile = (modifiedFile: ModifiedFileInfo) =>
+  `'${modifiedFile.path}':${modifiedFile.reason}`;
 
 /////////////////////////////////////////////////////////////////////////////////
 
@@ -630,7 +749,10 @@ const getGitMetadata = async (
     if (version) {
       // Check for working directory changes and increment version if needed
       if (checkWorkingDirectoryStatus) {
-        const modifiedFiles = await getModifiedFiles(gitRootPath);
+        const modifiedFiles = await getModifiedFiles(
+          gitRootPath,
+          currentCommit.tree
+        );
         if (modifiedFiles.length >= 1) {
           const newVersion = incrementLastVersionComponent(version);
           logger.debug(
