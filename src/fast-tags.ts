@@ -5,7 +5,7 @@
 
 import { readdir, readFile } from 'fs/promises';
 import { join } from 'path';
-import { getActualGitDir, resolveTagOidsToCommits } from './git-ref-utils';
+import { getCommonGitDir, resolveTagOidsToCommits } from './git-ref-utils';
 import type { Logger } from './internal';
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -83,12 +83,12 @@ const readLooseTags = async (refsTagsPath: string): Promise<string[]> => {
  * @returns Array of all tag names
  */
 export const listTagsFast = async (repoPath: string): Promise<string[]> => {
-  const actualGitDir = await getActualGitDir(repoPath);
+  const commonGitDir = await getCommonGitDir(repoPath);
 
   // Read tags from both packed-refs and loose refs
   const [packedTags, looseTags] = await Promise.all([
-    parsePackedRefs(join(actualGitDir, 'packed-refs')),
-    readLooseTags(join(actualGitDir, 'refs', 'tags')),
+    parsePackedRefs(join(commonGitDir, 'packed-refs')),
+    readLooseTags(join(commonGitDir, 'refs', 'tags')),
   ]);
 
   // Combine and deduplicate tags
@@ -108,10 +108,10 @@ export const resolveTagFast = async (
   repoPath: string,
   tagName: string
 ): Promise<string | null> => {
-  const actualGitDir = await getActualGitDir(repoPath);
+  const commonGitDir = await getCommonGitDir(repoPath);
 
   // First try loose ref
-  const looseRefPath = join(actualGitDir, 'refs', 'tags', tagName);
+  const looseRefPath = join(commonGitDir, 'refs', 'tags', tagName);
   try {
     const hash = await readFile(looseRefPath, 'utf-8');
     return hash.trim();
@@ -122,7 +122,7 @@ export const resolveTagFast = async (
   }
 
   // Then try packed-refs
-  const packedRefsPath = join(actualGitDir, 'packed-refs');
+  const packedRefsPath = join(commonGitDir, 'packed-refs');
   try {
     const content = await readFile(packedRefsPath, 'utf-8');
     const lines = content.split('\n');
@@ -165,14 +165,14 @@ export const resolveTagsBatch = async (
   tagNames: string[]
 ): Promise<Map<string, string>> => {
   const result = new Map<string, string>();
-  const actualGitDir = await getActualGitDir(repoPath);
+  const commonGitDir = await getCommonGitDir(repoPath);
 
   // Create a set for faster lookup
   const tagSet = new Set(tagNames);
 
   // First, read all packed refs in one go
   try {
-    const content = await readFile(join(actualGitDir, 'packed-refs'), 'utf-8');
+    const content = await readFile(join(commonGitDir, 'packed-refs'), 'utf-8');
     const lines = content.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
@@ -202,7 +202,7 @@ export const resolveTagsBatch = async (
 
   await Promise.all(
     remainingTags.map(async (tagName) => {
-      const looseRefPath = join(actualGitDir, 'refs', 'tags', tagName);
+      const looseRefPath = join(commonGitDir, 'refs', 'tags', tagName);
       try {
         const hash = await readFile(looseRefPath, 'utf-8');
         result.set(tagName, hash.trim());
@@ -231,7 +231,7 @@ export const resolveTagsBatchWithCommit = async (
 ): Promise<Map<string, { oid: string; commitOid: string }>> => {
   const startTime = Date.now();
   const result = new Map<string, { oid: string; commitOid: string }>();
-  const actualGitDir = await getActualGitDir(repoPath);
+  const commonGitDir = await getCommonGitDir(repoPath);
 
   // Create a set for faster lookup
   const tagSet = new Set(tagNames);
@@ -239,7 +239,7 @@ export const resolveTagsBatchWithCommit = async (
   // First, read all packed refs in one go
   const packedRefsStart = Date.now();
   try {
-    const content = await readFile(join(actualGitDir, 'packed-refs'), 'utf-8');
+    const content = await readFile(join(commonGitDir, 'packed-refs'), 'utf-8');
     const lines = content.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
@@ -280,7 +280,7 @@ export const resolveTagsBatchWithCommit = async (
     const looseTagEntries = (
       await Promise.all(
         remainingTags.map(async (tagName) => {
-          const looseRefPath = join(actualGitDir, 'refs', 'tags', tagName);
+          const looseRefPath = join(commonGitDir, 'refs', 'tags', tagName);
           try {
             const hash = await readFile(looseRefPath, 'utf-8');
             return {

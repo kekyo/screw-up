@@ -70,25 +70,85 @@ const PACKED_OBJECT_TYPE_BY_CODE = new Map<number, GitPackedObjectType>([
 //////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Resolve the actual Git directory for repositories, worktrees, and submodules.
- * @param repoPath - Repository path
- * @returns The resolved Git directory path
+ * Resolved Git directory layout for repositories and worktrees.
  */
-export const getActualGitDir = async (repoPath: string): Promise<string> => {
+export interface GitDirectoryPaths {
+  /**
+   * Worktree-specific Git directory.
+   * This is the repository `.git` directory for normal checkouts,
+   * or `.git/worktrees/<name>` for linked worktrees.
+   */
+  readonly gitDir: string;
+  /**
+   * Common Git directory that owns objects, refs, and packed-refs.
+   * This equals `gitDir` for normal checkouts.
+   */
+  readonly commonGitDir: string;
+}
+
+/**
+ * Resolve Git directory paths for repositories, worktrees, and submodules.
+ * @param repoPath - Repository path
+ * @returns The resolved Git directory paths
+ */
+export const resolveGitDirectoryPaths = async (
+  repoPath: string
+): Promise<GitDirectoryPaths> => {
   const gitDir = join(repoPath, '.git');
   const gitStat = await stat(gitDir).catch(() => null);
+  const resolvedGitDir = !gitStat?.isFile()
+    ? gitDir
+    : await (async () => {
+        const content = await readFile(gitDir, 'utf-8');
+        const match = content.match(/^gitdir:\s*(.+)$/m);
+        if (!match) {
+          return gitDir;
+        }
+        return isAbsolute(match[1]) ? match[1] : join(repoPath, match[1]);
+      })();
 
-  if (!gitStat?.isFile()) {
-    return gitDir;
-  }
+  const commondirPath = join(resolvedGitDir, 'commondir');
+  const commonGitDir = await readFile(commondirPath, 'utf-8')
+    .then((content) => {
+      const commondir = content.trim();
+      if (!commondir) {
+        return resolvedGitDir;
+      }
+      return isAbsolute(commondir)
+        ? commondir
+        : join(resolvedGitDir, commondir);
+    })
+    .catch((error: any) => {
+      if (error?.code !== 'ENOENT') {
+        throw error;
+      }
+      return resolvedGitDir;
+    });
 
-  const content = await readFile(gitDir, 'utf-8');
-  const match = content.match(/^gitdir:\s*(.+)$/m);
-  if (!match) {
-    return gitDir;
-  }
+  return {
+    gitDir: resolvedGitDir,
+    commonGitDir,
+  };
+};
 
-  return isAbsolute(match[1]) ? match[1] : join(repoPath, match[1]);
+/**
+ * Resolve the worktree-specific Git directory.
+ * @param repoPath - Repository path
+ * @returns The resolved worktree-specific Git directory path
+ */
+export const getActualGitDir = async (repoPath: string): Promise<string> => {
+  const paths = await resolveGitDirectoryPaths(repoPath);
+  return paths.gitDir;
+};
+
+/**
+ * Resolve the common Git directory used for refs and objects.
+ * @param repoPath - Repository path
+ * @returns The resolved common Git directory path
+ */
+export const getCommonGitDir = async (repoPath: string): Promise<string> => {
+  const paths = await resolveGitDirectoryPaths(repoPath);
+  return paths.commonGitDir;
 };
 
 const readFixedRange = async (
@@ -430,13 +490,13 @@ const parseTreeEntries = (treeContent: Buffer): GitTreeEntry[] => {
 const createGitObjectResolver = async (
   repoPath: string
 ): Promise<GitObjectResolver> => {
-  const actualGitDir = await getActualGitDir(repoPath);
+  const commonGitDir = await getCommonGitDir(repoPath);
   const resolvedObjects = new Map<string, Promise<GitResolvedObject>>();
   let packStorePromise: Promise<GitPackStore> | undefined;
 
   const getPackStore = async (): Promise<GitPackStore> => {
     if (!packStorePromise) {
-      packStorePromise = loadPackStore(actualGitDir);
+      packStorePromise = loadPackStore(commonGitDir);
     }
     return packStorePromise;
   };
@@ -511,7 +571,7 @@ const createGitObjectResolver = async (
     }
 
     const objectPromise = (async (): Promise<GitResolvedObject> => {
-      const looseObject = await readLooseObject(actualGitDir, oid);
+      const looseObject = await readLooseObject(commonGitDir, oid);
       if (looseObject) {
         return looseObject;
       }
