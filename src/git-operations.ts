@@ -7,7 +7,7 @@ import fs from 'fs/promises';
 import git from 'isomorphic-git';
 import type { TagInfo, Version } from './analyzer';
 import type { Logger } from './internal';
-import { resolveTagOidToCommit } from './git-ref-utils';
+import { getCommonGitDir, resolveTagOidToCommit } from './git-ref-utils';
 import {
   listTagsFast,
   resolveTagsBatch,
@@ -177,9 +177,11 @@ export const hasTagMoved = async (
   cachedCommit: string
 ): Promise<boolean> => {
   try {
+    const gitdir = await getCommonGitDir(repoPath);
     const oid = await git.resolveRef({
       fs,
       dir: repoPath,
+      gitdir,
       ref: `refs/tags/${tagName}`,
     });
 

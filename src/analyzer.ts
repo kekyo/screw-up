@@ -11,7 +11,11 @@ import { join } from 'path';
 import { GitMetadata } from './types';
 import { Logger } from './internal';
 import { buildCompleteTagCache } from './git-operations';
-import { getActualGitDir, listTreeFiles } from './git-ref-utils';
+import {
+  getActualGitDir,
+  getCommonGitDir,
+  listTreeFiles,
+} from './git-ref-utils';
 
 //////////////////////////////////////////////////////////////////////////////////
 
@@ -38,6 +42,11 @@ interface CommitInfo {
   message: string;
   parents: string[];
   tree: string;
+}
+
+interface GitReadContext {
+  dir: string;
+  gitdir: string;
 }
 
 /**
@@ -204,17 +213,34 @@ const formatVersion = (version: Version): string => {
 /////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Get a commit by hash
+ * Build a Git read context that can operate correctly inside worktrees.
  * @param repositoryPath - Local Git repository directory
+ * @returns The resolved Git read context
+ */
+const createGitReadContext = async (
+  repositoryPath: string
+): Promise<GitReadContext> => ({
+  dir: repositoryPath,
+  gitdir: await getCommonGitDir(repositoryPath),
+});
+
+/**
+ * Get a commit by hash
+ * @param context - Git read context
  * @param hash - The hash of the commit
  * @returns The commit or undefined if the commit is not found
  */
 const getCommit = async (
-  repositoryPath: string,
+  context: GitReadContext,
   hash: string
 ): Promise<CommitInfo | undefined> => {
   try {
-    const commit = await git.readCommit({ fs, dir: repositoryPath, oid: hash });
+    const commit = await git.readCommit({
+      fs,
+      dir: context.dir,
+      gitdir: context.gitdir,
+      oid: hash,
+    });
 
     return {
       hash: commit.oid,
@@ -231,21 +257,22 @@ const getCommit = async (
 
 /**
  * Get the current commit
- * @param repositoryPath - Local Git repository directory
+ * @param context - Git read context
  * @returns The current commit or undefined if the current commit is not found
  */
 const getCurrentCommit = async (
-  repositoryPath: string
+  context: GitReadContext
 ): Promise<CommitInfo | undefined> => {
   try {
     const currentOid = await git.resolveRef({
       fs,
-      dir: repositoryPath,
+      dir: context.dir,
       ref: 'HEAD',
     });
     const commit = await git.readCommit({
       fs,
-      dir: repositoryPath,
+      dir: context.dir,
+      gitdir: context.gitdir,
       oid: currentOid,
     });
 
@@ -279,16 +306,20 @@ const getRelatedTagsFromMap = (
 
 /**
  * Get the commit related branch name.
- * @param repositoryPath - Local Git repository directory
+ * @param context - Git read context
  * @param commitHash - The hash of the commit
  * @returns The commit related branch name or undefined if not found
  */
 const getRelatedBranches = async (
-  repositoryPath: string,
+  context: GitReadContext,
   commitHash: string
 ): Promise<string[]> => {
   try {
-    const branches = await git.listBranches({ fs, dir: repositoryPath });
+    const branches = await git.listBranches({
+      fs,
+      dir: context.dir,
+      gitdir: context.gitdir,
+    });
     const relatedBranches: string[] = [];
 
     for (const branch of branches) {
@@ -296,7 +327,8 @@ const getRelatedBranches = async (
         // Check if the branch HEAD points to the specified commit
         const branchOid = await git.resolveRef({
           fs,
-          dir: repositoryPath,
+          dir: context.dir,
+          gitdir: context.gitdir,
           ref: branch,
         });
         if (branchOid === commitHash) {
@@ -574,7 +606,7 @@ interface ScheduledCommit {
  * @returns The version or undefined if no version is found
  */
 const lookupVersionLabelRecursive = async (
-  cwd: string,
+  context: GitReadContext,
   commit: CommitInfo,
   reachedCommits: Map<string, Version>,
   commitToTags: Map<string, TagInfo[]>
@@ -615,13 +647,14 @@ const lookupVersionLabelRecursive = async (
     try {
       const commitObj = await git.readCommit({
         fs,
-        dir: cwd,
+        dir: context.dir,
+        gitdir: context.gitdir,
         oid: currentCommit.hash,
       });
       const parentHashes = commitObj.commit.parent || [];
       parentCommits = (
         await Promise.all(
-          parentHashes.map((parentHash) => getCommit(cwd, parentHash))
+          parentHashes.map((parentHash) => getCommit(context, parentHash))
         )
       ).filter((ci) => ci !== undefined);
     } catch {
@@ -654,7 +687,7 @@ const lookupVersionLabelRecursive = async (
       // Check alternate parent commits (feature branches)
       for (let index = 1; index < parents.length; index++) {
         const alternateParentVersion = await lookupVersionLabelRecursive(
-          cwd,
+          context,
           parents[index],
           reachedCommits,
           commitToTags
@@ -706,16 +739,38 @@ const getGitMetadata = async (
     return metadata;
   }
 
+  let gitContext: GitReadContext;
   try {
-    // Get current commit
-    const currentCommit = await getCurrentCommit(gitRootPath);
-    if (!currentCommit) {
-      logger.debug(
-        `[screw-up] Total getGitMetadata: ${Date.now() - startTime}ms`
-      );
-      return metadata;
-    }
+    gitContext = await createGitReadContext(gitRootPath);
+  } catch (error) {
+    logger.warn(`Failed to resolve git metadata context: ${error}`);
+    logger.debug(
+      `[screw-up] Total getGitMetadata: ${Date.now() - startTime}ms`
+    );
+    return metadata;
+  }
 
+  const currentCommit = await getCurrentCommit(gitContext);
+  if (!currentCommit) {
+    logger.debug(
+      `[screw-up] Total getGitMetadata: ${Date.now() - startTime}ms`
+    );
+    return metadata;
+  }
+
+  const gitMetadata: GitMetadata = {
+    tags: [],
+    branches: [],
+    commit: {
+      hash: currentCommit.hash,
+      shortHash: currentCommit.shortHash,
+      date: dayjs(currentCommit.date).format('YYYY-MM-DDTHH:mm:ssZ'),
+      message: currentCommit.message,
+    },
+  };
+  metadata.git = gitMetadata;
+
+  try {
     // Build tag map directly
     const buildStart = Date.now();
     const commitToTags = await buildCompleteTagCache(
@@ -736,15 +791,11 @@ const getGitMetadata = async (
 
     // Lookup version
     let version = await lookupVersionLabelRecursive(
-      gitRootPath,
+      gitContext,
       currentCommit,
       reachedCommits,
       commitToTags
     );
-
-    // Set git metadata into 'git' key
-    const gitMetadata: GitMetadata = { tags: [], branches: [] };
-    metadata.git = gitMetadata;
 
     if (version) {
       // Check for working directory changes and increment version if needed
@@ -767,27 +818,20 @@ const getGitMetadata = async (
       metadata.version = gitVersion; // Fallback default version metadata
     }
 
-    // Set commit information
-    gitMetadata.commit = {
-      hash: currentCommit.hash,
-      shortHash: currentCommit.shortHash,
-      date: dayjs(currentCommit.date).format('YYYY-MM-DDTHH:mm:ssZ'),
-      message: currentCommit.message,
-    };
-
     // Try to find the actual tag name if it exists
     const relatedTags = getRelatedTagsFromMap(commitToTags, currentCommit.hash);
     gitMetadata.tags = relatedTags.map((tag) => tag.name);
+  } catch (error) {
+    logger.warn(`Failed to resolve git versioning metadata: ${error}`);
+  }
 
-    // Get branch information
-    const relatedBranches = await getRelatedBranches(
-      gitRootPath,
+  try {
+    gitMetadata.branches = await getRelatedBranches(
+      gitContext,
       currentCommit.hash
     );
-    gitMetadata.branches = relatedBranches;
   } catch (error) {
-    // If any error occurs, return empty metadata
-    logger.warn(`Failed to extract git metadata: ${error}`);
+    logger.warn(`Failed to resolve git branch metadata: ${error}`);
   }
 
   logger.debug(`[screw-up] Total getGitMetadata: ${Date.now() - startTime}ms`);
