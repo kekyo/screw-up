@@ -45,7 +45,7 @@
   },
   "dependencies": {
     "@jridgewell/sourcemap-codec": ">=1.5.0",
-    "async-primitives": ">=1.5.0",
+    "async-primitives": ">=1.7.0",
     "dayjs": ">=1.11.0",
     "glob": ">=11.0.0",
     "isomorphic-git": ">=1.30.0",
@@ -58,7 +58,7 @@
   },
   "devDependencies": {
     "@types/node": ">=20.0.0",
-    "prettier-max": ">=1.14.0",
+    "prettier-max": ">=1.16.0",
     "simple-git": ">=3.0.0",
     "tar": ">=7.4.0",
     "unplugin-dts": ">=1.0.0-beta.6",
