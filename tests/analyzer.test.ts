@@ -5,7 +5,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { existsSync, readdirSync, readFileSync } from 'fs';
-import { mkdtemp, rm, mkdir } from 'fs/promises';
+import { mkdtemp, rm, mkdir, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { execSync } from 'child_process';
@@ -955,6 +955,39 @@ describe('git-metadata', () => {
         );
       }
     );
+
+    it('should not increment version for a clean submodule', async () => {
+      const childPath = await mkdtemp(join(tmpdir(), 'git-submodule-child-'));
+      try {
+        const childGit = simpleGit(childPath);
+        await childGit.init();
+        await childGit.addConfig('user.name', 'Test User');
+        await childGit.addConfig('user.email', 'test@example.com');
+        await childGit.checkoutLocalBranch('main');
+        await writeFile(join(childPath, 'child.txt'), 'child content');
+        await childGit.add('.');
+        await childGit.commit('Initial child commit');
+
+        await testRepo.createFile('README.md', '# Test Project');
+        await testRepo.commit('Initial commit');
+        execSync(
+          `git -c protocol.file.allow=always submodule add ${JSON.stringify(childPath)} deps/child`,
+          {
+            cwd: testRepo.path,
+          }
+        );
+        await testRepo.commit('Add submodule');
+        await testRepo.createTag('v1.0.0');
+
+        const logger = createConsoleLogger();
+        const getGitMetadata = getFetchGitMetadata(testRepo.path, true, logger);
+        const metadata = await getGitMetadata();
+
+        expect(metadata.git.version).toBe('1.0.0');
+      } finally {
+        await rm(childPath, { recursive: true, force: true });
+      }
+    });
 
     it('should detect staged additions', async () => {
       // Setup: Create repository with a tagged commit

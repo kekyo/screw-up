@@ -348,6 +348,7 @@ const getRelatedBranches = async (
 interface GitIndexEntry {
   path: string;
   oid: string;
+  mode: number;
   size: number;
   stage: number;
 }
@@ -356,6 +357,12 @@ interface ModifiedFileInfo {
   path: string;
   reason: 'staged' | 'worktree' | 'untracked';
 }
+
+const GITLINK_INDEX_MODE = 0o160000;
+const INDEX_MODE_TYPE_MASK = 0o170000;
+
+const isGitLinkIndexEntry = (entry: GitIndexEntry): boolean =>
+  (entry.mode & INDEX_MODE_TYPE_MASK) === GITLINK_INDEX_MODE;
 
 const parseGitIndex = async (
   gitDir: string
@@ -377,6 +384,7 @@ const parseGitIndex = async (
 
     for (let index = 0; index < entryCount; index++) {
       const entryStart = offset;
+      const mode = buffer.readUInt32BE(entryStart + 24);
       const size = buffer.readUInt32BE(entryStart + 36);
       const oid = buffer
         .subarray(entryStart + 40, entryStart + 60)
@@ -403,6 +411,7 @@ const parseGitIndex = async (
       entries.set(path, {
         path,
         oid,
+        mode,
         size,
         stage,
       });
@@ -439,6 +448,7 @@ const listTrackedDirectories = (
 const listWorkingDirectoryFiles = async (
   repositoryPath: string,
   trackedDirectories: Set<string>,
+  excludedDirectories: Set<string>,
   relativePath: string = ''
 ): Promise<string[]> => {
   const directoryPath = relativePath
@@ -457,6 +467,10 @@ const listWorkingDirectoryFiles = async (
       : entry.name;
 
     if (entry.isDirectory()) {
+      if (excludedDirectories.has(entryPath)) {
+        continue;
+      }
+
       if (!trackedDirectories.has(entryPath)) {
         const ignored = await git.isIgnored({
           fs,
@@ -472,6 +486,7 @@ const listWorkingDirectoryFiles = async (
         ...(await listWorkingDirectoryFiles(
           repositoryPath,
           trackedDirectories,
+          excludedDirectories,
           entryPath
         ))
       );
@@ -505,9 +520,15 @@ const getModifiedFiles = async (
       parseGitIndex(gitDir),
     ]);
     const trackedDirectories = listTrackedDirectories(indexEntries);
+    const gitLinkPaths = new Set(
+      Array.from(indexEntries.values())
+        .filter(isGitLinkIndexEntry)
+        .map((entry) => entry.path)
+    );
     const workdirFiles = await listWorkingDirectoryFiles(
       repositoryPath,
-      trackedDirectories
+      trackedDirectories,
+      gitLinkPaths
     );
     const modifiedFiles = new Map<string, ModifiedFileInfo>();
 
@@ -537,6 +558,13 @@ const getModifiedFiles = async (
       const absolutePath = join(repositoryPath, indexEntry.path);
       try {
         const stats = await fs.lstat(absolutePath);
+        if (isGitLinkIndexEntry(indexEntry)) {
+          if (indexEntry.stage !== 0) {
+            rememberModifiedFile(indexEntry.path, 'staged');
+          }
+          continue;
+        }
+
         if (!stats.isFile() && !stats.isSymbolicLink()) {
           rememberModifiedFile(indexEntry.path, 'worktree');
           continue;
