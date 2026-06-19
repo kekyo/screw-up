@@ -719,17 +719,15 @@ const collectTreeFiles = async (
       await collectTreeFiles(resolver, entry.oid, path, files);
       continue;
     }
-    if (entry.mode !== '160000') {
-      files.set(path, entry.oid);
-    }
+    files.set(path, entry.oid);
   }
 };
 
 /**
- * Collect all tracked file blob OIDs under the specified tree.
+ * Collect all tracked file and submodule OIDs under the specified tree.
  * @param repoPath - Repository path
  * @param treeOid - Tree object OID
- * @returns Map of repository-relative file path to blob OID
+ * @returns Map of repository-relative file path to blob or submodule OID
  */
 export const listTreeFiles = async (
   repoPath: string,

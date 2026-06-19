@@ -23,6 +23,13 @@ import {
   generateMetadataFileContent,
   writeFileIfChanged,
 } from './metadata-file';
+import {
+  author,
+  git_commit_hash,
+  license,
+  repository_url,
+  version,
+} from './generated/packageMetadata';
 
 // We use async I/O except 'existsSync', because 'exists' will throw an error if the file does not exist.
 
@@ -822,8 +829,6 @@ const publishCommand = async (args: ParsedArgs, logger: Logger) => {
 //////////////////////////////////////////////////////////////////////////////////
 
 const showHelp = async () => {
-  const { author, license, repository_url, version, git_commit_hash } =
-    await import('./generated/packageMetadata.js');
   console.info(`screw-up [${version}-${git_commit_hash}]
 Easy package metadata inserter CLI
 Copyright (c) ${author}
