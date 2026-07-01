@@ -439,6 +439,9 @@ screw-up metadata
 # Dump how `package.json` is resolved (JSON)
 screw-up dump
 
+# Format direct template text with package metadata placeholders
+screw-up format -e "{name}@{version}"
+
 # Format a template with package metadata placeholders
 screw-up format -i ./template.txt ./output.txt
 
@@ -585,6 +588,9 @@ Therefore, it might be easier to handle than processing screw-up output with jq:
 # Format stdin template and print to stdout
 screw-up format
 
+# Format direct template text and print to stdout
+screw-up format -e "{version}"
+
 # Format a file and write the result to another file
 screw-up format -i ./template.txt ./output.txt
 
@@ -594,10 +600,11 @@ screw-up format -i ./template.txt -b "#{,}#"
 
 Placeholders use `{field}` by default. Dot notation lets you reach nested values such as `{repository.url}` or `{git.commit.hash}`.
 
-Input comes from stdin unless `-i/--input` is provided, and output always goes to stdout; if you pass an output path, the formatted text is also written there.
+Input comes from `-e/--expression` when provided. Otherwise it comes from stdin unless `-i/--input` is provided. `-e/--expression` and `-i/--input` cannot be used together. Output always goes to stdout; if you pass an output path, the formatted text is also written there.
 
 #### Options
 
+- `-e, --expression <text>`: Template text to format directly
 - `-i, --input <path>`: Template file to format (defaults to stdin)
 - `-b, --bracket <open,close>`: Change placeholder brackets (default `{,}`)
 - `--inheritable-fields <list>`: Comma-separated list of fields to inherit from parent (default: version,description,author,license,repository,keywords,homepage,bugs,readme,files)

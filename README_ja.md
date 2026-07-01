@@ -439,6 +439,9 @@ screw-up metadata
 # `package.json`がどのように解決されるのかをダンプ (JSON)
 screw-up dump
 
+# メタデータプレースホルダーを使って直接指定したテンプレートを整形
+screw-up format -e "{name}@{version}"
+
 # メタデータプレースホルダーを使ってテンプレートを整形
 screw-up format -i ./template.txt ./output.txt
 
@@ -585,6 +588,9 @@ screw-up dump -f | jq -r '
 # 標準入力を整形して標準出力に出力
 screw-up format
 
+# 直接指定したテンプレート文字列を整形して標準出力に出力
+screw-up format -e "{version}"
+
 # ファイルを整形し、別のファイルに書き出し
 screw-up format -i ./template.txt ./output.txt
 
@@ -594,10 +600,11 @@ screw-up format -i ./template.txt -b "#{,}#"
 
 プレースホルダーはデフォルトで`{フィールド名}`です。ドット区切りで`{repository.url}`や`{git.commit.hash}`のようにネストした値にもアクセスできます。
 
-入力は`-i/--input`未指定なら標準入力、出力は常に標準出力で、位置引数を指定するとそのファイルにも書き込みます。
+入力は`-e/--expression`指定時はその文字列、未指定なら`-i/--input`のファイル、どちらも未指定なら標準入力です。`-e/--expression`と`-i/--input`は同時に指定できません。出力は常に標準出力で、位置引数を指定するとそのファイルにも書き込みます。
 
 #### オプション
 
+- `-e, --expression <text>`: 直接整形するテンプレート文字列
 - `-i, --input <path>`: 整形するテンプレートファイル（デフォルトは標準入力）
 - `-b, --bracket <open,close>`: プレースホルダーのブラケットを変更（デフォルト `{,}`）
 - `--inheritable-fields <list>`: 親から継承するフィールドのコンマ区切りリスト（デフォルト: version,description,author,license,repository,keywords,homepage,bugs,readme,files）
