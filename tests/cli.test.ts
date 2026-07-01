@@ -100,10 +100,17 @@ describe('CLI tests', () => {
   const runCLI = (
     command: string,
     args: string[]
+  ): Promise<{ stdout: string; stderr: string; exitCode: number }> =>
+    runCLIFromDirectory(command, args, tempDir);
+
+  const runCLIFromDirectory = (
+    command: string,
+    args: string[],
+    cwd: string
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> => {
     return new Promise((resolve) => {
       const child = spawn(command, args, {
-        cwd: tempDir,
+        cwd,
         env: { ...process.env },
       });
 
@@ -117,6 +124,8 @@ describe('CLI tests', () => {
       child.stderr?.on('data', (data) => {
         stderr += data.toString();
       });
+
+      child.stdin?.end();
 
       child.on('close', (code) => {
         resolve({ stdout, stderr, exitCode: code || 0 });
@@ -2371,6 +2380,20 @@ describe('CLI tests', () => {
   //////////////////////////////////////////////////////////////////////////////////
 
   describe('CLI format command tests', () => {
+    it('should format placeholders from direct expression to stdout', async () => {
+      const builtCliPath = resolve(process.cwd(), 'dist', 'main.mjs');
+
+      const result = await runCLIFromDirectory(
+        'node',
+        [builtCliPath, 'format', '-e', 'Package: {name} / Version: {version}'],
+        testSourceDir
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(result.stdout).toBe('Package: test-package / Version: 1.0.0');
+    });
+
     it('should format placeholders from input file to stdout', async () => {
       const templatePath = join(testSourceDir, 'template.txt');
       writeFileSync(templatePath, 'Package: {name}\nVersion: {version}\n');
@@ -2443,6 +2466,55 @@ describe('CLI tests', () => {
       );
 
       expect(result).toBe('Name test-package / Version 1.0.0');
+    });
+
+    it('should write formatted direct expression with custom brackets to file', async () => {
+      const builtCliPath = resolve(process.cwd(), 'dist', 'main.mjs');
+      const outputPath = join(testSourceDir, 'formatted-expression.txt');
+
+      const result = await runCLIFromDirectory(
+        'node',
+        [
+          builtCliPath,
+          'format',
+          '--expression',
+          'Name #{name}#',
+          '-b',
+          '#{,}#',
+          outputPath,
+        ],
+        testSourceDir
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(result.stdout).toBe('Name test-package');
+      expect(readFileSync(outputPath, 'utf-8')).toBe('Name test-package');
+    });
+
+    it('should reject direct expression and input file together', async () => {
+      const templatePath = join(testSourceDir, 'template-conflict.txt');
+      writeFileSync(templatePath, 'Version: {version}');
+
+      try {
+        await execCliMain(['format', '-e', '{version}', '-i', templatePath], {
+          cwd: testSourceDir,
+        });
+        throw new Error('Expected format input conflict to fail.');
+      } catch (error: any) {
+        expect(error.status).toBe(1);
+        expect(error.message).toContain(
+          'format: Specify only one input source: -e/--expression or -i/--input.'
+        );
+      }
+    });
+
+    it('should show direct expression option in format help', async () => {
+      const result = await execCliMainWithLogging(['format', '--help'], {});
+
+      expect(result.info).toContain(
+        '-e, --expression <text>       Input template text directly'
+      );
     });
   });
 

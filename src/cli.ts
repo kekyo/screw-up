@@ -171,6 +171,7 @@ Arguments:
   output                        Optional output file path (default: stdout)
 
 Options:
+  -e, --expression <text>       Input template text directly
   -i, --input <path>            Input template file (default: stdin)
   -b, --bracket <open,close>    Placeholder brackets (default: {,})
   --inheritable-fields <list>   Comma-separated list of fields to inherit from parent
@@ -212,6 +213,8 @@ const formatCommand = async (args: ParsedArgs, logger: Logger) => {
   const outputPath = args.positional[0];
   const inputPathOption =
     (args.options['input'] as string) ?? (args.options['i'] as string);
+  const expressionOption =
+    (args.options['expression'] as string) ?? (args.options['e'] as string);
   const bracketOption =
     (args.options['bracket'] as string) ?? (args.options['b'] as string);
   const inheritableFieldsOption = args.options['inheritable-fields'] as string;
@@ -219,6 +222,17 @@ const formatCommand = async (args: ParsedArgs, logger: Logger) => {
   const checkWorkingDirectoryStatus = args.options['no-wds'] ? false : true;
   const ignorePackageJsonNotExist =
     args.options['force'] || args.options['f'] ? true : false;
+  const inputPath =
+    typeof inputPathOption === 'string' ? inputPathOption : undefined;
+  const expression =
+    typeof expressionOption === 'string' ? expressionOption : undefined;
+
+  if (inputPath !== undefined && expression !== undefined) {
+    logger.error(
+      'format: Specify only one input source: -e/--expression or -i/--input.'
+    );
+    return 1;
+  }
 
   const bracket = parseBracketOption(
     typeof bracketOption === 'string' ? bracketOption : undefined
@@ -268,9 +282,7 @@ const formatCommand = async (args: ParsedArgs, logger: Logger) => {
       return 1;
     }
 
-    const inputText = await readInputText(
-      typeof inputPathOption === 'string' ? inputPathOption : undefined
-    );
+    const inputText = expression ?? (await readInputText(inputPath));
 
     const formattedText = replacePlaceholders(
       inputText,
@@ -870,7 +882,18 @@ const argOptionMap = new Map([
       'peer-deps-prefix',
     ]),
   ],
-  ['format', new Set(['input', 'i', 'bracket', 'b', 'inheritable-fields'])],
+  [
+    'format',
+    new Set([
+      'expression',
+      'e',
+      'input',
+      'i',
+      'bracket',
+      'b',
+      'inheritable-fields',
+    ]),
+  ],
   ['publish', new Set(['inheritable-fields', 'peer-deps-prefix'])],
 ]);
 
