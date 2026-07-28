@@ -3,13 +3,32 @@
 // Under MIT.
 // https://github.com/kekyo/screw-up/
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { existsSync, readdirSync, readFileSync } from 'fs';
 import { mkdtemp, rm, mkdir, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { execSync } from 'child_process';
 import { simpleGit } from 'simple-git';
+
+const { readCommitCaches } = vi.hoisted(() => ({
+  readCommitCaches: [] as Array<object | undefined>,
+}));
+
+vi.mock('isomorphic-git', async () => {
+  const actual =
+    await vi.importActual<typeof import('isomorphic-git')>('isomorphic-git');
+  return {
+    ...actual,
+    readCommit: async (
+      options: Parameters<typeof actual.readCommit>[0]
+    ): Promise<Awaited<ReturnType<typeof actual.readCommit>>> => {
+      readCommitCaches.push(options.cache);
+      return await actual.readCommit(options);
+    },
+  };
+});
+
 import { getFetchGitMetadata } from '../src/analyzer';
 import { createConsoleLogger } from '../src/internal';
 
@@ -279,6 +298,57 @@ describe('git-metadata', () => {
       expect(metadata.git.version).toBe('1.2.3');
       expect(metadata.git.tags).toEqual(['v1.2.3']);
       expect(metadata.git.commit.hash).toBe(commitHash);
+    });
+
+    it('should reuse a Git cache only within a single metadata analysis', async () => {
+      await testRepo.createFile('README.md', '# Test Project');
+      await testRepo.commit('Initial commit');
+      await testRepo.createTag('v1.2.3');
+
+      await testRepo.createFile('file1.txt', 'content1');
+      await testRepo.commit('Add file1');
+
+      await testRepo.createFile('file2.txt', 'content2');
+      const currentCommitHash = await testRepo.commit('Add file2');
+      await testRepo.repackAndPrune();
+
+      expect(testRepo.hasLooseObject(currentCommitHash)).toBe(false);
+
+      const logger = createConsoleLogger();
+      readCommitCaches.length = 0;
+      const firstMetadata = await getFetchGitMetadata(
+        testRepo.path,
+        false,
+        logger
+      )();
+      const firstAnalysisCaches = [...readCommitCaches];
+
+      expect(firstMetadata.git.version).toBe('1.2.5');
+      expect(firstMetadata.git.tags).toEqual([]);
+      expect(firstMetadata.git.commit.hash).toBe(currentCommitHash);
+      expect(firstAnalysisCaches.length).toBeGreaterThan(0);
+      expect(firstAnalysisCaches.every((cache) => cache !== undefined)).toBe(
+        true
+      );
+      expect(new Set(firstAnalysisCaches).size).toBe(1);
+
+      readCommitCaches.length = 0;
+      const secondMetadata = await getFetchGitMetadata(
+        testRepo.path,
+        false,
+        logger
+      )();
+      const secondAnalysisCaches = [...readCommitCaches];
+
+      expect(secondMetadata.git.version).toBe('1.2.5');
+      expect(secondMetadata.git.tags).toEqual([]);
+      expect(secondMetadata.git.commit.hash).toBe(currentCommitHash);
+      expect(secondAnalysisCaches.length).toBeGreaterThan(0);
+      expect(secondAnalysisCaches.every((cache) => cache !== undefined)).toBe(
+        true
+      );
+      expect(new Set(secondAnalysisCaches).size).toBe(1);
+      expect(secondAnalysisCaches[0]).not.toBe(firstAnalysisCaches[0]);
     });
 
     it('should find loose annotated tag when tag object is packed', async () => {
