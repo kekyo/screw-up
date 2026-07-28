@@ -47,6 +47,7 @@ interface CommitInfo {
 interface GitReadContext {
   dir: string;
   gitdir: string;
+  cache: object;
 }
 
 /**
@@ -222,6 +223,8 @@ const createGitReadContext = async (
 ): Promise<GitReadContext> => ({
   dir: repositoryPath,
   gitdir: await getCommonGitDir(repositoryPath),
+  // Share packfile reads only for this metadata analysis.
+  cache: {},
 });
 
 /**
@@ -240,6 +243,7 @@ const getCommit = async (
       dir: context.dir,
       gitdir: context.gitdir,
       oid: hash,
+      cache: context.cache,
     });
 
     return {
@@ -274,6 +278,7 @@ const getCurrentCommit = async (
       dir: context.dir,
       gitdir: context.gitdir,
       oid: currentOid,
+      cache: context.cache,
     });
 
     return {
@@ -678,6 +683,7 @@ const lookupVersionLabelRecursive = async (
         dir: context.dir,
         gitdir: context.gitdir,
         oid: currentCommit.hash,
+        cache: context.cache,
       });
       const parentHashes = commitObj.commit.parent || [];
       parentCommits = (

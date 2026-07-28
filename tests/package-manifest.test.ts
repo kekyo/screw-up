@@ -64,7 +64,7 @@ describe('package manifest', () => {
   it('should expose declarations that resolve from an external consumer', () => {
     const packageJson = readPackageJson();
 
-    expect(packageJson.types).toBe('./dist/src/index.d.ts');
+    expect(packageJson.types).toBe('./dist/index.d.ts');
     expect(packageJson.exports?.['.']?.types).toBe(packageJson.types);
     expect(existsSync(join(repoRoot, packageJson.types!))).toBe(true);
 

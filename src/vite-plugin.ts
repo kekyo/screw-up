@@ -249,8 +249,7 @@ export const screwUp = (options: ScrewUpOptions = {}): Plugin => {
   const generateMetadataSourceLocker = createMutex();
   const resolveModuleKind = createNodeModuleKindResolver();
   let typescriptPromise:
-    | Promise<typeof import('typescript') | undefined>
-    | undefined;
+    Promise<typeof import('typescript') | undefined> | undefined;
 
   const loggerPrefix = `${name}-vite`;
   let logger = createConsoleLogger(loggerPrefix);
